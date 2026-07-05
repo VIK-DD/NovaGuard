@@ -597,7 +597,7 @@ async def send_update_embed(bot):
 
 
 async def send_latest_saved_update_embed(bot):
-    saved_state = load_update_state()
+    saved_state = await asyncio.to_thread(load_update_state)
     latest_update = saved_state.get("latest")
     if not latest_update:
         return False
@@ -613,7 +613,7 @@ async def send_latest_saved_update_embed(bot):
 
 
 async def send_update_history_embeds(bot, max_embeds=None):
-    saved_state = load_update_state()
+    saved_state = await asyncio.to_thread(load_update_state)
     update_history = normalize_update_history(saved_state.get("history", []))
     if not update_history:
         return False
