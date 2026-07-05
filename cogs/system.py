@@ -40,6 +40,7 @@ HEALTH_ALERT_COOLDOWN_SECONDS = 900
 HIGH_LAG_ALERT_MS = 3000
 HIGH_LAG_STREAK_REQUIRED = 2
 IGNORE_HUGE_LAG_MS = 60000
+PRESENCE_ERROR_LOG_COOLDOWN_SECONDS = 180
 
 
 def command_line_entries(command, prefix=""):
@@ -259,6 +260,7 @@ class System(commands.Cog):
         self.high_lag_streak = 0
         self.last_lag_alert_at = 0
         self.last_reconnect_alert_at = 0
+        self.last_presence_error_log_at = 0
 
     async def cog_load(self):
         self.rotate_stream_status.start()
@@ -418,7 +420,10 @@ class System(commands.Cog):
             aiohttp.ClientError,
             asyncio.TimeoutError,
         ) as error:
-            print(f"Streaming status update skipped due to temporary connection issue: {error}")
+            now = time.perf_counter()
+            if now - self.last_presence_error_log_at >= PRESENCE_ERROR_LOG_COOLDOWN_SECONDS:
+                self.last_presence_error_log_at = now
+                print(f"Streaming status update skipped due to temporary connection issue: {error}")
             return
         self.status_index = (self.status_index + 1) % len(stream_statuses)
 
