@@ -314,11 +314,22 @@ class System(commands.Cog):
         }
 
     async def announce_startup_updates_later(self):
-        await asyncio.sleep(5)
+        await asyncio.sleep(12)
         try:
-            await asyncio.wait_for(updates.announce_startup_updates(self.bot), timeout=30)
+            await asyncio.wait_for(updates.announce_startup_updates(self.bot), timeout=45)
         except asyncio.TimeoutError:
-            print("Startup updates skipped: Discord did not respond quickly enough.")
+            print("Startup updates delayed: Discord was too slow on first attempt. Retrying once...")
+            await asyncio.sleep(20)
+            try:
+                sent_retry = await asyncio.wait_for(updates.send_latest_saved_update_embed(self.bot), timeout=20)
+                if sent_retry:
+                    print("Startup updates delivered on retry.")
+                else:
+                    print("Startup updates skipped: No saved update could be delivered on retry.")
+            except asyncio.TimeoutError:
+                print("Startup updates skipped: Discord did not respond quickly enough.")
+            except (discord.HTTPException, aiohttp.ClientError) as error:
+                print(f"Startup updates skipped due to temporary network issue on retry: {error}")
         except (discord.HTTPException, aiohttp.ClientError) as error:
             print(f"Startup updates skipped due to temporary network issue: {error}")
         except Exception as error:
