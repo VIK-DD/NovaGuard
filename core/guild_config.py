@@ -46,7 +46,7 @@ async def resolve_channel(bot, channel_id):
 async def resolve_configured_channels(bot, key, fallback_id=None):
     channel_ids = []
     for guild in bot.guilds:
-        settings = get_guild_settings(guild.id)
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
         channel_ids.append(settings.get(key))
 
     if fallback_id:

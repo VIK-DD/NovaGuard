@@ -23,7 +23,7 @@ def clamp_code_block(text, limit=900):
 
 async def resolve_error_channel(bot, guild=None):
     if guild is not None:
-        settings = get_guild_settings(guild.id)
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
         channel_id = settings.get("error_log_channel") or ERROR_LOG_CHANNEL_ID
         return await resolve_channel(bot, channel_id)
 
