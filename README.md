@@ -29,8 +29,6 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 
 <br/>
 
-<img src="docs/assets/banner.svg" alt="NovaGuard repository banner" width="860"/>
-
 </div>
 
 ---
@@ -41,7 +39,6 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 ## Table of contents
 
 - [Features](#-features)
-- [Visual overview](#-visual-overview)
 - [Tech stack](#-tech-stack)
 - [Quick start (local)](#-quick-start-local)
 - [Running on a Raspberry Pi](#-running-on-a-raspberry-pi)
@@ -85,20 +82,6 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 - Python + SQLite + PM2 deployment that works well on a Pi without needing heavyweight services.
 - Automatic backups, health alerts and event-loop monitoring.
 - Built around real home-server usage, not cloud-only assumptions.
-
----
-
-## Visual overview
-
-<div align="center">
-  <img src="docs/assets/overview-panels.svg" alt="NovaGuard systems overview" width="860"/>
-</div>
-
-### What the repo covers
-
-<div align="center">
-  <img src="docs/assets/setup-flow.svg" alt="NovaGuard setup flow" width="860"/>
-</div>
 
 ---
 
