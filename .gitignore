@@ -1,0 +1,9 @@
+.env
+.update_state.json
+.github_state.json
+__pycache__/
+.venv/
+.claude/
+data/
+backups/
+.DS_Store

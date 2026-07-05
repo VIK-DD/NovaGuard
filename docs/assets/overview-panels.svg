@@ -1,0 +1,42 @@
+<svg width="1200" height="820" viewBox="0 0 1200 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="820" rx="32" fill="#08111F"/>
+  <rect x="48" y="48" width="1104" height="724" rx="28" fill="#111C2F" stroke="#22344F"/>
+
+  <rect x="90" y="96" width="310" height="176" rx="24" fill="#0B1728" stroke="#1E3A5F"/>
+  <text x="122" y="145" fill="#F8FAFC" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Health &amp; Doctor</text>
+  <text x="122" y="188" fill="#93C5FD" font-size="20" font-family="Arial, Helvetica, sans-serif">Latency, event-loop lag,</text>
+  <text x="122" y="216" fill="#93C5FD" font-size="20" font-family="Arial, Helvetica, sans-serif">permissions, GitHub and storage</text>
+  <circle cx="338" cy="220" r="24" fill="#0EA5A3"/>
+
+  <rect x="444" y="96" width="310" height="176" rx="24" fill="#0B1728" stroke="#1E3A5F"/>
+  <text x="476" y="145" fill="#F8FAFC" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Setup &amp; Config</text>
+  <text x="476" y="188" fill="#C4B5FD" font-size="20" font-family="Arial, Helvetica, sans-serif">Discord-side onboarding,</text>
+  <text x="476" y="216" fill="#C4B5FD" font-size="20" font-family="Arial, Helvetica, sans-serif">channel picker and export tools</text>
+  <circle cx="692" cy="220" r="24" fill="#8B5CF6"/>
+
+  <rect x="798" y="96" width="310" height="176" rx="24" fill="#0B1728" stroke="#1E3A5F"/>
+  <text x="830" y="145" fill="#F8FAFC" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">GitHub Feed</text>
+  <text x="830" y="188" fill="#F9A8D4" font-size="20" font-family="Arial, Helvetica, sans-serif">Push, PR, issue and release</text>
+  <text x="830" y="216" fill="#F9A8D4" font-size="20" font-family="Arial, Helvetica, sans-serif">cards plus repo/dev commands</text>
+  <circle cx="1046" cy="220" r="24" fill="#EC4899"/>
+
+  <rect x="90" y="318" width="470" height="176" rx="24" fill="#0B1728" stroke="#1E3A5F"/>
+  <text x="122" y="367" fill="#F8FAFC" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Automatic Updates</text>
+  <text x="122" y="410" fill="#7DD3FC" font-size="20" font-family="Arial, Helvetica, sans-serif">Tracked file fingerprints, release notes,</text>
+  <text x="122" y="438" fill="#7DD3FC" font-size="20" font-family="Arial, Helvetica, sans-serif">history timeline and startup deploy posts</text>
+  <rect x="398" y="430" width="120" height="30" rx="15" fill="#0369A1"/>
+  <text x="424" y="451" fill="#E0F2FE" font-size="16" font-family="Arial, Helvetica, sans-serif">BUILD</text>
+
+  <rect x="590" y="318" width="518" height="176" rx="24" fill="#0B1728" stroke="#1E3A5F"/>
+  <text x="622" y="367" fill="#F8FAFC" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Community Systems</text>
+  <text x="622" y="410" fill="#FCD34D" font-size="20" font-family="Arial, Helvetica, sans-serif">Tickets, giveaways, roles, levels, economy,</text>
+  <text x="622" y="438" fill="#FCD34D" font-size="20" font-family="Arial, Helvetica, sans-serif">welcome cards, logs and moderation</text>
+  <text x="622" y="475" fill="#E5E7EB" font-size="18" font-family="Arial, Helvetica, sans-serif">built as clean slash-command categories</text>
+
+  <rect x="90" y="540" width="1018" height="176" rx="24" fill="#0B1728" stroke="#1E3A5F"/>
+  <text x="122" y="589" fill="#F8FAFC" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Pi-ready operations</text>
+  <text x="122" y="632" fill="#A7F3D0" font-size="20" font-family="Arial, Helvetica, sans-serif">SQLite persistence, PM2 keep-alive, startup network checks, automatic backups and calmer health alerts</text>
+  <rect x="122" y="662" width="310" height="12" rx="6" fill="#064E3B"/>
+  <rect x="122" y="662" width="262" height="12" rx="6" fill="#10B981"/>
+  <text x="454" y="674" fill="#D1FAE5" font-size="16" font-family="Arial, Helvetica, sans-serif">operational confidence for home hosting</text>
+</svg>
