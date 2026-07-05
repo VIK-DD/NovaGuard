@@ -12,12 +12,13 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 
 <br/>
 
-[![Version](https://img.shields.io/badge/version-3.0.0-0f766e)](./SETUP.md)
+[![Version](https://img.shields.io/badge/version-3.0.0-0f766e)](https://github.com/VIK-DD/NovaGuard/releases/latest)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![discord.py](https://img.shields.io/badge/discord.py-2.6+-5865F2)](https://discordpy.readthedocs.io/)
 [![SQLite](https://img.shields.io/badge/SQLite-config%20%2B%20state-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![PM2](https://img.shields.io/badge/PM2-keep%20alive-2B037A?logo=pm2&logoColor=white)](https://pm2.keymetrics.io/)
 [![Runs on Raspberry Pi](https://img.shields.io/badge/runs%20on-Raspberry%20Pi-A22846?logo=raspberrypi&logoColor=white)](#-running-on-a-raspberry-pi)
+[![CI](https://img.shields.io/github/actions/workflow/status/VIK-DD/NovaGuard/ci.yml?branch=main&label=CI)](https://github.com/VIK-DD/NovaGuard/actions/workflows/ci.yml)
 
 [![Slash commands](https://img.shields.io/badge/slash%20commands-62+-5865F2)](#-command-categories)
 [![GitHub feed](https://img.shields.io/badge/GitHub-feed%20%2B%20cards-181717?logo=github&logoColor=white)](#-github-intelligence)
@@ -90,11 +91,7 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 ## Visual overview
 
 <div align="center">
-
-| Live bot identity | Systems overview |
-| :---: | :---: |
-| <img src="docs/assets/logo.png" alt="NovaGuard avatar" width="250"/> | <img src="docs/assets/overview-panels.svg" alt="NovaGuard systems overview" width="520"/> |
-
+  <img src="docs/assets/overview-panels.svg" alt="NovaGuard systems overview" width="860"/>
 </div>
 
 ### What the repo covers
