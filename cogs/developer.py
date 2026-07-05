@@ -577,7 +577,7 @@ class Developer(commands.Cog):
         if not github_config.watch_repos:
             return
 
-        state = load_github_state()
+        state = await asyncio.to_thread(load_github_state)
         event_state = state.setdefault("events", {})
         channels = await resolve_configured_channels(self.bot, "github_event_channel", github_config.event_channel_id)
 
@@ -617,7 +617,7 @@ class Developer(commands.Cog):
                     for channel in channels:
                         await safe_send_embed(channel, embed, view)
 
-        save_github_state(state)
+        await asyncio.to_thread(save_github_state, state)
 
     @watch_github_activity.before_loop
     async def before_watch_github_activity(self):

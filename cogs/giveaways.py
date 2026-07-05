@@ -1,5 +1,6 @@
 """🎁 Giveaways category — button-entry giveaways with automatic winner draws."""
 
+import asyncio
 import random
 from datetime import UTC, datetime, timedelta
 
@@ -18,6 +19,14 @@ def load_giveaways():
 
 def save_giveaways(entries):
     save_data("giveaways", entries)
+
+
+async def load_giveaways_async():
+    return await asyncio.to_thread(load_giveaways)
+
+
+async def save_giveaways_async(entries):
+    await asyncio.to_thread(save_giveaways, entries)
 
 
 def build_giveaway_embed(entry, ended=False, winner_ids=None):
@@ -64,7 +73,7 @@ class GiveawayButton(
         return cls(int(match["message_id"]))
 
     async def callback(self, interaction: discord.Interaction):
-        entries = load_giveaways()
+        entries = await load_giveaways_async()
         entry = next((g for g in entries if g["message_id"] == self.message_id), None)
         if entry is None or entry.get("ended"):
             return await interaction.response.send_message("This giveaway has already ended!", ephemeral=True)
@@ -76,7 +85,7 @@ class GiveawayButton(
         else:
             entry["entrants"].append(user_id)
             note = "You're in — good luck! 🍀"
-        save_giveaways(entries)
+        await save_giveaways_async(entries)
 
         await interaction.response.edit_message(embed=build_giveaway_embed(entry))
         await interaction.followup.send(note, ephemeral=True)
@@ -112,7 +121,7 @@ class Giveaways(commands.Cog):
         count = min(entry["winners"], len(entrants))
         winner_ids = random.sample(entrants, count) if count else []
         entry["winner_ids"] = winner_ids
-        save_giveaways(entries)
+        await save_giveaways_async(entries)
 
         channel = self.bot.get_channel(entry["channel_id"])
         if channel is None:
@@ -145,7 +154,7 @@ class Giveaways(commands.Cog):
 
     @tasks.loop(seconds=30)
     async def giveaway_watcher(self):
-        entries = load_giveaways()
+        entries = await load_giveaways_async()
         now = datetime.now(UTC)
         for entry in entries:
             if not entry.get("ended") and datetime.fromisoformat(entry["ends_at"]) <= now:
@@ -200,14 +209,14 @@ class Giveaways(commands.Cog):
         view.add_item(GiveawayButton(message.id))
         await message.edit(view=view)
 
-        entries = load_giveaways()
+        entries = await load_giveaways_async()
         entries.append(entry)
-        save_giveaways(entries)
+        await save_giveaways_async(entries)
 
     @giveaway.command(name="end", description="End a giveaway right now")
     @app_commands.describe(message_id="The giveaway message ID")
     async def giveaway_end(self, interaction: discord.Interaction, message_id: str):
-        entries = load_giveaways()
+        entries = await load_giveaways_async()
         entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
         if entry is None or entry.get("ended"):
             embed = make_embed("🔍 Not found", "No active giveaway with that message ID.", color=Palette.WARNING)
@@ -223,7 +232,7 @@ class Giveaways(commands.Cog):
     @giveaway.command(name="reroll", description="Pick new winner(s) for an ended giveaway")
     @app_commands.describe(message_id="The giveaway message ID")
     async def giveaway_reroll(self, interaction: discord.Interaction, message_id: str):
-        entries = load_giveaways()
+        entries = await load_giveaways_async()
         entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
         if entry is None or not entry.get("ended"):
             embed = make_embed("🔍 Not found", "No **ended** giveaway with that message ID.", color=Palette.WARNING)
@@ -239,7 +248,7 @@ class Giveaways(commands.Cog):
         count = min(entry["winners"], len(entrants))
         winner_ids = random.sample(entrants, count)
         entry["winner_ids"] = winner_ids
-        save_giveaways(entries)
+        await save_giveaways_async(entries)
 
         mentions = ", ".join(f"<@{uid}>" for uid in winner_ids)
         embed = make_embed("🎲 Reroll!", f"New winner{'s' if count > 1 else ''} for **{entry['prize']}**: {mentions} 🎊", color=Palette.GOLD)

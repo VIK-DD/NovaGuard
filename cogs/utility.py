@@ -1,5 +1,6 @@
 """🧰 Utility category — info cards, polls, reminders, timestamps and small power tools."""
 
+import asyncio
 import random
 import re
 import uuid
@@ -128,9 +129,9 @@ class ReminderCancelSelect(discord.ui.Select):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("These reminders are not yours!", ephemeral=True)
 
-        reminders = load_data("reminders", [])
+        reminders = await asyncio.to_thread(load_data, "reminders", [])
         reminders = [item for item in reminders if item["id"] != self.values[0]]
-        save_data("reminders", reminders)
+        await asyncio.to_thread(save_data, "reminders", reminders)
 
         embed = make_embed("🗑️ Reminder cancelled", "That reminder will not fire anymore.", color=Palette.SUCCESS)
         brand_footer(embed)
@@ -155,7 +156,7 @@ class Utility(commands.Cog):
 
     @tasks.loop(seconds=20)
     async def reminder_loop(self):
-        reminders = load_data("reminders", [])
+        reminders = await asyncio.to_thread(load_data, "reminders", [])
         if not reminders:
             return
 
@@ -165,7 +166,7 @@ class Utility(commands.Cog):
             return
 
         remaining = [item for item in reminders if item not in due]
-        save_data("reminders", remaining)
+        await asyncio.to_thread(save_data, "reminders", remaining)
 
         for item in due:
             channel = self.bot.get_channel(item["channel_id"])
@@ -228,7 +229,7 @@ class Utility(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         due_at = datetime.now(UTC) + delta
-        reminders = load_data("reminders", [])
+        reminders = await asyncio.to_thread(load_data, "reminders", [])
         reminders.append(
             {
                 "id": uuid.uuid4().hex[:8],
@@ -238,7 +239,7 @@ class Utility(commands.Cog):
                 "due_at": due_at.isoformat(),
             }
         )
-        save_data("reminders", reminders)
+        await asyncio.to_thread(save_data, "reminders", reminders)
 
         embed = make_embed(
             "⏰ Reminder set!",
@@ -250,7 +251,7 @@ class Utility(commands.Cog):
 
     @app_commands.command(name="reminders", description="See and cancel your pending reminders")
     async def reminders(self, interaction: discord.Interaction):
-        reminders = load_data("reminders", [])
+        reminders = await asyncio.to_thread(load_data, "reminders", [])
         mine = sorted(
             (item for item in reminders if item["user_id"] == interaction.user.id),
             key=lambda item: item["due_at"],

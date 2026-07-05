@@ -1,6 +1,8 @@
 """🏆 Levels category — chat XP, level-up celebrations and the server leaderboard."""
 
+import asyncio
 import random
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import discord
@@ -53,22 +55,35 @@ class Levels(commands.Cog):
         self.bot = bot
         self.data = load_levels_data()
         self.dirty = False
+        self.flush_lock = asyncio.Lock()
 
     async def cog_load(self):
         self.flush_loop.start()
 
     async def cog_unload(self):
         self.flush_loop.cancel()
-        self.flush()
+        await self.flush()
 
-    def flush(self):
-        if self.dirty:
-            save_levels_data(self.data)
+    async def flush(self):
+        async with self.flush_lock:
+            if not self.dirty:
+                return
+
+            snapshot = deepcopy(self.data)
             self.dirty = False
+
+            try:
+                await asyncio.to_thread(save_levels_data, snapshot)
+            except Exception:
+                self.dirty = True
+                raise
 
     @tasks.loop(seconds=XP_FLUSH_SECONDS)
     async def flush_loop(self):
-        self.flush()
+        try:
+            await self.flush()
+        except Exception as error:
+            print(f"Levels flush skipped due to storage issue: {error!r}")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -91,7 +106,10 @@ class Levels(commands.Cog):
         new_level, _ = level_from_xp(record["xp"])
 
         if new_level > old_level:
-            self.flush()
+            try:
+                await self.flush()
+            except Exception as error:
+                print(f"Levels immediate flush skipped due to storage issue: {error!r}")
             embed = make_embed(
                 "🎉 LEVEL UP!",
                 f"{message.author.mention} just reached **Level {new_level}**!",
