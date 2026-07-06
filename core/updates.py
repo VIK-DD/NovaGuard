@@ -245,16 +245,22 @@ def summarize_feature_highlights(old_files, new_files):
     return highlights[:6]
 
 
-def summarize_changes(old_files, new_files):
+def summarize_changes(old_files, new_files, has_history=False):
     if not old_files:
-        command_names = sorted(extract_all_commands(new_files))
-        summary = [f"Initial tracked release for v{BOT_VERSION} \"{BOT_CODENAME}\""]
-        if command_names:
-            summary.append("Available slash commands: " + format_command_list(command_names))
-        if extract_all_stream_texts(new_files):
-            summary.append("Streaming status rotation is active")
-        if github_config.primary_repo:
-            summary.append(f"GitHub system is connected to `{github_config.primary_repo}`")
+        if has_history:
+            summary = [
+                "Deployment tracker state was rebuilt for the current live codebase",
+                "No previous tracked snapshot was available, so this refresh avoids guessing command-by-command changes",
+            ]
+        else:
+            command_names = sorted(extract_all_commands(new_files))
+            summary = [f"Initial tracked release for v{BOT_VERSION} \"{BOT_CODENAME}\""]
+            if command_names:
+                summary.append("Available slash commands: " + format_command_list(command_names))
+            if extract_all_stream_texts(new_files):
+                summary.append("Streaming status rotation is active")
+            if github_config.primary_repo:
+                summary.append(f"GitHub system is connected to `{github_config.primary_repo}`")
 
         total_lines = sum(len(content.splitlines()) for content in new_files.values())
         return summary, total_lines, 0
@@ -263,12 +269,16 @@ def summarize_changes(old_files, new_files):
     old_commands = extract_all_commands(old_files)
     new_commands = extract_all_commands(new_files)
     summary.extend(summarize_feature_highlights(old_files, new_files))
+    changed_files = changed_file_names(old_files, new_files)
 
     added_commands = sorted(set(new_commands) - set(old_commands))
     removed_commands = sorted(set(old_commands) - set(new_commands))
     changed_commands = sorted(
         name for name in (set(old_commands) & set(new_commands)) if old_commands[name] != new_commands[name]
     )
+
+    if "maintenance" in added_commands or any_changed(changed_files, "core/maintenance.py"):
+        summary.append("🛠️ Added global maintenance mode with DND presence and graceful command blocking")
 
     if added_commands:
         summary.append("Added commands: " + format_command_list(added_commands, limit=12))
@@ -282,7 +292,7 @@ def summarize_changes(old_files, new_files):
 
     other_changed_files = []
     internal_changed_files = []
-    for file_name in sorted(changed_file_names(old_files, new_files)):
+    for file_name in sorted(changed_files):
         if file_name.endswith(".py"):
             internal_changed_files.append(f"`{file_name}`")
         else:
@@ -322,13 +332,56 @@ def load_update_state():
         history.append(latest_update)
 
     state["history"] = normalize_update_history(history)
+    for index, update_entry in enumerate(state["history"], start=1):
+        update_entry.setdefault("build", index)
     if state["history"]:
         state["latest"] = state["history"][-1]
+    state.setdefault("pending_announcement", None)
+    state.setdefault("last_announced_fingerprint", None)
     return state
 
 
 def save_update_state(state):
     save_json_file(UPDATE_STATE_FILE, state)
+
+
+def persist_pending_update(payload):
+    state = load_update_state()
+    history = payload["history"]
+    update_entry = payload["update_entry"]
+
+    if not history or history[-1].get("fingerprint") != payload["fingerprint"]:
+        history.append(update_entry)
+    history = normalize_update_history(history)
+    for index, history_entry in enumerate(history, start=1):
+        history_entry.setdefault("build", index)
+
+    state.update(
+        {
+            "fingerprint": payload["fingerprint"],
+            "files": payload["files_data"],
+            "latest": history[-1],
+            "history": history,
+            "pending_announcement": payload["fingerprint"],
+        }
+    )
+    save_update_state(state)
+    return state
+
+
+def mark_announcement_delivered(fingerprint):
+    state = load_update_state()
+    if state.get("pending_announcement") == fingerprint:
+        state["pending_announcement"] = None
+    state["last_announced_fingerprint"] = fingerprint
+    save_update_state(state)
+
+
+def has_pending_announcement():
+    state = load_update_state()
+    latest_update = state.get("latest") or {}
+    pending_fingerprint = state.get("pending_announcement")
+    return bool(pending_fingerprint and latest_update.get("fingerprint") == pending_fingerprint)
 
 
 def normalize_update_history(update_history):
@@ -351,6 +404,16 @@ def normalize_update_history(update_history):
 
     normalized.sort(key=lambda item: item.get("created_at", ""))
     return normalized
+
+
+def next_build_number(update_history):
+    highest = 0
+    for update_entry in update_history:
+        try:
+            highest = max(highest, int(update_entry.get("build", 0) or 0))
+        except (TypeError, ValueError):
+            continue
+    return highest + 1
 
 
 def clamp(text, limit=1024):
@@ -413,9 +476,37 @@ def build_code_update_embed(update_entry):
 
 
 def build_restart_update_embed(update_entry):
-    embed = build_code_update_embed(update_entry)
-    embed.title = "🔄 Bot Restarted • Current Live Build"
-    embed.description = "The bot is back online. Here is the latest deployed update."
+    build_number = update_entry.get("build", "?")
+    summary_items = update_entry.get("summary", []) or ["General improvements"]
+    highlight_items = [item for item in summary_items if is_release_highlight(item)]
+    change_items = [item for item in summary_items if not is_release_highlight(item)]
+
+    embed = discord.Embed(
+        title="🔄 Bot Restarted • Current Live Build",
+        description="NovaGuard is back online. No new deployment was detected during this restart.",
+        color=discord.Color(Palette.PRIMARY),
+        timestamp=parse_github_datetime(update_entry.get("created_at")) or datetime.now(UTC),
+    )
+    embed.add_field(
+        name="🏗️ Live Build",
+        value=f"`#{build_number}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
+        inline=True,
+    )
+    embed.add_field(
+        name="📊 Code Stats",
+        value=(
+            f"`+{update_entry.get('added_lines', 0)}` / "
+            f"`-{update_entry.get('removed_lines', 0)}` lines\n"
+            f"`~{update_entry.get('changed_files', 'unknown')}` tracked files"
+        ),
+        inline=True,
+    )
+    preview_items = (highlight_items or change_items or summary_items)[:3]
+    embed.add_field(
+        name="📝 Latest Deployment Summary",
+        value=clamp(bullet_list(preview_items)),
+        inline=False,
+    )
     return embed
 
 
@@ -443,6 +534,7 @@ def build_update_history_overview_embed(update_history):
     embed.add_field(
         name="Current Build",
         value=(
+            f"Build: `#{latest_update.get('build', '?')}`\n"
             f"Version: `v{BOT_VERSION} \"{BOT_CODENAME}\"`\n"
             f"Tracked files: `{len(tracked_files())}`\n"
             f"Primary repo: `{github_config.primary_repo or 'Not set'}`"
@@ -488,7 +580,7 @@ def build_update_history_embeds(update_history):
                 f"`-{update_entry.get('removed_lines', 0)}` lines"
             )
             embed.add_field(
-                name=f"Update #{len(update_history) - offset + 1} • {time_label}",
+                name=f"Build #{update_entry.get('build', len(update_history) - offset + 1)} • {time_label}",
                 value=clamp(f"{summary_text}\n{stats_text}"),
                 inline=False,
             )
@@ -518,8 +610,8 @@ def prepare_update_payload():
         return None
 
     old_files = saved_state.get("files", {})
-    summary, added_lines, removed_lines = summarize_changes(old_files, files_data)
     history = normalize_update_history(saved_state.get("history", []))
+    summary, added_lines, removed_lines = summarize_changes(old_files, files_data, has_history=bool(history))
     changed_count = len(changed_file_names(old_files, files_data))
     update_entry = {
         "summary": summary,
@@ -528,7 +620,7 @@ def prepare_update_payload():
         "changed_files": changed_count,
         "created_at": datetime.now(UTC).isoformat(),
         "fingerprint": current_fingerprint,
-        "build": len(history) + 1,
+        "build": next_build_number(history),
     }
     return {
         "files_data": files_data,
@@ -542,13 +634,15 @@ def build_preview_update_entry():
     files_data = read_tracked_files()
     saved_state = load_update_state()
     old_files = saved_state.get("files", {})
-    summary, added_lines, removed_lines = summarize_changes(old_files, files_data)
+    history = normalize_update_history(saved_state.get("history", []))
+    summary, added_lines, removed_lines = summarize_changes(old_files, files_data, has_history=bool(history))
     return {
         "summary": summary,
         "added_lines": added_lines,
         "removed_lines": removed_lines,
         "changed_files": len(changed_file_names(old_files, files_data)),
         "created_at": datetime.now(UTC).isoformat(),
+        "build": next_build_number(history),
     }
 
 
@@ -564,36 +658,9 @@ async def safe_send_embed(channel, embed, view=None):
 
 async def send_update_embed(bot):
     payload = await asyncio.to_thread(prepare_update_payload)
-    if payload is None:
-        return False
-
-    channels = await resolve_configured_channels(bot, "update_channel", github_config.update_channel_id)
-    if not channels:
-        return False
-
-    update_entry = payload["update_entry"]
-    sent_any = False
-    for channel in channels:
-        sent_any = await safe_send_embed(channel, build_code_update_embed(update_entry), build_update_buttons()) or sent_any
-
-    if not sent_any:
-        return False
-
-    history = payload["history"]
-    if not history or history[-1].get("fingerprint") != payload["fingerprint"]:
-        history.append(update_entry)
-    history = normalize_update_history(history)
-
-    await asyncio.to_thread(
-        save_update_state,
-        {
-            "fingerprint": payload["fingerprint"],
-            "files": payload["files_data"],
-            "latest": update_entry,
-            "history": history,
-        },
-    )
-    return True
+    if payload is not None:
+        await asyncio.to_thread(persist_pending_update, payload)
+    return await send_latest_saved_update_embed(bot)
 
 
 async def send_latest_saved_update_embed(bot):
@@ -606,9 +673,17 @@ async def send_latest_saved_update_embed(bot):
     if not channels:
         return False
 
+    pending_fingerprint = saved_state.get("pending_announcement")
+    latest_fingerprint = latest_update.get("fingerprint")
+    is_pending_deploy = bool(pending_fingerprint and pending_fingerprint == latest_fingerprint)
+    embed = build_code_update_embed(latest_update) if is_pending_deploy else build_restart_update_embed(latest_update)
+
     sent_any = False
     for channel in channels:
-        sent_any = await safe_send_embed(channel, build_restart_update_embed(latest_update), build_update_buttons()) or sent_any
+        sent_any = await safe_send_embed(channel, embed, build_update_buttons()) or sent_any
+
+    if sent_any and is_pending_deploy and latest_fingerprint:
+        await asyncio.to_thread(mark_announcement_delivered, latest_fingerprint)
     return sent_any
 
 
@@ -637,4 +712,5 @@ async def announce_startup_updates(bot):
     """Post a light startup update without blocking the gateway heartbeat."""
     sent_new_update = await send_update_embed(bot)
     if not sent_new_update:
-        await send_latest_saved_update_embed(bot)
+        return await send_latest_saved_update_embed(bot)
+    return sent_new_update

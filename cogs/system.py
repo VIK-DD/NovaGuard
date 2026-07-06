@@ -30,6 +30,12 @@ from core.config import (
 from core.database import DB_PATH
 from core.error_digest import send_error_digest
 from core.github_api import github_api
+from core.maintenance import (
+    DEFAULT_MAINTENANCE_MESSAGE,
+    load_maintenance_state,
+    save_maintenance_state,
+    user_can_bypass_maintenance,
+)
 from core.storage import DATA_DIR, get_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, format_timedelta, respond, truncate
@@ -41,6 +47,9 @@ HIGH_LAG_ALERT_MS = 3000
 HIGH_LAG_STREAK_REQUIRED = 2
 IGNORE_HUGE_LAG_MS = 60000
 PRESENCE_ERROR_LOG_COOLDOWN_SECONDS = 180
+STARTUP_UPDATE_INITIAL_DELAY_SECONDS = 12
+STARTUP_UPDATE_RETRY_DELAY_SECONDS = 20
+STARTUP_UPDATE_MAX_ATTEMPTS = 6
 
 
 def command_line_entries(command, prefix=""):
@@ -315,28 +324,134 @@ class System(commands.Cog):
             "peak": peak,
         }
 
-    async def announce_startup_updates_later(self):
-        await asyncio.sleep(12)
+    def maintenance_state(self):
+        return load_maintenance_state()
+
+    async def apply_stream_presence(self, advance=True):
         try:
-            await asyncio.wait_for(updates.announce_startup_updates(self.bot), timeout=45)
-        except asyncio.TimeoutError:
-            print("Startup updates delayed: Discord was too slow on first attempt. Retrying once...")
-            await asyncio.sleep(20)
+            await self.bot.change_presence(
+                status=discord.Status.online,
+                activity=discord.Streaming(
+                    name=stream_statuses[self.status_index],
+                    url=STREAM_URL,
+                ),
+            )
+        except (
+            discord.HTTPException,
+            discord.ConnectionClosed,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+        ) as error:
+            now = time.perf_counter()
+            if now - self.last_presence_error_log_at >= PRESENCE_ERROR_LOG_COOLDOWN_SECONDS:
+                self.last_presence_error_log_at = now
+                print(f"Streaming status update skipped due to temporary connection issue: {error}")
+            return False
+
+        if advance:
+            self.status_index = (self.status_index + 1) % len(stream_statuses)
+        return True
+
+    async def apply_maintenance_presence(self, state=None):
+        state = state or self.maintenance_state()
+        try:
+            await self.bot.change_presence(
+                status=discord.Status.dnd,
+                activity=discord.Game(name=state.get("message") or DEFAULT_MAINTENANCE_MESSAGE),
+            )
+        except (
+            discord.HTTPException,
+            discord.ConnectionClosed,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+        ) as error:
+            now = time.perf_counter()
+            if now - self.last_presence_error_log_at >= PRESENCE_ERROR_LOG_COOLDOWN_SECONDS:
+                self.last_presence_error_log_at = now
+                print(f"Maintenance status update skipped due to temporary connection issue: {error}")
+            return False
+        return True
+
+    async def refresh_presence_mode(self):
+        ws = getattr(self.bot, "ws", None)
+        ws_open = bool(ws and not getattr(ws, "closed", False))
+        if self.bot.is_closed() or not self.bot.is_ready() or not ws_open:
+            return False
+
+        state = self.maintenance_state()
+        if state.get("enabled"):
+            return await self.apply_maintenance_presence(state)
+        return await self.apply_stream_presence(advance=False)
+
+    async def ensure_maintenance_manager(self, interaction):
+        if await user_can_bypass_maintenance(self.bot, interaction.user):
+            return True
+
+        embed = make_embed(
+            "🔒 Owner Only",
+            "Only the bot owner can enable or disable global maintenance mode.",
+            color=Palette.DANGER,
+        )
+        brand_footer(embed, "Maintenance control")
+        await respond(interaction, embed, ephemeral=True)
+        return False
+
+    async def announce_startup_updates_later(self):
+        await asyncio.sleep(STARTUP_UPDATE_INITIAL_DELAY_SECONDS)
+        for attempt in range(1, STARTUP_UPDATE_MAX_ATTEMPTS + 1):
             try:
-                sent_retry = await asyncio.wait_for(updates.send_latest_saved_update_embed(self.bot), timeout=20)
-                if sent_retry:
-                    print("Startup updates delivered on retry.")
-                else:
-                    print("Startup updates skipped: No saved update could be delivered on retry.")
+                sent = await asyncio.wait_for(updates.announce_startup_updates(self.bot), timeout=25)
+                if sent:
+                    if attempt == 1:
+                        print("Startup updates delivered.")
+                    else:
+                        print(f"Startup updates delivered on retry attempt {attempt}.")
+                    return
+
+                if not await asyncio.to_thread(updates.has_pending_announcement):
+                    print("Startup updates skipped: nothing pending to deliver.")
+                    return
+
+                if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
+                    print(
+                        "Startup updates pending: Discord was not ready for delivery. "
+                        f"Retrying in {STARTUP_UPDATE_RETRY_DELAY_SECONDS}s... attempt {attempt}"
+                    )
             except asyncio.TimeoutError:
-                print("Startup updates skipped: Discord did not respond quickly enough.")
+                if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
+                    print(
+                        "Startup updates delayed: Discord was too slow to respond. "
+                        f"Retrying in {STARTUP_UPDATE_RETRY_DELAY_SECONDS}s... attempt {attempt}"
+                    )
+                else:
+                    print("Startup updates still pending: Discord did not respond quickly enough.")
             except (discord.HTTPException, aiohttp.ClientError) as error:
-                print(f"Startup updates skipped due to temporary network issue on retry: {error}")
-        except (discord.HTTPException, aiohttp.ClientError) as error:
-            print(f"Startup updates skipped due to temporary network issue: {error}")
-        except Exception as error:
-            print(f"Startup updates skipped due to unexpected issue: {error!r}")
-            await send_error_digest(self.bot, "Startup Update Error", error, context="Automatic startup changelog failed.")
+                if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
+                    print(
+                        "Startup updates delayed by a temporary network issue: "
+                        f"{error}. Retrying in {STARTUP_UPDATE_RETRY_DELAY_SECONDS}s... attempt {attempt}"
+                    )
+                else:
+                    print(f"Startup updates still pending due to temporary network issue: {error}")
+            except Exception as error:
+                print(f"Startup updates skipped due to unexpected issue: {error!r}")
+                await send_error_digest(
+                    self.bot,
+                    "Startup Update Error",
+                    error,
+                    context="Automatic startup changelog failed.",
+                )
+                return
+
+            if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
+                await asyncio.sleep(STARTUP_UPDATE_RETRY_DELAY_SECONDS)
+
+        print("Startup updates remain pending. NovaGuard will try again after the next ready/reconnect event.")
+
+    def schedule_startup_update_retry(self):
+        if self.startup_update_task and not self.startup_update_task.done():
+            return
+        self.startup_update_task = asyncio.create_task(self.announce_startup_updates_later())
 
     @tasks.loop(seconds=LAG_MONITOR_SECONDS)
     async def monitor_event_loop(self):
@@ -401,31 +516,15 @@ class System(commands.Cog):
 
     @tasks.loop(seconds=30)
     async def rotate_stream_status(self):
+        if self.maintenance_state().get("enabled"):
+            return
+
         ws = getattr(self.bot, "ws", None)
         ws_open = bool(ws and not getattr(ws, "closed", False))
         if self.bot.is_closed() or not self.bot.is_ready() or not ws_open:
             return
 
-        try:
-            await self.bot.change_presence(
-                status=discord.Status.online,
-                activity=discord.Streaming(
-                    name=stream_statuses[self.status_index],
-                    url=STREAM_URL,
-                ),
-            )
-        except (
-            discord.HTTPException,
-            discord.ConnectionClosed,
-            aiohttp.ClientError,
-            asyncio.TimeoutError,
-        ) as error:
-            now = time.perf_counter()
-            if now - self.last_presence_error_log_at >= PRESENCE_ERROR_LOG_COOLDOWN_SECONDS:
-                self.last_presence_error_log_at = now
-                print(f"Streaming status update skipped due to temporary connection issue: {error}")
-            return
-        self.status_index = (self.status_index + 1) % len(stream_statuses)
+        await self.apply_stream_presence()
 
     @rotate_stream_status.before_loop
     async def before_rotate_stream_status(self):
@@ -433,6 +532,7 @@ class System(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        await self.refresh_presence_mode()
         if getattr(self.bot, "startup_update_announced", False):
             now = time.monotonic()
             if now - self.last_reconnect_alert_at >= HEALTH_ALERT_COOLDOWN_SECONDS:
@@ -443,9 +543,11 @@ class System(commands.Cog):
                     RuntimeError("Discord gateway reconnected after the bot was already ready."),
                     context="This can happen during network hiccups. If it repeats often, check host/network stability.",
                 )
+            if await asyncio.to_thread(updates.has_pending_announcement):
+                self.schedule_startup_update_retry()
         if not getattr(self.bot, "startup_update_announced", False):
             self.bot.startup_update_announced = True
-            self.startup_update_task = asyncio.create_task(self.announce_startup_updates_later())
+            self.schedule_startup_update_retry()
         print(f"{self.bot.user} is ready")
 
     @app_commands.command(name="ping", description="Latency, uptime and gateway health at a glance")
@@ -537,8 +639,12 @@ class System(commands.Cog):
         gateway_ms = round(self.bot.latency * 1000)
         uptime = datetime.now(UTC) - self.bot.launched_at
         lag = self.loop_lag_snapshot()
+        maintenance_active = self.maintenance_state().get("enabled")
 
-        if gateway_ms >= 500 or lag["label"] == "High lag":
+        if maintenance_active:
+            color = Palette.WARNING
+            mood = "Maintenance mode is active. Core systems are online, but commands are limited."
+        elif gateway_ms >= 500 or lag["label"] == "High lag":
             color = Palette.DANGER
             mood = "Online, but the Raspberry Pi is feeling pressure."
         elif gateway_ms >= 250 or lag["label"] == "Small lag":
@@ -567,7 +673,7 @@ class System(commands.Cog):
             name="Project",
             value=(
                 f"GitHub: `{github_config.primary_repo or github_config.username or 'Not configured'}`\n"
-                f"Streaming: `Active`"
+                f"Presence: `{'Maintenance' if maintenance_active else 'Streaming'}`"
             ),
             inline=True,
         )
@@ -689,7 +795,14 @@ class System(commands.Cog):
             error_digest_line = info_line("Error digest", "disabled until configured with /setup")
 
         feature_lines = [
-            ok_line("Streaming status", "rotating every 30s") if self.rotate_stream_status.is_running() else warn_line("Streaming status", "loop stopped"),
+            warn_line("Maintenance mode", self.maintenance_state().get("message"))
+            if self.maintenance_state().get("enabled")
+            else ok_line("Maintenance mode", "inactive"),
+            ok_line("Streaming status", "rotating every 30s")
+            if self.rotate_stream_status.is_running() and not self.maintenance_state().get("enabled")
+            else info_line("Streaming status", "paused while maintenance is active")
+            if self.maintenance_state().get("enabled")
+            else warn_line("Streaming status", "loop stopped"),
             ok_line("Startup updates", "background-safe") if update_channel_id else warn_line("Startup updates", "no channel set"),
             ok_line("GitHub watcher", "running")
             if github_watcher and github_watcher.is_running()
@@ -732,6 +845,76 @@ class System(commands.Cog):
         await interaction.response.defer()
         embed = build_help_home_embed(self.bot)
         await respond(interaction, embed, view=HelpView(self.bot))
+
+    @app_commands.command(name="maintenance", description="Enable, disable or inspect global maintenance mode")
+    @app_commands.describe(action="What should NovaGuard do?", message="Visible presence text while maintenance is active")
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="Enable", value="enable"),
+            app_commands.Choice(name="Disable", value="disable"),
+            app_commands.Choice(name="Status", value="status"),
+        ]
+    )
+    async def maintenance(
+        self,
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        message: str | None = None,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        if not await self.ensure_maintenance_manager(interaction):
+            return
+
+        state = self.maintenance_state()
+
+        if action.value == "status":
+            color = Palette.WARNING if state.get("enabled") else Palette.SUCCESS
+            title = "🛠️ Maintenance Mode • Active" if state.get("enabled") else "🛠️ Maintenance Mode • Inactive"
+            description = (
+                "NovaGuard is currently limiting commands for regular users."
+                if state.get("enabled")
+                else "NovaGuard is currently running normally with full command access."
+            )
+            embed = make_embed(title, description, color=color)
+            embed.add_field(name="Presence", value=f"`{state.get('message', DEFAULT_MAINTENANCE_MESSAGE)}`", inline=False)
+            if state.get("updated_by"):
+                embed.add_field(name="Last Change", value=state["updated_by"], inline=True)
+            if state.get("updated_at"):
+                try:
+                    changed_at = datetime.fromisoformat(state["updated_at"])
+                except (TypeError, ValueError):
+                    changed_at = None
+                if changed_at:
+                    embed.add_field(name="Updated", value=discord.utils.format_dt(changed_at, "R"), inline=True)
+            brand_footer(embed, "Maintenance control")
+            await respond(interaction, embed, ephemeral=True)
+            return
+
+        actor_label = f"{interaction.user} ({interaction.user.id})"
+        if action.value == "enable":
+            state = save_maintenance_state(True, message or state.get("message"), updated_by=actor_label)
+            await self.apply_maintenance_presence(state)
+            embed = make_embed(
+                "🛠️ Maintenance Enabled",
+                "NovaGuard is now in maintenance mode.\nRegular users will see a maintenance notice instead of command results.",
+                color=Palette.WARNING,
+            )
+            embed.add_field(name="Presence", value=f"`{state['message']}`", inline=False)
+            embed.add_field(name="Command Access", value="Only the bot owner can continue using commands.", inline=False)
+            brand_footer(embed, "Maintenance control")
+            await respond(interaction, embed, ephemeral=True)
+            return
+
+        state = save_maintenance_state(False, DEFAULT_MAINTENANCE_MESSAGE, updated_by=actor_label)
+        await self.refresh_presence_mode()
+        embed = make_embed(
+            "✅ Maintenance Disabled",
+            "NovaGuard is back to normal.\nStreaming rotation and public command access have been restored.",
+            color=Palette.SUCCESS,
+        )
+        embed.add_field(name="Presence", value="`Streaming rotation resumed`", inline=False)
+        brand_footer(embed, "Maintenance control")
+        await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="latest", description="The latest automatic bot changelog")
     async def latest(self, interaction: discord.Interaction):

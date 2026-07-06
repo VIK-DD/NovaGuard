@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import UTC, datetime
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -19,6 +20,7 @@ from discord.ext import commands
 from core.config import BOT_CODENAME, BOT_VERSION, GUILD_ID
 from core.error_digest import send_error_digest
 from core.github_api import github_api
+from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import truncate
 
@@ -49,6 +51,70 @@ logging.basicConfig(
 NETWORK_CHECK_PORT = 443
 NETWORK_CHECK_SECONDS = 10
 NETWORK_CHECK_HOSTS = ("discord.com", "gateway.discord.gg")
+RECONNECT_RETRY_SECONDS = 15
+
+
+class DiscordNoiseFilter(logging.Filter):
+    """Hide noisy discord.py reconnect/voice logs we already handle ourselves."""
+
+    SUPPRESSED_SNIPPETS = (
+        "PyNaCl is not installed, voice will NOT be supported",
+        "davey is not installed, voice will NOT be supported",
+        "Attempting a reconnect in ",
+    )
+
+    def filter(self, record):
+        message = record.getMessage()
+        return not any(snippet in message for snippet in self.SUPPRESSED_SNIPPETS)
+
+
+discord_client_logger = logging.getLogger("discord.client")
+discord_client_logger.addFilter(DiscordNoiseFilter())
+
+
+class NovaCommandTree(app_commands.CommandTree):
+    async def interaction_check(self, interaction: discord.Interaction, /):
+        command = interaction.command
+        if command is None:
+            return True
+
+        qualified_name = getattr(command, "qualified_name", command.name)
+        if qualified_name == "maintenance":
+            return True
+
+        maintenance_state = load_maintenance_state()
+        if not maintenance_state.get("enabled"):
+            return True
+
+        if await user_can_bypass_maintenance(interaction.client, interaction.user):
+            return True
+
+        interaction.extras["maintenance_blocked"] = True
+        embed = make_embed(
+            "🛠️ Maintenance Mode",
+            "NovaGuard is temporarily under maintenance.\nPlease try again in a little while.",
+            color=Palette.WARNING,
+        )
+        embed.add_field(
+            name="Current Status",
+            value=f"`{maintenance_state.get('message', 'Working Mode Active')}`",
+            inline=False,
+        )
+        embed.add_field(
+            name="Access",
+            value="Commands are temporarily limited while updates or fixes are being applied.",
+            inline=False,
+        )
+        brand_footer(embed, "Maintenance notice")
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except discord.HTTPException:
+            pass
+        return False
 
 
 class DevBot(commands.Bot):
@@ -60,6 +126,7 @@ class DevBot(commands.Bot):
             command_prefix=commands.when_mentioned,
             intents=intents,
             help_command=None,
+            tree_cls=NovaCommandTree,
         )
         self.launched_at = datetime.now(UTC)
         self.startup_update_announced = False
@@ -100,64 +167,100 @@ class DevBot(commands.Bot):
         await github_api.close()
         await super().close()
 
+def create_bot():
+    bot = DevBot()
 
-bot = DevBot()
+    @bot.tree.error
+    async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if interaction.extras.get("maintenance_blocked"):
+            return
 
+        original = getattr(error, "original", error)
+        if isinstance(original, discord.NotFound) and getattr(original, "code", None) == 10062:
+            print("Interaction expired before the bot could respond. This is usually network/Discord latency.")
+            return
 
-@bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    original = getattr(error, "original", error)
-    if isinstance(original, discord.NotFound) and getattr(original, "code", None) == 10062:
-        print("Interaction expired before the bot could respond. This is usually network/Discord latency.")
-        return
-
-    if isinstance(error, app_commands.CommandOnCooldown):
-        embed = make_embed("🧊 Slow down", f"Try again in `{error.retry_after:.1f}s`.", color=Palette.WARNING)
-    elif isinstance(error, app_commands.MissingPermissions):
-        missing = ", ".join(f"`{perm}`" for perm in error.missing_permissions)
-        embed = make_embed("🔒 Missing permissions", f"You need {missing} to use this.", color=Palette.DANGER)
-    elif isinstance(error, app_commands.BotMissingPermissions):
-        missing = ", ".join(f"`{perm}`" for perm in error.missing_permissions)
-        embed = make_embed("🤖 I need more power", f"Grant me {missing} first.", color=Palette.DANGER)
-    elif isinstance(error, app_commands.CheckFailure):
-        embed = make_embed("🔒 Not allowed", "You cannot use this command here.", color=Palette.DANGER)
-    else:
-        print(f"Command error: {original!r}")
-        bot.loop.create_task(send_error_digest(bot, "Slash Command Error", original, interaction=interaction))
-        embed = make_embed("💥 Something hiccuped", f"`{truncate(str(original), 180)}`", color=Palette.DANGER)
-    brand_footer(embed)
-
-    try:
-        if interaction.response.is_done():
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        if isinstance(error, app_commands.CommandOnCooldown):
+            embed = make_embed("🧊 Slow down", f"Try again in `{error.retry_after:.1f}s`.", color=Palette.WARNING)
+        elif isinstance(error, app_commands.MissingPermissions):
+            missing = ", ".join(f"`{perm}`" for perm in error.missing_permissions)
+            embed = make_embed("🔒 Missing permissions", f"You need {missing} to use this.", color=Palette.DANGER)
+        elif isinstance(error, app_commands.BotMissingPermissions):
+            missing = ", ".join(f"`{perm}`" for perm in error.missing_permissions)
+            embed = make_embed("🤖 I need more power", f"Grant me {missing} first.", color=Palette.DANGER)
+        elif isinstance(error, app_commands.CheckFailure):
+            embed = make_embed("🔒 Not allowed", "You cannot use this command here.", color=Palette.DANGER)
         else:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-    except discord.HTTPException:
-        pass
+            print(f"Command error: {original!r}")
+            current_bot = interaction.client
+            current_bot.loop.create_task(
+                send_error_digest(current_bot, "Slash Command Error", original, interaction=interaction)
+            )
+            embed = make_embed("💥 Something hiccuped", f"`{truncate(str(original), 180)}`", color=Palette.DANGER)
+        brand_footer(embed)
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except discord.HTTPException:
+            pass
+
+    @bot.event
+    async def on_error(event_method, *args, **kwargs):
+        error = sys.exc_info()[1]
+        if error is None:
+            return
+        print(f"Unhandled event error in {event_method}: {error!r}")
+        await send_error_digest(bot, "Unhandled Event Error", error, context=f"Event: `{event_method}`")
+
+    return bot
 
 
-@bot.event
-async def on_error(event_method, *args, **kwargs):
-    error = sys.exc_info()[1]
-    if error is None:
-        return
-    print(f"Unhandled event error in {event_method}: {error!r}")
-    await send_error_digest(bot, "Unhandled Event Error", error, context=f"Event: `{event_method}`")
+def is_transient_startup_error(error):
+    if isinstance(
+        error,
+        (
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            OSError,
+            discord.ConnectionClosed,
+            discord.GatewayNotFound,
+        ),
+    ):
+        return True
+    return isinstance(error, AttributeError) and "'NoneType' object has no attribute 'sequence'" in str(error)
 
 
 def main():
     token = os.getenv("TOKEN")
     if not token:
         raise ValueError("TOKEN nu este setat.")
-    wait_for_startup_network()
-    try:
-        bot.run(token, log_handler=None)
-    except discord.PrivilegedIntentsRequired:
-        raise SystemExit(
-            "\n[!] SERVER MEMBERS INTENT is not enabled.\n"
-            "    Fix: https://discord.com/developers/applications -> your app -> Bot ->\n"
-            "    Privileged Gateway Intents -> enable 'SERVER MEMBERS INTENT', then restart.\n"
-        )
+    attempt = 1
+    while True:
+        wait_for_startup_network()
+        bot = create_bot()
+        try:
+            bot.run(token, log_handler=None)
+            return
+        except discord.PrivilegedIntentsRequired:
+            raise SystemExit(
+                "\n[!] SERVER MEMBERS INTENT is not enabled.\n"
+                "    Fix: https://discord.com/developers/applications -> your app -> Bot ->\n"
+                "    Privileged Gateway Intents -> enable 'SERVER MEMBERS INTENT', then restart.\n"
+            )
+        except KeyboardInterrupt:
+            return
+        except Exception as error:
+            if not is_transient_startup_error(error):
+                raise
+            print(
+                f"Bot connection failed temporarily ({error!r}). "
+                f"Retrying in {RECONNECT_RETRY_SECONDS}s... attempt {attempt}"
+            )
+            attempt += 1
+            time.sleep(RECONNECT_RETRY_SECONDS)
 
 
 def wait_for_startup_network():
