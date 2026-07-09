@@ -21,6 +21,7 @@ Important values that should stay in `.env`:
 - `UPTIME_URL`: optional link shown inside the developer dashboard
 - `BOT_BRAND`: footer branding for embeds
 - `STREAM_STATUSES`: rotating streaming texts separated by `|`
+- `STREAM_STATUS_INTERVAL_SECONDS`: how often the streaming status rotates, in seconds (`15` recommended)
 
 Channel setup is now easiest from Discord:
 

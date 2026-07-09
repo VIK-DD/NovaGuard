@@ -25,6 +25,7 @@ from core.config import (
     STREAM_URL,
     UPDATE_STATE_FILE,
     github_config,
+    stream_status_interval_seconds,
     stream_statuses,
 )
 from core.database import DB_PATH
@@ -514,7 +515,7 @@ class System(commands.Cog):
     async def before_backup_loop(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=stream_status_interval_seconds)
     async def rotate_stream_status(self):
         if self.maintenance_state().get("enabled"):
             return
@@ -798,7 +799,7 @@ class System(commands.Cog):
             warn_line("Maintenance mode", self.maintenance_state().get("message"))
             if self.maintenance_state().get("enabled")
             else ok_line("Maintenance mode", "inactive"),
-            ok_line("Streaming status", "rotating every 30s")
+            ok_line("Streaming status", f"rotating every {stream_status_interval_seconds}s")
             if self.rotate_stream_status.is_running() and not self.maintenance_state().get("enabled")
             else info_line("Streaming status", "paused while maintenance is active")
             if self.maintenance_state().get("enabled")

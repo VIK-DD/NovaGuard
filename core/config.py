@@ -18,6 +18,7 @@ DEFAULT_STREAM_STATUSES = [
     "/help • the slash era",
     "Shipping updates automatically",
 ]
+DEFAULT_STREAM_STATUS_INTERVAL_SECONDS = 15
 
 
 def load_dotenv_if_present():
@@ -60,6 +61,13 @@ def parse_stream_statuses():
     return list(DEFAULT_STREAM_STATUSES)
 
 
+def parse_stream_status_interval():
+    value = env_int("STREAM_STATUS_INTERVAL_SECONDS", DEFAULT_STREAM_STATUS_INTERVAL_SECONDS)
+    if value is None:
+        return DEFAULT_STREAM_STATUS_INTERVAL_SECONDS
+    return max(10, value)
+
+
 @dataclass
 class GitHubConfig:
     username: str | None
@@ -95,3 +103,4 @@ GUILD_ID = env_int("GUILD_ID")
 ERROR_LOG_CHANNEL_ID = env_int("ERROR_LOG_CHANNEL_ID")
 
 stream_statuses = parse_stream_statuses()
+stream_status_interval_seconds = parse_stream_status_interval()
