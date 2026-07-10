@@ -51,6 +51,25 @@ class GitHubAPI:
         except (asyncio.TimeoutError, aiohttp.ClientError) as error:
             raise RuntimeError(f"GitHub API temporary network issue: {error}") from error
 
+    async def get_json_with_headers(self, path, params=None):
+        await self.ensure_session()
+        url = f"{self.base_url}{path}"
+
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 404:
+                    return None, response.headers
+                if response.status >= 400:
+                    remaining = response.headers.get("X-RateLimit-Remaining")
+                    if response.status == 403 and remaining == "0":
+                        raise RuntimeError(
+                            "GitHub API rate limit reached. Add GITHUB_TOKEN or increase GITHUB_POLL_SECONDS."
+                        )
+                    raise RuntimeError(f"GitHub API error {response.status}: {await response.text()}")
+                return await response.json(), response.headers
+        except (asyncio.TimeoutError, aiohttp.ClientError) as error:
+            raise RuntimeError(f"GitHub API temporary network issue: {error}") from error
+
     async def fetch_user(self, username):
         return await self.get_json(f"/users/{username}")
 
@@ -105,19 +124,47 @@ class GitHubAPI:
     async def fetch_latest_release(self, full_name):
         return await self.get_json(f"/repos/{full_name}/releases/latest")
 
+    async def count_open_pull_requests(self, full_name):
+        total = 0
+        page = 1
+
+        while True:
+            batch = await self.get_json(
+                f"/repos/{full_name}/pulls",
+                params={"state": "open", "per_page": 100, "page": page},
+            )
+            if not batch:
+                break
+            total += len(batch)
+            if len(batch) < 100 or page >= 10:
+                break
+            page += 1
+
+        return total
+
+    async def count_open_issues(self, full_name):
+        total = 0
+        page = 1
+
+        while True:
+            batch = await self.get_json(
+                f"/repos/{full_name}/issues",
+                params={"state": "open", "per_page": 100, "page": page},
+            )
+            if not batch:
+                break
+            total += sum(1 for item in batch if "pull_request" not in item)
+            if len(batch) < 100 or page >= 10:
+                break
+            page += 1
+
+        return total
+
     async def search_open_pull_requests(self, full_name):
-        data = await self.get_json(
-            "/search/issues",
-            params={"q": f"repo:{full_name} is:pr is:open"},
-        )
-        return 0 if not data else data.get("total_count", 0)
+        return await self.count_open_pull_requests(full_name)
 
     async def search_open_issues(self, full_name):
-        data = await self.get_json(
-            "/search/issues",
-            params={"q": f"repo:{full_name} is:issue is:open"},
-        )
-        return 0 if not data else data.get("total_count", 0)
+        return await self.count_open_issues(full_name)
 
 
 github_api = GitHubAPI(github_config.token)
