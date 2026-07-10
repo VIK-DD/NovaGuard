@@ -57,6 +57,29 @@ def repo_to_urls(full_name):
     }
 
 
+def push_commit_message(commit):
+    message = (
+        commit.get("message")
+        or commit.get("commit", {}).get("message", "")
+    )
+    return truncate(first_line(message), 70)
+
+
+def push_commit_sha(commit):
+    return (commit.get("sha") or "")[:7] or "unknown"
+
+
+def summarize_changed_files(files):
+    if not files:
+        return "No file details available."
+    top_files = [f"`{item.get('filename', 'unknown')}`" for item in files[:3]]
+    remaining = len(files) - len(top_files)
+    summary = ", ".join(top_files)
+    if remaining > 0:
+        summary += f" +{remaining} more"
+    return summary
+
+
 def build_languages_text(languages):
     if not languages:
         return "No language data yet."
@@ -417,16 +440,29 @@ async def build_watcher_embed(repo_name, event):
         base_sha = payload.get("before")
         head_sha = payload.get("head")
         commits = []
+        changed_files = []
+        payload_commits = payload.get("commits") or []
         if base_sha and head_sha and set(base_sha) != {"0"}:
             comparison = await github_api.fetch_compare(repo_name, base_sha, head_sha)
             if comparison:
                 commits = comparison.get("commits", [])
+                changed_files = comparison.get("files", [])
+
+        if not commits and payload_commits:
+            commits = payload_commits
+
+        if not commits:
+            fallback_count = min(max(payload.get("size", 1), 1), 5)
+            commits = await github_api.fetch_repo_commits(
+                repo_name,
+                per_page=fallback_count,
+                sha=payload.get("ref", "refs/heads/main").split("/")[-1],
+            ) or []
 
         branch_name = payload.get("ref", "refs/heads/main").split("/")[-1]
         commit_lines = []
         for commit in commits[-3:]:
-            message = truncate(first_line(commit.get("commit", {}).get("message", "")), 70)
-            commit_lines.append(f"`{commit.get('sha', '')[:7]}` {message}")
+            commit_lines.append(f"`{push_commit_sha(commit)}` {push_commit_message(commit)}")
         commit_lines.reverse()
         if len(commits) > 3:
             commit_lines.append(f"...and {len(commits) - 3} more commit(s)")
@@ -439,6 +475,7 @@ async def build_watcher_embed(repo_name, event):
             timestamp=timestamp,
         )
         embed.add_field(name="Commits", value="\n".join(commit_lines) or "No commit details.", inline=False)
+        embed.add_field(name="Files Changed", value=summarize_changed_files(changed_files), inline=False)
         embed.add_field(name="Branch", value=f"`{branch_name}`", inline=True)
         embed.add_field(name="Pushed By", value=f"[{actor_name}]({actor_url})" if actor_url else actor_name, inline=True)
         embed.set_footer(text="GitHub watcher • Push event")

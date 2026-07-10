@@ -100,8 +100,11 @@ class GitHubAPI:
     async def fetch_repo_events(self, full_name, per_page=10):
         return await self.get_json(f"/repos/{full_name}/events", params={"per_page": per_page})
 
-    async def fetch_repo_commits(self, full_name, per_page=8):
-        return await self.get_json(f"/repos/{full_name}/commits", params={"per_page": per_page})
+    async def fetch_repo_commits(self, full_name, per_page=8, sha=None):
+        params = {"per_page": per_page}
+        if sha:
+            params["sha"] = sha
+        return await self.get_json(f"/repos/{full_name}/commits", params=params)
 
     async def fetch_commit_detail(self, full_name, sha):
         return await self.get_json(f"/repos/{full_name}/commits/{sha}")
