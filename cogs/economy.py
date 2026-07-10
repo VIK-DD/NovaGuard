@@ -246,7 +246,8 @@ class Economy(commands.Cog):
             net = amount * multiplier - amount
             title, color = f"🎰 JACKPOT x{multiplier}!", Palette.GOLD
         elif reels[0] == reels[1] or reels[1] == reels[2] or reels[0] == reels[2]:
-            net = amount
+            # 1.5x payout keeps the long-run house edge at ~4% (a 2x pair made slots player-positive)
+            net = amount // 2
             title, color = "🎰 Two of a kind!", Palette.SUCCESS
         else:
             net = -amount

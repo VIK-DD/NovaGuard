@@ -197,8 +197,18 @@ class AutoMod(commands.Cog):
         brand_footer(embed, "AutoMod")
         await respond(interaction, embed, ephemeral=True)
 
+    async def badword_autocomplete(self, interaction: discord.Interaction, current: str):
+        config = get_automod_config(interaction.guild_id)
+        current = current.lower()
+        return [
+            app_commands.Choice(name=word, value=word)
+            for word in config["badwords"]
+            if current in word
+        ][:25]
+
     @badword.command(name="remove", description="Remove a word from the blocked list")
-    @app_commands.describe(word="The word to unblock")
+    @app_commands.describe(word="Pick the word to unblock")
+    @app_commands.autocomplete(word=badword_autocomplete)
     async def badword_remove(self, interaction: discord.Interaction, word: str):
         word = word.strip().lower()
         config = get_automod_config(interaction.guild_id)

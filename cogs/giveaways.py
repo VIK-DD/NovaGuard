@@ -213,8 +213,33 @@ class Giveaways(commands.Cog):
         entries.append(entry)
         await save_giveaways_async(entries)
 
+    async def _giveaway_choices(self, interaction, current, ended):
+        entries = await load_giveaways_async()
+        current = (current or "").lower()
+        choices = []
+        for entry in reversed(entries):
+            if entry.get("guild_id") != interaction.guild_id:
+                continue
+            if bool(entry.get("ended")) is not ended:
+                continue
+            label = f"🎁 {entry['prize']} • {len(entry.get('entrants', []))} entries"
+            value = str(entry["message_id"])
+            if current and current not in label.lower() and current not in value:
+                continue
+            choices.append(app_commands.Choice(name=label[:100], value=value))
+            if len(choices) == 25:
+                break
+        return choices
+
+    async def active_giveaway_autocomplete(self, interaction: discord.Interaction, current: str):
+        return await self._giveaway_choices(interaction, current, ended=False)
+
+    async def ended_giveaway_autocomplete(self, interaction: discord.Interaction, current: str):
+        return await self._giveaway_choices(interaction, current, ended=True)
+
     @giveaway.command(name="end", description="End a giveaway right now")
-    @app_commands.describe(message_id="The giveaway message ID")
+    @app_commands.describe(message_id="Pick the giveaway to end")
+    @app_commands.autocomplete(message_id=active_giveaway_autocomplete)
     async def giveaway_end(self, interaction: discord.Interaction, message_id: str):
         entries = await load_giveaways_async()
         entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
@@ -230,7 +255,8 @@ class Giveaways(commands.Cog):
         await respond(interaction, embed, ephemeral=True)
 
     @giveaway.command(name="reroll", description="Pick new winner(s) for an ended giveaway")
-    @app_commands.describe(message_id="The giveaway message ID")
+    @app_commands.describe(message_id="Pick the ended giveaway")
+    @app_commands.autocomplete(message_id=ended_giveaway_autocomplete)
     async def giveaway_reroll(self, interaction: discord.Interaction, message_id: str):
         entries = await load_giveaways_async()
         entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)

@@ -63,9 +63,13 @@ def build_languages_text(languages):
 
     total = sum(languages.values()) or 1
     top_languages = sorted(languages.items(), key=lambda item: item[1], reverse=True)[:4]
-    return "\n".join(
-        f"`{name}` {round((size / total) * 100)}%" for name, size in top_languages
-    )
+    lines = []
+    for name, size in top_languages:
+        percent = round((size / total) * 100)
+        filled = max(round(percent / 10), 1)
+        bar = "▰" * filled + "▱" * (10 - filled)
+        lines.append(f"{bar} `{percent:>3}%` {name}")
+    return "\n".join(lines)
 
 
 def detect_top_language(repos):
@@ -135,13 +139,13 @@ def compute_health_score(commits_last_week, open_prs, branch_data, workflow_run,
 
     score = max(score, 10)
     if score >= 90:
-        label = "Excellent"
+        label = "🌟 Excellent"
     elif score >= 75:
-        label = "Strong"
+        label = "💪 Strong"
     elif score >= 60:
-        label = "Stable"
+        label = "🛡️ Stable"
     else:
-        label = "Needs Attention"
+        label = "🚨 Needs Attention"
     return score, label
 
 
@@ -168,14 +172,14 @@ def build_profile_embed(user, repos):
     primary_repo = choose_primary_repo()
 
     embed = discord.Embed(
-        title=f"{user['login']} GitHub Profile",
+        title=f"👤 {user['login']} — GitHub Profile",
         description=truncate(user.get("bio") or "Building cool things, one repo at a time.", 180),
         color=pick_embed_color(top_language),
         url=user.get("html_url"),
     )
     embed.set_thumbnail(url=user.get("avatar_url"))
     embed.add_field(
-        name="Profile Stats",
+        name="📊 Profile Stats",
         value=(
             f"Repos: `{humanize_number(user.get('public_repos', 0))}`\n"
             f"Followers: `{humanize_number(user.get('followers', 0))}`\n"
@@ -184,7 +188,7 @@ def build_profile_embed(user, repos):
         inline=True,
     )
     embed.add_field(
-        name="Highlights",
+        name="✨ Highlights",
         value=(
             f"Total stars: `{humanize_number(total_stars)}`\n"
             f"Top repo: `{top_repo['name'] if top_repo else 'N/A'}`\n"
@@ -193,7 +197,7 @@ def build_profile_embed(user, repos):
         inline=True,
     )
     embed.add_field(
-        name="Recent Activity",
+        name="🕒 Recent Activity",
         value=(
             f"Latest push: {format_github_time(latest_repo.get('pushed_at') if latest_repo else None)}\n"
             f"Focus repo: `{primary_repo or 'Set GITHUB_PRIMARY_REPO'}`\n"
@@ -221,13 +225,13 @@ def build_repo_embed(repo, languages, open_prs, open_issues, workflow_run, relea
         description_parts.append("Topics: " + ", ".join(f"`{topic}`" for topic in repo["topics"][:4]))
 
     embed = discord.Embed(
-        title=f"{repo['full_name']} Live Status",
+        title=f"📦 {repo['full_name']} — Live Status",
         description="\n".join(description_parts),
         color=pick_embed_color(language_name),
         url=repo.get("html_url"),
     )
     embed.add_field(
-        name="Repository Stats",
+        name="⭐ Repository Stats",
         value=(
             f"Stars: `{humanize_number(repo.get('stargazers_count', 0))}`\n"
             f"Forks: `{humanize_number(repo.get('forks_count', 0))}`\n"
@@ -236,7 +240,7 @@ def build_repo_embed(repo, languages, open_prs, open_issues, workflow_run, relea
         inline=True,
     )
     embed.add_field(
-        name="Current Status",
+        name="🚦 Current Status",
         value=(
             f"Branch: `{repo.get('default_branch', 'main')}`\n"
             f"Open PRs: `{humanize_number(open_prs)}`\n"
@@ -245,7 +249,7 @@ def build_repo_embed(repo, languages, open_prs, open_issues, workflow_run, relea
         inline=True,
     )
     embed.add_field(
-        name="Code Snapshot",
+        name="📸 Code Snapshot",
         value=(
             f"Primary language: `{language_name or 'Unknown'}`\n"
             f"Pushed: {format_github_time(repo.get('pushed_at'))}\n"
@@ -253,9 +257,9 @@ def build_repo_embed(repo, languages, open_prs, open_issues, workflow_run, relea
         ),
         inline=False,
     )
-    embed.add_field(name="Language Breakdown", value=build_languages_text(languages), inline=True)
+    embed.add_field(name="🧬 Languages", value=build_languages_text(languages), inline=True)
     embed.add_field(
-        name="Automation",
+        name="⚙️ Automation",
         value=(
             f"CI: `{workflow_status_text(workflow_run)}`\n"
             f"Release: `{release.get('tag_name', 'None') if release else 'None'}`\n"
@@ -288,13 +292,13 @@ def build_dashboard_embed(user, repos, repo, commits, workflow_run, release, ope
     )
 
     embed = discord.Embed(
-        title="Developer Dashboard",
+        title="🚀 Developer Dashboard",
         description=f"A live GitHub snapshot for `{user['login']}` and `{repo['full_name']}`.",
         color=pick_embed_color(top_language),
     )
     embed.set_thumbnail(url=user.get("avatar_url"))
     embed.add_field(
-        name="Profile Pulse",
+        name="💓 Profile Pulse",
         value=(
             f"Followers: `{humanize_number(user.get('followers', 0))}`\n"
             f"Public repos: `{humanize_number(user.get('public_repos', 0))}`\n"
@@ -303,7 +307,7 @@ def build_dashboard_embed(user, repos, repo, commits, workflow_run, release, ope
         inline=True,
     )
     embed.add_field(
-        name="Repo Heartbeat",
+        name="📈 Repo Heartbeat",
         value=(
             f"Open PRs: `{humanize_number(open_prs)}`\n"
             f"Open Issues: `{humanize_number(open_issues)}`\n"
@@ -312,7 +316,7 @@ def build_dashboard_embed(user, repos, repo, commits, workflow_run, release, ope
         inline=True,
     )
     embed.add_field(
-        name="Release + CI",
+        name="🏗️ Release + CI",
         value=(
             f"{workflow_status_text(workflow_run)}\n"
             f"{release_status_text(release)}"
@@ -320,7 +324,7 @@ def build_dashboard_embed(user, repos, repo, commits, workflow_run, release, ope
         inline=False,
     )
     embed.add_field(
-        name="Latest Commit",
+        name="📝 Latest Commit",
         value=(
             f"`{latest_commit['sha'][:7]}` {latest_message}\n"
             f"Committed {format_github_time(latest_commit['commit']['author']['date'])}"
@@ -330,7 +334,7 @@ def build_dashboard_embed(user, repos, repo, commits, workflow_run, release, ope
         inline=False,
     )
     if github_config.uptime_url:
-        embed.add_field(name="Ops Link", value=f"[Uptime Dashboard]({github_config.uptime_url})", inline=False)
+        embed.add_field(name="🛰️ Ops Link", value=f"[Uptime Dashboard]({github_config.uptime_url})", inline=False)
     embed.set_footer(text=f"{github_config.brand_name} • Developer dashboard")
 
     repo_urls = repo_to_urls(repo["full_name"])
@@ -354,13 +358,15 @@ def build_health_embed(repo, commits, workflow_run, release, branch_data, open_p
     )
     score, label = compute_health_score(commits_last_week, open_prs, branch_data, workflow_run, release)
 
+    score_blocks = round(score / 10)
+    score_bar = "🟩" * score_blocks + "⬛" * (10 - score_blocks)
     embed = discord.Embed(
-        title=f"{repo['full_name']} Project Health",
-        description=f"Health score: `{score}/100` • {label}",
+        title=f"🩺 {repo['full_name']} — Project Health",
+        description=f"{score_bar}\n# {score}/100 • {label}",
         color=pick_embed_color(repo.get("language"), Palette.SUCCESS if score >= 75 else Palette.ORANGE),
     )
     embed.add_field(
-        name="Delivery Pulse",
+        name="🚚 Delivery Pulse",
         value=(
             f"7-day commits: `{humanize_number(commits_last_week)}`\n"
             f"Open PRs: `{humanize_number(open_prs)}`\n"
@@ -369,12 +375,12 @@ def build_health_embed(repo, commits, workflow_run, release, branch_data, open_p
         inline=True,
     )
     embed.add_field(
-        name="Work Mix",
+        name="🧩 Work Mix",
         value=summarize_recent_work(commits[:8]),
         inline=True,
     )
     embed.add_field(
-        name="Pipeline",
+        name="🛠️ Pipeline",
         value=(
             f"CI: `{workflow_status_text(workflow_run)}`\n"
             f"Branch protection: `{('On' if branch_data and branch_data.get('protected') else 'Off')}`\n"
@@ -382,7 +388,7 @@ def build_health_embed(repo, commits, workflow_run, release, branch_data, open_p
         ),
         inline=False,
     )
-    embed.add_field(name="Hot Files", value=hot_files_text, inline=False)
+    embed.add_field(name="🔥 Hot Files", value=hot_files_text, inline=False)
     embed.set_footer(text=f"{github_config.brand_name} • Project health report")
 
     repo_urls = repo_to_urls(repo["full_name"])
@@ -418,7 +424,7 @@ def build_watcher_embed(repo_name, event):
         compare_url = payload.get("compare")
         head_sha = payload.get("head")
         embed = discord.Embed(
-            title=f"Push update in {repo_name}",
+            title=f"📤 Push update in {repo_name}",
             description=f"{actor_name} pushed to `{branch_name}`.",
             color=discord.Color.green(),
             timestamp=timestamp,
@@ -443,7 +449,7 @@ def build_watcher_embed(repo_name, event):
         state = "Merged" if merged else pull_request.get("state", "open").title()
 
         embed = discord.Embed(
-            title=f"Pull request {action} in {repo_name}",
+            title=f"🔀 Pull request {action} in {repo_name}",
             description=truncate(pull_request.get("title") or "No pull request title.", 140),
             color=discord.Color(color),
             timestamp=timestamp,
@@ -484,7 +490,7 @@ def build_watcher_embed(repo_name, event):
         issue = payload.get("issue", {})
         action = payload.get("action", "updated").replace("_", " ")
         embed = discord.Embed(
-            title=f"Issue {action} in {repo_name}",
+            title=f"🐛 Issue {action} in {repo_name}",
             description=truncate(issue.get("title") or "No issue title.", 140),
             color=discord.Color.orange(),
             timestamp=timestamp,
@@ -518,7 +524,7 @@ def build_watcher_embed(repo_name, event):
         release = payload.get("release", {})
         action = payload.get("action", "published").replace("_", " ")
         embed = discord.Embed(
-            title=f"Release {action} in {repo_name}",
+            title=f"🏷️ Release {action} in {repo_name}",
             description=truncate(release.get("body") or release.get("name") or "A new release is now live.", 220),
             color=discord.Color.gold(),
             timestamp=timestamp,
