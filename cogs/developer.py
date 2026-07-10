@@ -402,7 +402,7 @@ def build_health_embed(repo, commits, workflow_run, release, branch_data, open_p
     )
 
 
-def build_watcher_embed(repo_name, event):
+async def build_watcher_embed(repo_name, event):
     event_type = event.get("type")
     payload = event.get("payload", {})
     actor = event.get("actor", {})
@@ -412,17 +412,26 @@ def build_watcher_embed(repo_name, event):
     timestamp = parse_github_datetime(event.get("created_at")) or datetime.now(UTC)
 
     if event_type == "PushEvent":
-        commits = payload.get("commits", [])
+        # The public Events API push payload only carries before/head SHAs —
+        # fetch the actual commit list via compare instead of payload["commits"].
+        base_sha = payload.get("before")
+        head_sha = payload.get("head")
+        commits = []
+        if base_sha and head_sha and set(base_sha) != {"0"}:
+            comparison = await github_api.fetch_compare(repo_name, base_sha, head_sha)
+            if comparison:
+                commits = comparison.get("commits", [])
+
         branch_name = payload.get("ref", "refs/heads/main").split("/")[-1]
         commit_lines = []
-        for commit in commits[:3]:
-            message = truncate(first_line(commit.get("message", "")), 70)
+        for commit in commits[-3:]:
+            message = truncate(first_line(commit.get("commit", {}).get("message", "")), 70)
             commit_lines.append(f"`{commit.get('sha', '')[:7]}` {message}")
+        commit_lines.reverse()
         if len(commits) > 3:
             commit_lines.append(f"...and {len(commits) - 3} more commit(s)")
 
-        compare_url = payload.get("compare")
-        head_sha = payload.get("head")
+        compare_url = f"{repo_urls['repo']}/compare/{base_sha}...{head_sha}" if base_sha and head_sha else None
         embed = discord.Embed(
             title=f"📤 Push update in {repo_name}",
             description=f"{actor_name} pushed to `{branch_name}`.",
@@ -618,7 +627,7 @@ class Developer(commands.Cog):
                 continue
 
             for event in reversed(new_events):
-                embed, view = build_watcher_embed(repo_name, event)
+                embed, view = await build_watcher_embed(repo_name, event)
                 if embed is not None:
                     for channel in channels:
                         await safe_send_embed(channel, embed, view)

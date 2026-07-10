@@ -87,6 +87,11 @@ class GitHubAPI:
     async def fetch_commit_detail(self, full_name, sha):
         return await self.get_json(f"/repos/{full_name}/commits/{sha}")
 
+    async def fetch_compare(self, full_name, base_sha, head_sha):
+        """GitHub's public Events API push payloads no longer include a
+        `commits` array (just `before`/`head` SHAs) — use compare to recover them."""
+        return await self.get_json(f"/repos/{full_name}/compare/{base_sha}...{head_sha}")
+
     async def fetch_latest_workflow_run(self, full_name):
         data = await self.get_json(f"/repos/{full_name}/actions/runs", params={"per_page": 1})
         if not data:
