@@ -10,17 +10,23 @@ Security model
 - Sessions live in SQLite (data/novaguard.sqlite3) and survive restarts.
   The cookie holds a random 256-bit id; the database stores only its SHA-256
   hash, so a leaked database cannot be replayed as a login.
-- OAuth access tokens are refreshed automatically and revoked on logout.
-- Per-IP sliding-window rate limits (separate buckets for auth / read / write).
+- OAuth access/refresh tokens are encrypted at rest (Fernet, key derived from
+  the client secret) when `cryptography` is available, and are refreshed
+  automatically and revoked on logout.
+- The OAuth `state` is a self-verifying HMAC token (double-submit cookie), so
+  the login flow survives a bot restart without any server-side memory.
+- Per-IP sliding-window rate limits (separate buckets for auth / read / write),
+  keyed off the real client IP (CF-Connecting-IP behind a trusted proxy).
 - Every dashboard change is written to a SQL audit trail (who, what, when, ip)
   and mirrored to the guild's log channel.
 - Hardening: strict CORS allow-list, security headers, 64 KB body cap,
-  HttpOnly/SameSite cookies, constant-time state comparison.
+  HttpOnly/SameSite cookies, constant-time comparisons.
 
 Enable with WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET.
 """
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -39,6 +45,12 @@ from .config import BOT_CODENAME, BOT_VERSION
 from .database import connect
 from .storage import get_guild_settings, update_guild_settings
 
+try:  # at-rest token encryption is optional — degrade gracefully if unavailable
+    from cryptography.fernet import Fernet, InvalidToken
+except ImportError:  # pragma: no cover - exercised only on minimal installs
+    Fernet = None
+    InvalidToken = Exception
+
 # ── configuration ────────────────────────────────────────────────────
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -47,7 +59,13 @@ WEB_PORT = int(os.getenv("WEB_PORT", "8300") or 8300)
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
 OAUTH_REDIRECT = os.getenv("WEB_OAUTH_REDIRECT", f"http://localhost:{WEB_PORT}/api/auth/callback")
-CORS_ORIGIN = os.getenv("WEB_CORS_ORIGIN", "").strip().rstrip("/")
+# Comma-separated allow-list of browser origins. Empty ⇒ no cross-origin access
+# is granted at all (same-origin only) — never a wildcard reflection.
+CORS_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in os.getenv("WEB_CORS_ORIGIN", "").split(",")
+    if origin.strip()
+}
 AFTER_LOGIN = os.getenv("WEB_AFTER_LOGIN", "/api/me")
 COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes", "on"}
 TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -57,11 +75,13 @@ DISCORD_API = "https://discord.com/api/v10"
 SESSION_COOKIE = "ng_session"
 STATE_COOKIE = "ng_state"
 SESSION_TTL = 7 * 24 * 3600
+STATE_TTL = 600
 GUILDS_CACHE_SECONDS = 120
 MAX_SESSIONS_PER_USER = 5
 AUDIT_KEEP_DAYS = 90
 MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
+TOKEN_PREFIX = "enc:"  # marks an encrypted token column so legacy rows still load
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
@@ -83,6 +103,42 @@ MAX_BADWORDS = 100
 MAX_BADWORD_LENGTH = 40
 
 _DB_LOCK = threading.Lock()
+
+# HMAC key for signing OAuth state tokens. Reuses the client secret so it needs
+# no extra configuration; a per-process random fallback keeps things sane when
+# OAuth is not configured (login is disabled in that case anyway).
+_STATE_SECRET = (CLIENT_SECRET or secrets.token_urlsafe(32)).encode("utf-8")
+
+
+def _build_cipher():
+    """Derive a Fernet cipher from the client secret, or None if we can't."""
+    if Fernet is None:
+        return None
+    secret = CLIENT_SECRET or os.getenv("WEB_TOKEN_KEY", "").strip()
+    if not secret:
+        return None
+    key = base64.urlsafe_b64encode(hashlib.sha256(("novaguard-token::" + secret).encode()).digest())
+    return Fernet(key)
+
+
+_CIPHER = _build_cipher()
+
+
+def _encrypt_token(value):
+    if value is None or _CIPHER is None:
+        return value
+    return TOKEN_PREFIX + _CIPHER.encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_token(value):
+    if not isinstance(value, str) or not value.startswith(TOKEN_PREFIX):
+        return value  # legacy plaintext (or None) — return unchanged
+    if _CIPHER is None:
+        return None  # encrypted but we lost the key ⇒ treat as unusable
+    try:
+        return _CIPHER.decrypt(value[len(TOKEN_PREFIX):].encode("ascii")).decode("utf-8")
+    except InvalidToken:
+        return None
 
 
 # ── SQL layer (runs in threads via asyncio.to_thread) ────────────────
@@ -141,8 +197,8 @@ def db_save_session(sid, entry):
                 _hash_sid(sid),
                 entry["user"]["id"],
                 json.dumps(entry["user"]),
-                entry["access_token"],
-                entry.get("refresh_token"),
+                _encrypt_token(entry["access_token"]),
+                _encrypt_token(entry.get("refresh_token")),
                 entry.get("token_expires_at", 0),
                 json.dumps(entry.get("guilds", {})),
                 entry.get("guilds_fetched_at", 0),
@@ -172,8 +228,8 @@ def db_load_session(sid):
         return None
     entry = {
         "user": json.loads(row["user_json"]),
-        "access_token": row["access_token"],
-        "refresh_token": row["refresh_token"],
+        "access_token": _decrypt_token(row["access_token"]),
+        "refresh_token": _decrypt_token(row["refresh_token"]),
         "token_expires_at": row["token_expires_at"],
         "guilds": json.loads(row["guilds_json"]),
         "guilds_fetched_at": row["guilds_fetched_at"],
@@ -201,8 +257,8 @@ def db_touch_session(sid, entry):
             WHERE sid_hash = ?
             """,
             (
-                entry["access_token"],
-                entry.get("refresh_token"),
+                _encrypt_token(entry["access_token"]),
+                _encrypt_token(entry.get("refresh_token")),
                 entry.get("token_expires_at", 0),
                 json.dumps(entry.get("guilds", {})),
                 entry.get("guilds_fetched_at", 0),
@@ -281,8 +337,10 @@ class WebServer:
         self.bot = bot
         self.runner = None
         self.http: aiohttp.ClientSession | None = None
-        self.pending_states: dict[str, float] = {}
         self.rate_buckets: dict[tuple, deque] = {}
+        # per-session locks serialise token refresh so parallel dashboard
+        # requests can't race the single-use refresh token and log the user out
+        self._session_locks: dict[str, asyncio.Lock] = {}
         self._last_gc = 0.0
 
     @property
@@ -316,7 +374,11 @@ class WebServer:
         site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT)
         await site.start()
         oauth_note = "OAuth ready" if self.oauth_ready else "OAuth NOT configured (login disabled)"
-        print(f"Web API listening on {WEB_HOST}:{WEB_PORT} • {oauth_note} • sessions in SQLite")
+        crypto_note = "tokens encrypted" if _CIPHER else "tokens plaintext (install cryptography)"
+        print(
+            f"Web API listening on {WEB_HOST}:{WEB_PORT} • {oauth_note} • "
+            f"sessions in SQLite • {crypto_note}"
+        )
 
     async def stop(self):
         if self.runner:
@@ -330,11 +392,15 @@ class WebServer:
 
     def _client_ip(self, request):
         if TRUST_PROXY:
+            # CF-Connecting-IP is set by Cloudflare and cannot be spoofed by the
+            # client through the tunnel; fall back to the first X-Forwarded-For hop.
+            cf_ip = request.headers.get("CF-Connecting-IP", "").strip()
+            if cf_ip:
+                return cf_ip
             forwarded = request.headers.get("X-Forwarded-For", "")
             if forwarded:
                 return forwarded.split(",")[0].strip()
-        peer = request.remote or "?"
-        return peer
+        return request.remote or "?"
 
     def _rate_limit(self, request, scope):
         limit, window = RATE_LIMITS[scope]
@@ -352,6 +418,13 @@ class WebServer:
             for k in [k for k, b in self.rate_buckets.items() if not b or now - b[-1] > 600]:
                 self.rate_buckets.pop(k, None)
 
+    def _allowed_origin(self, request):
+        """Return the request Origin only if it is on the configured allow-list."""
+        origin = request.headers.get("Origin", "")
+        if origin and origin.rstrip("/") in CORS_ORIGINS:
+            return origin
+        return None
+
     def _security_headers(self, request):
         headers = {
             "X-Content-Type-Options": "nosniff",
@@ -359,14 +432,15 @@ class WebServer:
             "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",
         }
-        origin = request.headers.get("Origin", "")
-        if origin and (not CORS_ORIGIN or origin.rstrip("/") == CORS_ORIGIN):
+        origin = self._allowed_origin(request)
+        if origin:
             headers.update(
                 {
                     "Access-Control-Allow-Origin": origin,
                     "Access-Control-Allow-Credentials": "true",
                     "Access-Control-Allow-Headers": "Content-Type",
                     "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+                    "Access-Control-Max-Age": "600",
                     "Vary": "Origin",
                 }
             )
@@ -388,7 +462,30 @@ class WebServer:
     async def _gc_maybe(self):
         if time.time() - self._last_gc > 3600:
             self._last_gc = time.time()
+            # drop idle refresh locks (a held lock means a refresh is in flight)
+            self._session_locks = {s: lock for s, lock in self._session_locks.items() if lock.locked()}
             await asyncio.to_thread(db_gc)
+
+    # ── OAuth state (stateless, HMAC-signed) ─────────────────────────
+
+    def _make_state(self):
+        raw = f"{secrets.token_urlsafe(16)}.{int(time.time())}"
+        sig = hmac.new(_STATE_SECRET, raw.encode("utf-8"), hashlib.sha256).hexdigest()
+        return f"{raw}.{sig}"
+
+    def _valid_state(self, token):
+        parts = (token or "").split(".")
+        if len(parts) != 3:
+            return False
+        nonce, ts, sig = parts
+        expected = hmac.new(_STATE_SECRET, f"{nonce}.{ts}".encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        try:
+            issued = int(ts)
+        except ValueError:
+            return False
+        return 0 <= (time.time() - issued) < STATE_TTL
 
     # ── session handling ─────────────────────────────────────────────
 
@@ -431,22 +528,37 @@ class WebServer:
             return await response.json()
 
     async def _ensure_fresh_token(self, sid, entry):
-        """Refresh the OAuth token ~before it expires; kill the session if we can't."""
+        """Refresh the OAuth token ~before it expires; kill the session if we can't.
+
+        Serialised per session so parallel requests don't each spend the
+        single-use refresh token (the second spend would fail and log the user
+        out). The winner writes the new token to the DB; late waiters reload it.
+        """
         if entry.get("token_expires_at", 0) - time.time() > 60:
             return
-        refresh_token = entry.get("refresh_token")
-        token_data = None
-        if refresh_token:
-            token_data = await self._token_request(
-                {"grant_type": "refresh_token", "refresh_token": refresh_token}
-            )
-        if not token_data or "access_token" not in token_data:
-            await asyncio.to_thread(db_delete_session, sid)
-            raise ApiError(401, "Discord session expired — log in again.")
-        entry["access_token"] = token_data["access_token"]
-        entry["refresh_token"] = token_data.get("refresh_token", refresh_token)
-        entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
-        await asyncio.to_thread(db_touch_session, sid, entry)
+        lock = self._session_locks.setdefault(sid, asyncio.Lock())
+        async with lock:
+            # Someone may have refreshed while we waited — reload and re-check.
+            fresh = await asyncio.to_thread(db_load_session, sid)
+            if fresh is None:
+                raise ApiError(401, "Discord session expired — log in again.")
+            if fresh.get("token_expires_at", 0) - time.time() > 60:
+                entry.update(fresh)
+                return
+
+            refresh_token = fresh.get("refresh_token")
+            token_data = None
+            if refresh_token:
+                token_data = await self._token_request(
+                    {"grant_type": "refresh_token", "refresh_token": refresh_token}
+                )
+            if not token_data or "access_token" not in token_data:
+                await asyncio.to_thread(db_delete_session, sid)
+                raise ApiError(401, "Discord session expired — log in again.")
+            entry["access_token"] = token_data["access_token"]
+            entry["refresh_token"] = token_data.get("refresh_token", refresh_token)
+            entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
+            await asyncio.to_thread(db_touch_session, sid, entry)
 
     async def _refresh_guilds(self, sid, entry):
         if time.time() - entry.get("guilds_fetched_at", 0) < GUILDS_CACHE_SECONDS:
@@ -495,10 +607,7 @@ class WebServer:
         if not self.oauth_ready:
             return self._json(request, {"error": "OAuth not configured on the bot."}, status=503)
 
-        now = time.time()
-        self.pending_states = {s: exp for s, exp in self.pending_states.items() if exp > now}
-        state = secrets.token_urlsafe(24)
-        self.pending_states[state] = now + 600
+        state = self._make_state()
         params = urlencode(
             {
                 "client_id": CLIENT_ID,
@@ -506,11 +615,10 @@ class WebServer:
                 "response_type": "code",
                 "scope": "identify guilds",
                 "state": state,
-                "prompt": "none",
             }
         )
         response = web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}")
-        response.set_cookie(STATE_COOKIE, state, max_age=600, httponly=True,
+        response.set_cookie(STATE_COOKIE, state, max_age=STATE_TTL, httponly=True,
                             samesite="Lax", secure=COOKIE_SECURE)
         return response
 
@@ -527,7 +635,7 @@ class WebServer:
             bool(code)
             and bool(state)
             and hmac.compare_digest(state, cookie_state)
-            and self.pending_states.pop(state, 0) >= time.time()
+            and self._valid_state(state)
         )
         if not state_valid:
             return self._json(request, {"error": "Invalid OAuth state — try logging in again."}, status=400)
@@ -574,20 +682,22 @@ class WebServer:
         if sid and entry:
             # revoke the token at Discord, then forget the session
             assert self.http is not None
-            try:
-                await self.http.post(
-                    f"{DISCORD_API}/oauth2/token/revoke",
-                    data={
-                        "client_id": CLIENT_ID,
-                        "client_secret": CLIENT_SECRET,
-                        "token": entry["access_token"],
-                        "token_type_hint": "access_token",
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-            except aiohttp.ClientError:
-                pass
+            if entry.get("access_token"):
+                try:
+                    await self.http.post(
+                        f"{DISCORD_API}/oauth2/token/revoke",
+                        data={
+                            "client_id": CLIENT_ID,
+                            "client_secret": CLIENT_SECRET,
+                            "token": entry["access_token"],
+                            "token_type_hint": "access_token",
+                        },
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                except aiohttp.ClientError:
+                    pass
             await asyncio.to_thread(db_delete_session, sid)
+            self._session_locks.pop(sid, None)
         response = self._json(request, {"ok": True})
         response.del_cookie(SESSION_COOKIE)
         return response
@@ -655,8 +765,8 @@ class WebServer:
 
     # ── guild config ─────────────────────────────────────────────────
 
-    def _config_payload(self, guild):
-        settings = get_guild_settings(guild.id)
+    async def _config_payload(self, guild):
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
         automod = dict(AUTOMOD_DEFAULTS)
         automod.update(settings.get("automod") or {})
 
@@ -691,7 +801,7 @@ class WebServer:
             _, _, guild = await self._authorized_guild(request)
         except ApiError as error:
             return self._error(request, error)
-        return self._json(request, self._config_payload(guild))
+        return self._json(request, await self._config_payload(guild))
 
     async def handle_audit(self, request):
         try:
@@ -751,8 +861,9 @@ class WebServer:
             if not isinstance(raw, dict):
                 errors.append("automod: must be an object")
             else:
+                current = await asyncio.to_thread(get_guild_settings, guild.id)
                 automod = dict(AUTOMOD_DEFAULTS)
-                automod.update(get_guild_settings(guild.id).get("automod") or {})
+                automod.update(current.get("automod") or {})
                 for flag in ("invites", "spam"):
                     if flag in raw:
                         automod[flag] = bool(raw[flag])
@@ -792,4 +903,4 @@ class WebServer:
         except Exception:
             pass
 
-        return self._json(request, self._config_payload(guild))
+        return self._json(request, await self._config_payload(guild))
