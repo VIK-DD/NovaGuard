@@ -1,18 +1,34 @@
-"""Embedded web API for the NovaGuard dashboard.
+"""Embedded web API for the NovaGuard dashboard — hardened edition.
 
 Runs an aiohttp server inside the bot process so the website can read and
-write the same per-guild settings the slash commands use. Authentication is
-Discord OAuth2 (identify + guilds); only members with Manage Server on a
-guild the bot is in may touch that guild's config.
+write the same per-guild settings the slash commands use.
 
-Enable by setting WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET
-(the bot application's OAuth2 credentials) in .env.
+Security model
+--------------
+- Discord OAuth2 (identify + guilds); only members with Manage Server on a
+  guild the bot is in may read or change that guild's config.
+- Sessions live in SQLite (data/novaguard.sqlite3) and survive restarts.
+  The cookie holds a random 256-bit id; the database stores only its SHA-256
+  hash, so a leaked database cannot be replayed as a login.
+- OAuth access tokens are refreshed automatically and revoked on logout.
+- Per-IP sliding-window rate limits (separate buckets for auth / read / write).
+- Every dashboard change is written to a SQL audit trail (who, what, when, ip)
+  and mirrored to the guild's log channel.
+- Hardening: strict CORS allow-list, security headers, 64 KB body cap,
+  HttpOnly/SameSite cookies, constant-time state comparison.
+
+Enable with WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET.
 """
 
 import asyncio
+import hashlib
+import hmac
+import json
 import os
 import secrets
+import threading
 import time
+from collections import deque
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
@@ -20,7 +36,10 @@ import aiohttp
 from aiohttp import web
 
 from .config import BOT_CODENAME, BOT_VERSION
+from .database import connect
 from .storage import get_guild_settings, update_guild_settings
+
+# ── configuration ────────────────────────────────────────────────────
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
@@ -31,13 +50,24 @@ OAUTH_REDIRECT = os.getenv("WEB_OAUTH_REDIRECT", f"http://localhost:{WEB_PORT}/a
 CORS_ORIGIN = os.getenv("WEB_CORS_ORIGIN", "").strip().rstrip("/")
 AFTER_LOGIN = os.getenv("WEB_AFTER_LOGIN", "/api/me")
 COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes", "on"}
+TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
+INVITE_PERMISSIONS = os.getenv("WEB_INVITE_PERMISSIONS", "8").strip() or "8"
 
 DISCORD_API = "https://discord.com/api/v10"
 SESSION_COOKIE = "ng_session"
 STATE_COOKIE = "ng_state"
 SESSION_TTL = 7 * 24 * 3600
 GUILDS_CACHE_SECONDS = 120
+MAX_SESSIONS_PER_USER = 5
+AUDIT_KEEP_DAYS = 90
+MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
+
+RATE_LIMITS = {  # scope: (max requests, window seconds)
+    "auth": (10, 60),
+    "read": (120, 60),
+    "write": (30, 60),
+}
 
 CHANNEL_KEYS = (
     "welcome_channel",
@@ -52,13 +82,197 @@ AUTOMOD_DEFAULTS = {"invites": True, "spam": True, "badwords": []}
 MAX_BADWORDS = 100
 MAX_BADWORD_LENGTH = 40
 
+_DB_LOCK = threading.Lock()
+
+
+# ── SQL layer (runs in threads via asyncio.to_thread) ────────────────
+
+def init_web_tables():
+    with _DB_LOCK, connect() as db:
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS web_sessions (
+                sid_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                user_json TEXT NOT NULL,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT,
+                token_expires_at REAL NOT NULL DEFAULT 0,
+                guilds_json TEXT NOT NULL DEFAULT '{}',
+                guilds_fetched_at REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                expires_at REAL NOT NULL,
+                last_seen_at REAL NOT NULL DEFAULT 0
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS web_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                changes_json TEXT NOT NULL,
+                ip TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS idx_web_audit_guild ON web_audit (guild_id, id DESC)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id)")
+
+
+def _hash_sid(sid):
+    return hashlib.sha256(sid.encode("utf-8")).hexdigest()
+
+
+def db_save_session(sid, entry):
+    with _DB_LOCK, connect() as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO web_sessions
+            (sid_hash, user_id, user_json, access_token, refresh_token, token_expires_at,
+             guilds_json, guilds_fetched_at, created_at, expires_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _hash_sid(sid),
+                entry["user"]["id"],
+                json.dumps(entry["user"]),
+                entry["access_token"],
+                entry.get("refresh_token"),
+                entry.get("token_expires_at", 0),
+                json.dumps(entry.get("guilds", {})),
+                entry.get("guilds_fetched_at", 0),
+                entry.get("created_at") or datetime.now(UTC).isoformat(),
+                entry["expires_at"],
+                time.time(),
+            ),
+        )
+        # keep only the newest sessions per user
+        db.execute(
+            """
+            DELETE FROM web_sessions WHERE user_id = ? AND sid_hash NOT IN (
+                SELECT sid_hash FROM web_sessions WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT ?
+            )
+            """,
+            (entry["user"]["id"], entry["user"]["id"], MAX_SESSIONS_PER_USER),
+        )
+
+
+def db_load_session(sid):
+    with _DB_LOCK, connect() as db:
+        row = db.execute(
+            "SELECT * FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),)
+        ).fetchone()
+    if row is None:
+        return None
+    entry = {
+        "user": json.loads(row["user_json"]),
+        "access_token": row["access_token"],
+        "refresh_token": row["refresh_token"],
+        "token_expires_at": row["token_expires_at"],
+        "guilds": json.loads(row["guilds_json"]),
+        "guilds_fetched_at": row["guilds_fetched_at"],
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+        "last_seen_at": row["last_seen_at"],
+    }
+    if entry["expires_at"] < time.time():
+        db_delete_session(sid)
+        return None
+    return entry
+
+
+def db_delete_session(sid):
+    with _DB_LOCK, connect() as db:
+        db.execute("DELETE FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),))
+
+
+def db_touch_session(sid, entry):
+    with _DB_LOCK, connect() as db:
+        db.execute(
+            """
+            UPDATE web_sessions SET access_token = ?, refresh_token = ?, token_expires_at = ?,
+                   guilds_json = ?, guilds_fetched_at = ?, last_seen_at = ?
+            WHERE sid_hash = ?
+            """,
+            (
+                entry["access_token"],
+                entry.get("refresh_token"),
+                entry.get("token_expires_at", 0),
+                json.dumps(entry.get("guilds", {})),
+                entry.get("guilds_fetched_at", 0),
+                time.time(),
+                _hash_sid(sid),
+            ),
+        )
+
+
+def db_gc():
+    cutoff = datetime.now(UTC).timestamp() - AUDIT_KEEP_DAYS * 86400
+    with _DB_LOCK, connect() as db:
+        db.execute("DELETE FROM web_sessions WHERE expires_at < ?", (time.time(),))
+        db.execute(
+            "DELETE FROM web_audit WHERE created_at < ?",
+            (datetime.fromtimestamp(cutoff, UTC).isoformat(),),
+        )
+
+
+def db_add_audit(guild_id, user, action, changes, ip):
+    with _DB_LOCK, connect() as db:
+        db.execute(
+            """
+            INSERT INTO web_audit (guild_id, user_id, username, action, changes_json, ip, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(guild_id),
+                user["id"],
+                user["username"],
+                action,
+                json.dumps(changes, ensure_ascii=False),
+                ip,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+
+def db_get_audit(guild_id, limit):
+    with _DB_LOCK, connect() as db:
+        rows = db.execute(
+            """
+            SELECT username, user_id, action, changes_json, created_at
+            FROM web_audit WHERE guild_id = ? ORDER BY id DESC LIMIT ?
+            """,
+            (str(guild_id), limit),
+        ).fetchall()
+    return [
+        {
+            "username": row["username"],
+            "user_id": row["user_id"],
+            "action": row["action"],
+            "changes": json.loads(row["changes_json"]),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+# ── errors ───────────────────────────────────────────────────────────
 
 class ApiError(Exception):
-    def __init__(self, status, message):
+    def __init__(self, status, message, retry_after=None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.retry_after = retry_after
 
+
+# ── the server ───────────────────────────────────────────────────────
 
 class WebServer:
     """The dashboard API. One instance per bot, started from setup_hook."""
@@ -67,10 +281,9 @@ class WebServer:
         self.bot = bot
         self.runner = None
         self.http: aiohttp.ClientSession | None = None
-        self.sessions: dict[str, dict] = {}
         self.pending_states: dict[str, float] = {}
-
-    # ── lifecycle ────────────────────────────────────────────────────
+        self.rate_buckets: dict[tuple, deque] = {}
+        self._last_gc = 0.0
 
     @property
     def oauth_ready(self):
@@ -80,11 +293,14 @@ class WebServer:
         if not WEB_ENABLED:
             print("Web API disabled (set WEB_ENABLED=true to serve the dashboard API).")
             return
+        await asyncio.to_thread(init_web_tables)
+        await asyncio.to_thread(db_gc)
         self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
 
-        app = web.Application()
+        app = web.Application(client_max_size=MAX_BODY_BYTES)
         app.router.add_get("/api/health", self.handle_health)
         app.router.add_get("/api/stats", self.handle_stats)
+        app.router.add_get("/api/invite", self.handle_invite)
         app.router.add_get("/api/auth/login", self.handle_login)
         app.router.add_get("/api/auth/callback", self.handle_callback)
         app.router.add_post("/api/auth/logout", self.handle_logout)
@@ -92,6 +308,7 @@ class WebServer:
         app.router.add_get("/api/guilds", self.handle_guilds)
         app.router.add_get("/api/guilds/{guild_id}/config", self.handle_config_get)
         app.router.add_put("/api/guilds/{guild_id}/config", self.handle_config_put)
+        app.router.add_get("/api/guilds/{guild_id}/audit", self.handle_audit)
         app.router.add_options("/{tail:.*}", self.handle_preflight)
 
         self.runner = web.AppRunner(app, access_log=None)
@@ -99,7 +316,7 @@ class WebServer:
         site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT)
         await site.start()
         oauth_note = "OAuth ready" if self.oauth_ready else "OAuth NOT configured (login disabled)"
-        print(f"Web API listening on {WEB_HOST}:{WEB_PORT} • {oauth_note}")
+        print(f"Web API listening on {WEB_HOST}:{WEB_PORT} • {oauth_note} • sessions in SQLite")
 
     async def stop(self):
         if self.runner:
@@ -109,45 +326,85 @@ class WebServer:
             await self.http.close()
             self.http = None
 
-    # ── plumbing ─────────────────────────────────────────────────────
+    # ── request plumbing ─────────────────────────────────────────────
 
-    def _cors_headers(self, request):
-        origin = request.headers.get("Origin", "")
-        if not origin:
-            return {}
-        if CORS_ORIGIN and origin.rstrip("/") != CORS_ORIGIN:
-            return {}
-        return {
-            "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
-            "Vary": "Origin",
+    def _client_ip(self, request):
+        if TRUST_PROXY:
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        peer = request.remote or "?"
+        return peer
+
+    def _rate_limit(self, request, scope):
+        limit, window = RATE_LIMITS[scope]
+        key = (self._client_ip(request), scope)
+        bucket = self.rate_buckets.setdefault(key, deque())
+        now = time.monotonic()
+        while bucket and now - bucket[0] > window:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            retry = int(window - (now - bucket[0])) + 1
+            raise ApiError(429, "Too many requests — slow down.", retry_after=retry)
+        bucket.append(now)
+        # opportunistic cleanup so the dict cannot grow forever
+        if len(self.rate_buckets) > 2048:
+            for k in [k for k, b in self.rate_buckets.items() if not b or now - b[-1] > 600]:
+                self.rate_buckets.pop(k, None)
+
+    def _security_headers(self, request):
+        headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "no-referrer",
+            "Cache-Control": "no-store",
         }
+        origin = request.headers.get("Origin", "")
+        if origin and (not CORS_ORIGIN or origin.rstrip("/") == CORS_ORIGIN):
+            headers.update(
+                {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Credentials": "true",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+                    "Vary": "Origin",
+                }
+            )
+        return headers
 
-    def _json(self, request, payload, status=200):
-        return web.json_response(payload, status=status, headers=self._cors_headers(request))
+    def _json(self, request, payload, status=200, extra_headers=None):
+        headers = self._security_headers(request)
+        if extra_headers:
+            headers.update(extra_headers)
+        return web.json_response(payload, status=status, headers=headers)
+
+    def _error(self, request, error: ApiError):
+        extra = {"Retry-After": str(error.retry_after)} if error.retry_after else None
+        return self._json(request, {"error": error.message}, status=error.status, extra_headers=extra)
 
     async def handle_preflight(self, request):
-        return web.Response(status=204, headers=self._cors_headers(request))
+        return web.Response(status=204, headers=self._security_headers(request))
 
-    def _prune(self):
-        now = time.time()
-        for sid in [s for s, entry in self.sessions.items() if entry["expires_at"] < now]:
-            self.sessions.pop(sid, None)
-        for state in [s for s, exp in self.pending_states.items() if exp < now]:
-            self.pending_states.pop(state, None)
+    async def _gc_maybe(self):
+        if time.time() - self._last_gc > 3600:
+            self._last_gc = time.time()
+            await asyncio.to_thread(db_gc)
 
-    def _session(self, request):
-        self._prune()
+    # ── session handling ─────────────────────────────────────────────
+
+    async def _session(self, request):
+        await self._gc_maybe()
         sid = request.cookies.get(SESSION_COOKIE)
-        return self.sessions.get(sid) if sid else None
+        if not sid:
+            return None, None
+        entry = await asyncio.to_thread(db_load_session, sid)
+        return sid, entry
 
-    def _require_session(self, request):
-        entry = self._session(request)
+    async def _require_session(self, request):
+        sid, entry = await self._session(request)
         if entry is None:
             raise ApiError(401, "Not logged in. Start at /api/auth/login.")
-        return entry
+        return sid, entry
 
     async def _discord_get(self, path, token):
         assert self.http is not None
@@ -156,13 +413,45 @@ class WebServer:
         ) as response:
             if response.status == 401:
                 raise ApiError(401, "Discord session expired — log in again.")
+            if response.status == 429:
+                raise ApiError(429, "Discord is rate limiting us — try again shortly.", retry_after=5)
             if response.status >= 400:
                 raise ApiError(502, f"Discord API error {response.status}.")
             return await response.json()
 
-    async def _refresh_guilds(self, entry):
+    async def _token_request(self, data):
+        assert self.http is not None
+        async with self.http.post(
+            f"{DISCORD_API}/oauth2/token",
+            data={"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, **data},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        ) as response:
+            if response.status >= 400:
+                return None
+            return await response.json()
+
+    async def _ensure_fresh_token(self, sid, entry):
+        """Refresh the OAuth token ~before it expires; kill the session if we can't."""
+        if entry.get("token_expires_at", 0) - time.time() > 60:
+            return
+        refresh_token = entry.get("refresh_token")
+        token_data = None
+        if refresh_token:
+            token_data = await self._token_request(
+                {"grant_type": "refresh_token", "refresh_token": refresh_token}
+            )
+        if not token_data or "access_token" not in token_data:
+            await asyncio.to_thread(db_delete_session, sid)
+            raise ApiError(401, "Discord session expired — log in again.")
+        entry["access_token"] = token_data["access_token"]
+        entry["refresh_token"] = token_data.get("refresh_token", refresh_token)
+        entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
+        await asyncio.to_thread(db_touch_session, sid, entry)
+
+    async def _refresh_guilds(self, sid, entry):
         if time.time() - entry.get("guilds_fetched_at", 0) < GUILDS_CACHE_SECONDS:
             return
+        await self._ensure_fresh_token(sid, entry)
         guilds = await self._discord_get("/users/@me/guilds", entry["access_token"])
         entry["guilds"] = {
             str(g["id"]): {
@@ -175,6 +464,7 @@ class WebServer:
             for g in guilds
         }
         entry["guilds_fetched_at"] = time.time()
+        await asyncio.to_thread(db_touch_session, sid, entry)
 
     def _can_manage(self, entry, guild_id):
         info = entry.get("guilds", {}).get(str(guild_id))
@@ -183,26 +473,32 @@ class WebServer:
         return info["owner"] or bool(info["permissions"] & MANAGE_GUILD)
 
     async def _authorized_guild(self, request):
-        entry = self._require_session(request)
+        sid, entry = await self._require_session(request)
         guild_id = request.match_info["guild_id"]
         if not guild_id.isdigit():
             raise ApiError(400, "Invalid guild id.")
-        await self._refresh_guilds(entry)
+        await self._refresh_guilds(sid, entry)
         if not self._can_manage(entry, guild_id):
             raise ApiError(403, "You need Manage Server on that guild.")
         guild = self.bot.get_guild(int(guild_id))
         if guild is None:
             raise ApiError(404, "NovaGuard is not in that guild.")
-        return entry, guild
+        return sid, entry, guild
 
-    # ── auth ─────────────────────────────────────────────────────────
+    # ── auth endpoints ───────────────────────────────────────────────
 
     async def handle_login(self, request):
+        try:
+            self._rate_limit(request, "auth")
+        except ApiError as error:
+            return self._error(request, error)
         if not self.oauth_ready:
             return self._json(request, {"error": "OAuth not configured on the bot."}, status=503)
-        self._prune()
+
+        now = time.time()
+        self.pending_states = {s: exp for s, exp in self.pending_states.items() if exp > now}
         state = secrets.token_urlsafe(24)
-        self.pending_states[state] = time.time() + 600
+        self.pending_states[state] = now + 600
         params = urlencode(
             {
                 "client_id": CLIENT_ID,
@@ -219,49 +515,53 @@ class WebServer:
         return response
 
     async def handle_callback(self, request):
+        try:
+            self._rate_limit(request, "auth")
+        except ApiError as error:
+            return self._error(request, error)
+
         code = request.query.get("code")
         state = request.query.get("state", "")
         cookie_state = request.cookies.get(STATE_COOKIE, "")
-        if not code or not state or state != cookie_state or self.pending_states.pop(state, 0) < time.time():
+        state_valid = (
+            bool(code)
+            and bool(state)
+            and hmac.compare_digest(state, cookie_state)
+            and self.pending_states.pop(state, 0) >= time.time()
+        )
+        if not state_valid:
             return self._json(request, {"error": "Invalid OAuth state — try logging in again."}, status=400)
 
-        assert self.http is not None
-        async with self.http.post(
-            f"{DISCORD_API}/oauth2/token",
-            data={
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": OAUTH_REDIRECT,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        ) as token_response:
-            if token_response.status >= 400:
-                return self._json(request, {"error": "Discord rejected the OAuth code."}, status=502)
-            token_data = await token_response.json()
-
-        access_token = token_data.get("access_token")
-        if not access_token:
-            return self._json(request, {"error": "No access token from Discord."}, status=502)
+        token_data = await self._token_request(
+            {"grant_type": "authorization_code", "code": code, "redirect_uri": OAUTH_REDIRECT}
+        )
+        if not token_data or "access_token" not in token_data:
+            return self._json(request, {"error": "Discord rejected the OAuth code."}, status=502)
 
         try:
-            user = await self._discord_get("/users/@me", access_token)
+            user = await self._discord_get("/users/@me", token_data["access_token"])
         except ApiError as error:
-            return self._json(request, {"error": error.message}, status=error.status)
+            return self._error(request, error)
 
         sid = secrets.token_urlsafe(32)
-        self.sessions[sid] = {
+        entry = {
             "user": {
                 "id": str(user["id"]),
                 "username": user.get("global_name") or user.get("username", "?"),
                 "avatar": user.get("avatar"),
             },
-            "access_token": access_token,
+            "access_token": token_data["access_token"],
+            "refresh_token": token_data.get("refresh_token"),
+            "token_expires_at": time.time() + int(token_data.get("expires_in", 3600)),
             "guilds": {},
             "guilds_fetched_at": 0,
+            "created_at": datetime.now(UTC).isoformat(),
             "expires_at": time.time() + SESSION_TTL,
         }
+        await asyncio.to_thread(db_save_session, sid, entry)
+        await asyncio.to_thread(
+            db_add_audit, "-", entry["user"], "login", {}, self._client_ip(request)
+        )
 
         response = web.HTTPFound(AFTER_LOGIN)
         response.set_cookie(SESSION_COOKIE, sid, max_age=SESSION_TTL, httponly=True,
@@ -270,9 +570,24 @@ class WebServer:
         return response
 
     async def handle_logout(self, request):
-        sid = request.cookies.get(SESSION_COOKIE)
-        if sid:
-            self.sessions.pop(sid, None)
+        sid, entry = await self._session(request)
+        if sid and entry:
+            # revoke the token at Discord, then forget the session
+            assert self.http is not None
+            try:
+                await self.http.post(
+                    f"{DISCORD_API}/oauth2/token/revoke",
+                    data={
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
+                        "token": entry["access_token"],
+                        "token_type_hint": "access_token",
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+            except aiohttp.ClientError:
+                pass
+            await asyncio.to_thread(db_delete_session, sid)
         response = self._json(request, {"ok": True})
         response.del_cookie(SESSION_COOKIE)
         return response
@@ -282,7 +597,19 @@ class WebServer:
     async def handle_health(self, request):
         return self._json(request, {"ok": True, "bot_ready": self.bot.is_ready()})
 
+    async def handle_invite(self, request):
+        if not CLIENT_ID:
+            return self._json(request, {"error": "Client id not configured."}, status=503)
+        params = urlencode(
+            {"client_id": CLIENT_ID, "permissions": INVITE_PERMISSIONS, "scope": "bot applications.commands"}
+        )
+        return web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}")
+
     async def handle_stats(self, request):
+        try:
+            self._rate_limit(request, "read")
+        except ApiError as error:
+            return self._error(request, error)
         guilds = list(self.bot.guilds)
         launched_at = getattr(self.bot, "launched_at", None)
         uptime = int((datetime.now(UTC) - launched_at).total_seconds()) if launched_at else 0
@@ -303,17 +630,19 @@ class WebServer:
 
     async def handle_me(self, request):
         try:
-            entry = self._require_session(request)
+            self._rate_limit(request, "read")
+            _, entry = await self._require_session(request)
         except ApiError as error:
-            return self._json(request, {"error": error.message}, status=error.status)
+            return self._error(request, error)
         return self._json(request, {"user": entry["user"]})
 
     async def handle_guilds(self, request):
         try:
-            entry = self._require_session(request)
-            await self._refresh_guilds(entry)
+            self._rate_limit(request, "read")
+            sid, entry = await self._require_session(request)
+            await self._refresh_guilds(sid, entry)
         except ApiError as error:
-            return self._json(request, {"error": error.message}, status=error.status)
+            return self._error(request, error)
 
         bot_guild_ids = {str(g.id) for g in self.bot.guilds}
         manageable = [
@@ -358,17 +687,29 @@ class WebServer:
 
     async def handle_config_get(self, request):
         try:
-            _, guild = await self._authorized_guild(request)
+            self._rate_limit(request, "read")
+            _, _, guild = await self._authorized_guild(request)
         except ApiError as error:
-            return self._json(request, {"error": error.message}, status=error.status)
+            return self._error(request, error)
         return self._json(request, self._config_payload(guild))
+
+    async def handle_audit(self, request):
+        try:
+            self._rate_limit(request, "read")
+            _, _, guild = await self._authorized_guild(request)
+        except ApiError as error:
+            return self._error(request, error)
+        limit = min(int(request.query.get("limit", "50") or 50), 200)
+        entries = await asyncio.to_thread(db_get_audit, guild.id, limit)
+        return self._json(request, {"audit": entries})
 
     async def handle_config_put(self, request):
         try:
-            entry, guild = await self._authorized_guild(request)
+            self._rate_limit(request, "write")
+            sid, entry, guild = await self._authorized_guild(request)
             body = await request.json()
         except ApiError as error:
-            return self._json(request, {"error": error.message}, status=error.status)
+            return self._error(request, error)
         except Exception:
             return self._json(request, {"error": "Body must be JSON."}, status=400)
 
@@ -433,6 +774,9 @@ class WebServer:
             return self._json(request, {"error": "Nothing to update."}, status=400)
 
         await asyncio.to_thread(update_guild_settings, guild.id, **changes)
+        await asyncio.to_thread(
+            db_add_audit, guild.id, entry["user"], "config_update", changes, self._client_ip(request)
+        )
 
         try:
             from .theme import Palette, brand_footer, make_embed
