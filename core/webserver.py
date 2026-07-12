@@ -3,8 +3,8 @@
 Runs an aiohttp server inside the bot process so the website can read and
 write the same per-guild settings the slash commands use.
 
-Security model
---------------
+Security & contract model
+-------------------------
 - Discord OAuth2 (identify + guilds); only members with Manage Server on a
   guild the bot is in may read or change that guild's config.
 - Sessions live in SQLite (data/novaguard.sqlite3) and survive restarts.
@@ -19,8 +19,11 @@ Security model
   keyed off the real client IP (CF-Connecting-IP behind a trusted proxy).
 - Every dashboard change is written to a SQL audit trail (who, what, when, ip)
   and mirrored to the guild's log channel.
-- Hardening: strict CORS allow-list, security headers, 64 KB body cap,
-  HttpOnly/SameSite cookies, constant-time comparisons.
+- Uniform response envelope: two middlewares stamp security + CORS headers on
+  every response and turn any error (ApiError, 404, unexpected) into a JSON
+  body `{"error": ..., "code": ...}` with a machine-readable code.
+- Mutating requests (PUT/POST) are additionally guarded by an Origin check.
+- Routes are served under /api/v1/... with legacy /api/... aliases.
 
 Enable with WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET.
 """
@@ -30,6 +33,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import threading
@@ -51,6 +55,8 @@ except ImportError:  # pragma: no cover - exercised only on minimal installs
     Fernet = None
     InvalidToken = Exception
 
+log = logging.getLogger("novaguard.web")
+
 # ── configuration ────────────────────────────────────────────────────
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -71,6 +77,8 @@ COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "").strip().lower() in {"1", "tru
 TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
 INVITE_PERMISSIONS = os.getenv("WEB_INVITE_PERMISSIONS", "8").strip() or "8"
 
+API_PREFIX = "/api/v1"
+LEGACY_PREFIX = "/api"
 DISCORD_API = "https://discord.com/api/v10"
 SESSION_COOKIE = "ng_session"
 STATE_COOKIE = "ng_state"
@@ -82,6 +90,7 @@ AUDIT_KEEP_DAYS = 90
 MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
 TOKEN_PREFIX = "enc:"  # marks an encrypted token column so legacy rows still load
+SCHEMA_VERSION = 1  # bump + add a migration branch in init_web_tables when tables change
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
@@ -145,6 +154,7 @@ def _decrypt_token(value):
 
 def init_web_tables():
     with _DB_LOCK, connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS web_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS web_sessions (
@@ -178,6 +188,29 @@ def init_web_tables():
         )
         db.execute("CREATE INDEX IF NOT EXISTS idx_web_audit_guild ON web_audit (guild_id, id DESC)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id)")
+
+        # ── schema migrations (dedicated web_meta, never touches the bot's DB) ──
+        row = db.execute("SELECT value FROM web_meta WHERE key = 'schema_version'").fetchone()
+        version = int(row["value"]) if row else 0
+        # future migrations go here, e.g.:
+        #   if version < 2:
+        #       db.execute("ALTER TABLE web_sessions ADD COLUMN ...")
+        if version != SCHEMA_VERSION:
+            db.execute(
+                "INSERT INTO web_meta (key, value) VALUES ('schema_version', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(SCHEMA_VERSION),),
+            )
+
+
+def db_ping():
+    """Cheap connectivity probe for the health endpoint."""
+    try:
+        with _DB_LOCK, connect() as db:
+            db.execute("SELECT 1").fetchone()
+        return True
+    except Exception:
+        return False
 
 
 def _hash_sid(sid):
@@ -321,11 +354,26 @@ def db_get_audit(guild_id, limit):
 # ── errors ───────────────────────────────────────────────────────────
 
 class ApiError(Exception):
-    def __init__(self, status, message, retry_after=None):
+    """A client-facing error with an HTTP status and a machine-readable code."""
+
+    _DEFAULT_CODES = {
+        400: "bad_request",
+        401: "unauthorized",
+        403: "forbidden",
+        404: "not_found",
+        429: "rate_limited",
+        500: "internal_error",
+        502: "upstream_error",
+        503: "unavailable",
+    }
+
+    def __init__(self, status, message, code=None, retry_after=None, details=None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code or self._DEFAULT_CODES.get(status, "error")
         self.retry_after = retry_after
+        self.details = details
 
 
 # ── the server ───────────────────────────────────────────────────────
@@ -347,6 +395,32 @@ class WebServer:
     def oauth_ready(self):
         return bool(CLIENT_ID and CLIENT_SECRET)
 
+    def _build_app(self):
+        app = web.Application(
+            client_max_size=MAX_BODY_BYTES,
+            middlewares=[self._headers_middleware, self._error_middleware],
+        )
+        # (method, path, handler) — registered under /api/v1 and legacy /api
+        routes = [
+            ("GET", "/health", self.handle_health),
+            ("GET", "/stats", self.handle_stats),
+            ("GET", "/invite", self.handle_invite),
+            ("GET", "/auth/login", self.handle_login),
+            ("GET", "/auth/callback", self.handle_callback),
+            ("POST", "/auth/logout", self.handle_logout),
+            ("GET", "/me", self.handle_me),
+            ("GET", "/guilds", self.handle_guilds),
+            ("GET", "/guilds/{guild_id}/config", self.handle_config_get),
+            ("PUT", "/guilds/{guild_id}/config", self.handle_config_put),
+            ("GET", "/guilds/{guild_id}/audit", self.handle_audit),
+        ]
+        for method, path, handler in routes:
+            app.router.add_route(method, f"{API_PREFIX}{path}", handler)
+            app.router.add_route(method, f"{LEGACY_PREFIX}{path}", handler)
+        # CORS preflight (OPTIONS) is answered by the headers middleware, so no
+        # catch-all route is needed — that keeps unknown paths returning 404.
+        return app
+
     async def start(self):
         if not WEB_ENABLED:
             print("Web API disabled (set WEB_ENABLED=true to serve the dashboard API).")
@@ -355,28 +429,14 @@ class WebServer:
         await asyncio.to_thread(db_gc)
         self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
 
-        app = web.Application(client_max_size=MAX_BODY_BYTES)
-        app.router.add_get("/api/health", self.handle_health)
-        app.router.add_get("/api/stats", self.handle_stats)
-        app.router.add_get("/api/invite", self.handle_invite)
-        app.router.add_get("/api/auth/login", self.handle_login)
-        app.router.add_get("/api/auth/callback", self.handle_callback)
-        app.router.add_post("/api/auth/logout", self.handle_logout)
-        app.router.add_get("/api/me", self.handle_me)
-        app.router.add_get("/api/guilds", self.handle_guilds)
-        app.router.add_get("/api/guilds/{guild_id}/config", self.handle_config_get)
-        app.router.add_put("/api/guilds/{guild_id}/config", self.handle_config_put)
-        app.router.add_get("/api/guilds/{guild_id}/audit", self.handle_audit)
-        app.router.add_options("/{tail:.*}", self.handle_preflight)
-
-        self.runner = web.AppRunner(app, access_log=None)
+        self.runner = web.AppRunner(self._build_app(), access_log=None)
         await self.runner.setup()
         site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT)
         await site.start()
         oauth_note = "OAuth ready" if self.oauth_ready else "OAuth NOT configured (login disabled)"
         crypto_note = "tokens encrypted" if _CIPHER else "tokens plaintext (install cryptography)"
         print(
-            f"Web API listening on {WEB_HOST}:{WEB_PORT} • {oauth_note} • "
+            f"Web API listening on {WEB_HOST}:{WEB_PORT}{API_PREFIX} • {oauth_note} • "
             f"sessions in SQLite • {crypto_note}"
         )
 
@@ -387,6 +447,44 @@ class WebServer:
         if self.http:
             await self.http.close()
             self.http = None
+
+    # ── middlewares ──────────────────────────────────────────────────
+
+    @web.middleware
+    async def _error_middleware(self, request, handler):
+        """Turn every failure into the uniform JSON envelope {error, code}."""
+        try:
+            return await handler(request)
+        except ApiError as error:
+            payload = {"error": error.message, "code": error.code}
+            if error.details is not None:
+                payload["details"] = error.details
+            headers = {"Retry-After": str(error.retry_after)} if error.retry_after else None
+            return web.json_response(payload, status=error.status, headers=headers)
+        except web.HTTPException as http_error:
+            # aiohttp's own errors (unknown route → 404, wrong verb → 405, …)
+            code = ApiError._DEFAULT_CODES.get(http_error.status, "http_error")
+            return web.json_response(
+                {"error": http_error.reason or "Error", "code": code},
+                status=http_error.status,
+            )
+        except Exception:
+            log.exception("Unhandled error in %s %s", request.method, request.path)
+            return web.json_response(
+                {"error": "Internal server error.", "code": "internal_error"}, status=500
+            )
+
+    @web.middleware
+    async def _headers_middleware(self, request, handler):
+        """Answer CORS preflight and stamp security + CORS headers on every
+        response, errors included."""
+        if request.method == "OPTIONS":
+            response = web.Response(status=204)
+        else:
+            response = await handler(request)
+        for key, value in self._security_headers(request).items():
+            response.headers.setdefault(key, value)
+        return response
 
     # ── request plumbing ─────────────────────────────────────────────
 
@@ -411,7 +509,7 @@ class WebServer:
             bucket.popleft()
         if len(bucket) >= limit:
             retry = int(window - (now - bucket[0])) + 1
-            raise ApiError(429, "Too many requests — slow down.", retry_after=retry)
+            raise ApiError(429, "Too many requests — slow down.", code="rate_limited", retry_after=retry)
         bucket.append(now)
         # opportunistic cleanup so the dict cannot grow forever
         if len(self.rate_buckets) > 2048:
@@ -424,6 +522,23 @@ class WebServer:
         if origin and origin.rstrip("/") in CORS_ORIGINS:
             return origin
         return None
+
+    def _check_origin(self, request):
+        """Defense-in-depth CSRF guard for mutating requests.
+
+        Allows same-origin (Origin host matches Host) and allow-listed cross
+        origins; rejects everything else. Non-browser callers send no Origin
+        and are covered by the session cookie + SameSite.
+        """
+        origin = request.headers.get("Origin")
+        if not origin:
+            return
+        host = request.headers.get("Host", "")
+        if origin.split("://", 1)[-1] == host:
+            return
+        if origin.rstrip("/") in CORS_ORIGINS:
+            return
+        raise ApiError(403, "Cross-origin request rejected.", code="bad_origin")
 
     def _security_headers(self, request):
         headers = {
@@ -446,18 +561,12 @@ class WebServer:
             )
         return headers
 
-    def _json(self, request, payload, status=200, extra_headers=None):
-        headers = self._security_headers(request)
-        if extra_headers:
-            headers.update(extra_headers)
-        return web.json_response(payload, status=status, headers=headers)
-
-    def _error(self, request, error: ApiError):
-        extra = {"Retry-After": str(error.retry_after)} if error.retry_after else None
-        return self._json(request, {"error": error.message}, status=error.status, extra_headers=extra)
-
-    async def handle_preflight(self, request):
-        return web.Response(status=204, headers=self._security_headers(request))
+    def _require_ready(self):
+        if not self.bot.is_ready():
+            raise ApiError(
+                503, "Bot is still starting — try again shortly.",
+                code="bot_starting", retry_after=3,
+            )
 
     async def _gc_maybe(self):
         if time.time() - self._last_gc > 3600:
@@ -500,7 +609,7 @@ class WebServer:
     async def _require_session(self, request):
         sid, entry = await self._session(request)
         if entry is None:
-            raise ApiError(401, "Not logged in. Start at /api/auth/login.")
+            raise ApiError(401, "Not logged in. Start at /api/v1/auth/login.", code="unauthorized")
         return sid, entry
 
     async def _discord_get(self, path, token):
@@ -509,11 +618,14 @@ class WebServer:
             f"{DISCORD_API}{path}", headers={"Authorization": f"Bearer {token}"}
         ) as response:
             if response.status == 401:
-                raise ApiError(401, "Discord session expired — log in again.")
+                raise ApiError(401, "Discord session expired — log in again.", code="session_expired")
             if response.status == 429:
-                raise ApiError(429, "Discord is rate limiting us — try again shortly.", retry_after=5)
+                raise ApiError(
+                    429, "Discord is rate limiting us — try again shortly.",
+                    code="upstream_rate_limited", retry_after=5,
+                )
             if response.status >= 400:
-                raise ApiError(502, f"Discord API error {response.status}.")
+                raise ApiError(502, f"Discord API error {response.status}.", code="upstream_error")
             return await response.json()
 
     async def _token_request(self, data):
@@ -541,7 +653,7 @@ class WebServer:
             # Someone may have refreshed while we waited — reload and re-check.
             fresh = await asyncio.to_thread(db_load_session, sid)
             if fresh is None:
-                raise ApiError(401, "Discord session expired — log in again.")
+                raise ApiError(401, "Discord session expired — log in again.", code="session_expired")
             if fresh.get("token_expires_at", 0) - time.time() > 60:
                 entry.update(fresh)
                 return
@@ -554,7 +666,7 @@ class WebServer:
                 )
             if not token_data or "access_token" not in token_data:
                 await asyncio.to_thread(db_delete_session, sid)
-                raise ApiError(401, "Discord session expired — log in again.")
+                raise ApiError(401, "Discord session expired — log in again.", code="session_expired")
             entry["access_token"] = token_data["access_token"]
             entry["refresh_token"] = token_data.get("refresh_token", refresh_token)
             entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
@@ -588,24 +700,22 @@ class WebServer:
         sid, entry = await self._require_session(request)
         guild_id = request.match_info["guild_id"]
         if not guild_id.isdigit():
-            raise ApiError(400, "Invalid guild id.")
+            raise ApiError(400, "Invalid guild id.", code="bad_request")
         await self._refresh_guilds(sid, entry)
         if not self._can_manage(entry, guild_id):
-            raise ApiError(403, "You need Manage Server on that guild.")
+            raise ApiError(403, "You need Manage Server on that guild.", code="forbidden")
+        self._require_ready()
         guild = self.bot.get_guild(int(guild_id))
         if guild is None:
-            raise ApiError(404, "NovaGuard is not in that guild.")
+            raise ApiError(404, "NovaGuard is not in that guild.", code="guild_not_found")
         return sid, entry, guild
 
     # ── auth endpoints ───────────────────────────────────────────────
 
     async def handle_login(self, request):
-        try:
-            self._rate_limit(request, "auth")
-        except ApiError as error:
-            return self._error(request, error)
+        self._rate_limit(request, "auth")
         if not self.oauth_ready:
-            return self._json(request, {"error": "OAuth not configured on the bot."}, status=503)
+            raise ApiError(503, "OAuth not configured on the bot.", code="oauth_unavailable")
 
         state = self._make_state()
         params = urlencode(
@@ -623,10 +733,7 @@ class WebServer:
         return response
 
     async def handle_callback(self, request):
-        try:
-            self._rate_limit(request, "auth")
-        except ApiError as error:
-            return self._error(request, error)
+        self._rate_limit(request, "auth")
 
         code = request.query.get("code")
         state = request.query.get("state", "")
@@ -638,18 +745,15 @@ class WebServer:
             and self._valid_state(state)
         )
         if not state_valid:
-            return self._json(request, {"error": "Invalid OAuth state — try logging in again."}, status=400)
+            raise ApiError(400, "Invalid OAuth state — try logging in again.", code="invalid_state")
 
         token_data = await self._token_request(
             {"grant_type": "authorization_code", "code": code, "redirect_uri": OAUTH_REDIRECT}
         )
         if not token_data or "access_token" not in token_data:
-            return self._json(request, {"error": "Discord rejected the OAuth code."}, status=502)
+            raise ApiError(502, "Discord rejected the OAuth code.", code="upstream_error")
 
-        try:
-            user = await self._discord_get("/users/@me", token_data["access_token"])
-        except ApiError as error:
-            return self._error(request, error)
+        user = await self._discord_get("/users/@me", token_data["access_token"])
 
         sid = secrets.token_urlsafe(32)
         entry = {
@@ -678,6 +782,7 @@ class WebServer:
         return response
 
     async def handle_logout(self, request):
+        self._check_origin(request)
         sid, entry = await self._session(request)
         if sid and entry:
             # revoke the token at Discord, then forget the session
@@ -698,33 +803,35 @@ class WebServer:
                     pass
             await asyncio.to_thread(db_delete_session, sid)
             self._session_locks.pop(sid, None)
-        response = self._json(request, {"ok": True})
+        response = web.json_response({"ok": True})
         response.del_cookie(SESSION_COOKIE)
         return response
 
     # ── public endpoints ─────────────────────────────────────────────
 
     async def handle_health(self, request):
-        return self._json(request, {"ok": True, "bot_ready": self.bot.is_ready()})
+        db_ok = await asyncio.to_thread(db_ping)
+        payload = {
+            "ok": bool(db_ok and self.bot.is_ready()),
+            "bot_ready": self.bot.is_ready(),
+            "db_ok": db_ok,
+        }
+        return web.json_response(payload, status=200 if db_ok else 503)
 
     async def handle_invite(self, request):
         if not CLIENT_ID:
-            return self._json(request, {"error": "Client id not configured."}, status=503)
+            raise ApiError(503, "Client id not configured.", code="oauth_unavailable")
         params = urlencode(
             {"client_id": CLIENT_ID, "permissions": INVITE_PERMISSIONS, "scope": "bot applications.commands"}
         )
         return web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}")
 
     async def handle_stats(self, request):
-        try:
-            self._rate_limit(request, "read")
-        except ApiError as error:
-            return self._error(request, error)
+        self._rate_limit(request, "read")
         guilds = list(self.bot.guilds)
         launched_at = getattr(self.bot, "launched_at", None)
         uptime = int((datetime.now(UTC) - launched_at).total_seconds()) if launched_at else 0
-        return self._json(
-            request,
+        return web.json_response(
             {
                 "version": BOT_VERSION,
                 "codename": BOT_CODENAME,
@@ -733,26 +840,20 @@ class WebServer:
                 "commands": len(list(self.bot.tree.walk_commands())),
                 "uptime_seconds": uptime,
                 "ready": self.bot.is_ready(),
-            },
+            }
         )
 
     # ── session endpoints ────────────────────────────────────────────
 
     async def handle_me(self, request):
-        try:
-            self._rate_limit(request, "read")
-            _, entry = await self._require_session(request)
-        except ApiError as error:
-            return self._error(request, error)
-        return self._json(request, {"user": entry["user"]})
+        self._rate_limit(request, "read")
+        _, entry = await self._require_session(request)
+        return web.json_response({"user": entry["user"]})
 
     async def handle_guilds(self, request):
-        try:
-            self._rate_limit(request, "read")
-            sid, entry = await self._require_session(request)
-            await self._refresh_guilds(sid, entry)
-        except ApiError as error:
-            return self._error(request, error)
+        self._rate_limit(request, "read")
+        sid, entry = await self._require_session(request)
+        await self._refresh_guilds(sid, entry)
 
         bot_guild_ids = {str(g.id) for g in self.bot.guilds}
         manageable = [
@@ -761,7 +862,7 @@ class WebServer:
             if info["owner"] or info["permissions"] & MANAGE_GUILD
         ]
         manageable.sort(key=lambda g: (not g["bot_present"], g["name"].lower()))
-        return self._json(request, {"guilds": manageable})
+        return web.json_response({"guilds": manageable})
 
     # ── guild config ─────────────────────────────────────────────────
 
@@ -796,35 +897,27 @@ class WebServer:
         }
 
     async def handle_config_get(self, request):
-        try:
-            self._rate_limit(request, "read")
-            _, _, guild = await self._authorized_guild(request)
-        except ApiError as error:
-            return self._error(request, error)
-        return self._json(request, await self._config_payload(guild))
+        self._rate_limit(request, "read")
+        _, _, guild = await self._authorized_guild(request)
+        return web.json_response(await self._config_payload(guild))
 
     async def handle_audit(self, request):
-        try:
-            self._rate_limit(request, "read")
-            _, _, guild = await self._authorized_guild(request)
-        except ApiError as error:
-            return self._error(request, error)
+        self._rate_limit(request, "read")
+        _, _, guild = await self._authorized_guild(request)
         limit = min(int(request.query.get("limit", "50") or 50), 200)
         entries = await asyncio.to_thread(db_get_audit, guild.id, limit)
-        return self._json(request, {"audit": entries})
+        return web.json_response({"audit": entries})
 
     async def handle_config_put(self, request):
+        self._rate_limit(request, "write")
+        self._check_origin(request)
+        sid, entry, guild = await self._authorized_guild(request)
         try:
-            self._rate_limit(request, "write")
-            sid, entry, guild = await self._authorized_guild(request)
             body = await request.json()
-        except ApiError as error:
-            return self._error(request, error)
         except Exception:
-            return self._json(request, {"error": "Body must be JSON."}, status=400)
-
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
         if not isinstance(body, dict):
-            return self._json(request, {"error": "Body must be a JSON object."}, status=400)
+            raise ApiError(400, "Body must be a JSON object.", code="bad_request")
 
         text_channel_ids = {str(channel.id) for channel in guild.text_channels}
         changes = {}
@@ -880,9 +973,9 @@ class WebServer:
                 changes["automod"] = automod
 
         if errors:
-            return self._json(request, {"error": "Validation failed.", "details": errors}, status=400)
+            raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)
         if not changes:
-            return self._json(request, {"error": "Nothing to update."}, status=400)
+            raise ApiError(400, "Nothing to update.", code="nothing_to_update")
 
         await asyncio.to_thread(update_guild_settings, guild.id, **changes)
         await asyncio.to_thread(
@@ -903,4 +996,4 @@ class WebServer:
         except Exception:
             pass
 
-        return self._json(request, await self._config_payload(guild))
+        return web.json_response(await self._config_payload(guild))

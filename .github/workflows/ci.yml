@@ -33,3 +33,6 @@ jobs:
 
       - name: Import smoke test
         run: python -c "import bot; print('cogs', len(bot.COGS))"
+
+      - name: Dashboard API smoke test
+        run: python tests/test_webserver.py
