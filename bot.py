@@ -136,6 +136,11 @@ class DevBot(commands.Bot):
         for name in COGS:
             await self.load_extension(f"cogs.{name}")
 
+        from core.webserver import WebServer
+
+        self.webserver = WebServer(self)
+        await self.webserver.start()
+
         self.command_sync_task = asyncio.create_task(self.sync_commands_later())
         print(f"v{BOT_VERSION} \"{BOT_CODENAME}\" • loaded {len(COGS)} cogs • command sync scheduled")
 
@@ -164,6 +169,9 @@ class DevBot(commands.Bot):
     async def close(self):
         if self.command_sync_task and not self.command_sync_task.done():
             self.command_sync_task.cancel()
+        webserver = getattr(self, "webserver", None)
+        if webserver:
+            await webserver.stop()
         await github_api.close()
         await super().close()
 
