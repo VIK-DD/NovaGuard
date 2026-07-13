@@ -1,5 +1,7 @@
 """🎭 Roles category — self-service role panels with persistent buttons."""
 
+import time
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -13,6 +15,9 @@ class RoleButton(
     template=r"rolebtn:(?P<role_id>\d+)",
 ):
     """A persistent role toggle button — survives bot restarts via its custom_id."""
+
+    _cooldown: dict[int, float] = {}  # user_id -> last click, anti-spam
+    _COOLDOWN = 2.0
 
     def __init__(self, role_id: int, label: str | None = None):
         super().__init__(
@@ -32,6 +37,15 @@ class RoleButton(
         guild = interaction.guild
         if guild is None:
             return
+
+        now = time.monotonic()
+        if now - self._cooldown.get(interaction.user.id, 0.0) < self._COOLDOWN:
+            return await interaction.response.send_message("⏳ Slow down a moment.", ephemeral=True)
+        self._cooldown[interaction.user.id] = now
+        if len(self._cooldown) > 4000:
+            for uid in [u for u, t in self._cooldown.items() if now - t > 60]:
+                self._cooldown.pop(uid, None)
+
         role = guild.get_role(self.role_id)
         if role is None:
             return await interaction.response.send_message(

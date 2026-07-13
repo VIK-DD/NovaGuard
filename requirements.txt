@@ -1,4 +1,7 @@
-discord.py>=2.4
-aiohttp>=3.9
-anthropic>=0.40
-cryptography>=42.0
+# Upper bounds cap surprise major upgrades (supply-chain / breaking changes).
+# For fully reproducible, hash-verified installs, generate a lock on the Pi:
+#   .venv/bin/pip freeze > requirements.lock   (then install from the lock)
+discord.py>=2.4,<3
+aiohttp>=3.9,<4
+anthropic>=0.40,<1
+cryptography>=42.0,<50

@@ -5,6 +5,7 @@ proper database. This keeps the migration safe and incremental.
 """
 
 import json
+import os
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -25,12 +26,23 @@ def utc_now():
     return datetime.now(UTC).isoformat()
 
 
+def _restrict_permissions():
+    """Keep the database (encrypted tokens, sessions, audit) readable only by
+    the owner. Best-effort — silently ignored on filesystems without POSIX modes."""
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.chmod(f"{DB_PATH}{suffix}", 0o600)
+        except OSError:
+            pass
+
+
 def connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys=ON")
+    _restrict_permissions()
     return connection
 
 

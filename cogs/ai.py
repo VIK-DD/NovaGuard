@@ -1,6 +1,8 @@
 """🧠 AI category — ask Claude anything, right inside Discord."""
 
 import os
+import time
+from collections import deque
 
 import discord
 from discord import app_commands
@@ -9,6 +11,13 @@ from discord.ext import commands
 from core.config import github_config
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
+
+# Cost guards: cap input size, plus a global sliding-window + daily ceiling so a
+# flood of users (or one abuser) cannot run up the Anthropic bill. Per-user
+# spacing is handled separately by the 15s command cooldown below.
+MAX_QUESTION_CHARS = 2000
+GLOBAL_RATE = (30, 60)  # at most 30 /ask calls per 60s across the whole bot
+DAILY_CAP = 500         # rough daily ceiling on AI calls
 
 try:
     import anthropic
@@ -40,10 +49,29 @@ class AI(commands.Cog):
         self.bot = bot
         api_key = os.getenv("ANTHROPIC_API_KEY")
         self.client = AsyncAnthropic(api_key=api_key) if (AsyncAnthropic and api_key) else None
+        self._recent = deque()  # timestamps for the global sliding window
+        self._day = 0           # current day ordinal
+        self._day_count = 0     # calls made today
 
     async def cog_unload(self):
         if self.client:
             await self.client.close()
+
+    def _within_budget(self):
+        """Global cost guard: bound total /ask calls per minute and per day."""
+        now = time.time()
+        rate, window = GLOBAL_RATE
+        while self._recent and now - self._recent[0] > window:
+            self._recent.popleft()
+        today = int(now // 86400)
+        if today != self._day:
+            self._day = today
+            self._day_count = 0
+        if len(self._recent) >= rate or self._day_count >= DAILY_CAP:
+            return False
+        self._recent.append(now)
+        self._day_count += 1
+        return True
 
     @app_commands.command(name="ask", description="Ask Claude AI anything")
     @app_commands.describe(question="What do you want to know?")
@@ -58,6 +86,21 @@ class AI(commands.Cog):
                     "2. Set `ANTHROPIC_API_KEY` in `.env` (get one at console.anthropic.com)\n"
                     "3. Restart the bot"
                 ),
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "AI system")
+            return await respond(interaction, embed, ephemeral=True)
+
+        question = question.strip()[:MAX_QUESTION_CHARS]
+        if not question:
+            embed = make_embed("✍️ Empty question", "Ask me something first!", color=Palette.WARNING)
+            brand_footer(embed, "AI system")
+            return await respond(interaction, embed, ephemeral=True)
+
+        if not self._within_budget():
+            embed = make_embed(
+                "🧊 AI is taking a breather",
+                "The assistant is handling a lot of requests right now. Please try again shortly.",
                 color=Palette.WARNING,
             )
             brand_footer(embed, "AI system")

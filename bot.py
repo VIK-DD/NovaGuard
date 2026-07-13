@@ -22,7 +22,6 @@ from core.error_digest import send_error_digest
 from core.github_api import github_api
 from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import truncate
 
 COGS = (
     "setup",
@@ -127,6 +126,12 @@ class DevBot(commands.Bot):
             intents=intents,
             help_command=None,
             tree_cls=NovaCommandTree,
+            # Safe default: never let echoed user content trigger @everyone/@here
+            # or role pings. Specific user pings (welcome, replies) stay allowed;
+            # commands that must ping a role (e.g. tickets) opt in per-message.
+            allowed_mentions=discord.AllowedMentions(
+                everyone=False, roles=False, users=True, replied_user=True
+            ),
         )
         self.launched_at = datetime.now(UTC)
         self.startup_update_announced = False
@@ -204,7 +209,11 @@ def create_bot():
             current_bot.loop.create_task(
                 send_error_digest(current_bot, "Slash Command Error", original, interaction=interaction)
             )
-            embed = make_embed("💥 Something hiccuped", f"`{truncate(str(original), 180)}`", color=Palette.DANGER)
+            embed = make_embed(
+                "💥 Something hiccuped",
+                "An unexpected error occurred. The team has been notified — please try again in a moment.",
+                color=Palette.DANGER,
+            )
         brand_footer(embed)
 
         try:

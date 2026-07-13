@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import time
 from datetime import UTC, datetime, timedelta
 
 import discord
@@ -57,6 +58,9 @@ class GiveawayButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"gw:(?P<message_id>\d+)",
 ):
+    _cooldown: dict[int, float] = {}  # user_id -> last click, anti-spam
+    _COOLDOWN = 2.0
+
     def __init__(self, message_id: int):
         super().__init__(
             discord.ui.Button(
@@ -73,6 +77,14 @@ class GiveawayButton(
         return cls(int(match["message_id"]))
 
     async def callback(self, interaction: discord.Interaction):
+        now = time.monotonic()
+        if now - self._cooldown.get(interaction.user.id, 0.0) < self._COOLDOWN:
+            return await interaction.response.send_message("⏳ Slow down a moment.", ephemeral=True)
+        self._cooldown[interaction.user.id] = now
+        if len(self._cooldown) > 4000:
+            for uid in [u for u, t in self._cooldown.items() if now - t > 60]:
+                self._cooldown.pop(uid, None)
+
         entries = await load_giveaways_async()
         entry = next((g for g in entries if g["message_id"] == self.message_id), None)
         if entry is None or entry.get("ended"):

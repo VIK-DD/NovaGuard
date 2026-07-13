@@ -618,6 +618,10 @@ class Developer(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        # light per-user cooldown on every command here — they all hit the
+        # GitHub API, so this caps abuse against our shared token quota
+        for command in self.walk_app_commands():
+            app_commands.checks.cooldown(1, 6.0)(command)
         if github_config.watch_repos:
             self.watch_github_activity.start()
 
