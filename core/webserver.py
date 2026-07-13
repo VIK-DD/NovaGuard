@@ -74,6 +74,14 @@ CORS_ORIGINS = {
 }
 AFTER_LOGIN = os.getenv("WEB_AFTER_LOGIN", "/api/me")
 COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes", "on"}
+# Cookie SameSite policy. "Lax" works when the dashboard is same-site as the API
+# (including subdomains of one registrable domain). Use "None" for a dashboard on
+# a different domain — browsers require Secure for SameSite=None, so we force it.
+COOKIE_SAMESITE = (os.getenv("WEB_COOKIE_SAMESITE", "Lax").strip().capitalize() or "Lax")
+if COOKIE_SAMESITE not in {"Lax", "Strict", "None"}:
+    COOKIE_SAMESITE = "Lax"
+if COOKIE_SAMESITE == "None":
+    COOKIE_SECURE = True
 TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
 INVITE_PERMISSIONS = os.getenv("WEB_INVITE_PERMISSIONS", "8").strip() or "8"
 
@@ -547,6 +555,9 @@ class WebServer:
             "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",
         }
+        if COOKIE_SECURE:
+            # Served over HTTPS ⇒ tell browsers to never fall back to http
+            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         origin = self._allowed_origin(request)
         if origin:
             headers.update(
@@ -729,7 +740,7 @@ class WebServer:
         )
         response = web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}")
         response.set_cookie(STATE_COOKIE, state, max_age=STATE_TTL, httponly=True,
-                            samesite="Lax", secure=COOKIE_SECURE)
+                            samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         return response
 
     async def handle_callback(self, request):
@@ -777,7 +788,7 @@ class WebServer:
 
         response = web.HTTPFound(AFTER_LOGIN)
         response.set_cookie(SESSION_COOKIE, sid, max_age=SESSION_TTL, httponly=True,
-                            samesite="Lax", secure=COOKIE_SECURE)
+                            samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         response.del_cookie(STATE_COOKIE)
         return response
 
