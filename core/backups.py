@@ -4,7 +4,6 @@ import shutil
 import sqlite3
 import zipfile
 from datetime import UTC, datetime
-from pathlib import Path
 
 from .config import BASE_DIR, GITHUB_STATE_FILE, UPDATE_STATE_FILE
 from .database import DB_PATH, init_database

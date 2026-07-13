@@ -15,7 +15,7 @@ import aiohttp
 import discord
 
 from .config import BASE_DIR, BOT_CODENAME, BOT_VERSION, UPDATE_STATE_FILE, github_config
-from .guild_config import resolve_channel, resolve_configured_channels
+from .guild_config import resolve_configured_channels
 from .storage import load_json_file, save_json_file
 from .theme import Palette
 from .utils import build_link_view, parse_github_datetime
