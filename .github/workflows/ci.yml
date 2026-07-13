@@ -36,3 +36,28 @@ jobs:
 
       - name: Dashboard API smoke test
         run: python tests/test_webserver.py
+
+      - name: Security audit (pip-audit)
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt
+
+  # Proves the hash-locked lockfile installs reproducibly (what the Pi uses).
+  locked-install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Install from the hash-locked lockfile
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.lock
+
+      - name: Import smoke test (locked versions)
+        run: python -c "import bot; print('cogs', len(bot.COGS))"

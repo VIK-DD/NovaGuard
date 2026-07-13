@@ -554,6 +554,8 @@ class WebServer:
             "X-Frame-Options": "DENY",
             "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",
+            # This is a pure JSON API: forbid loading/executing any resource.
+            "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
         }
         if COOKIE_SECURE:
             # Served over HTTPS ⇒ tell browsers to never fall back to http
