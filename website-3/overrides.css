@@ -1,0 +1,20 @@
+.content::after {
+  content: "Designed & Developed by VIK & CloudMediaSRL";
+  display: block;
+  margin-top: 2rem;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (max-width: 540px) {
+  .content::after {
+    max-width: 18rem;
+    margin-top: 1.6rem;
+    font-size: 0.64rem;
+  }
+}
