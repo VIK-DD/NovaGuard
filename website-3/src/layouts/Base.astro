@@ -24,6 +24,21 @@ const {
     <meta property="og:image" content="/favicon.png" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
+    <script is:inline>
+      // Apply the stored theme before first paint to avoid a flash.
+      (() => {
+        const stored = localStorage.getItem("ng-theme");
+        const dark = stored
+          ? stored === "dark"
+          : matchMedia("(prefers-color-scheme: dark)").matches;
+        if (dark) {
+          document.documentElement.dataset.theme = "dark";
+          document
+            .querySelector('meta[name="theme-color"]')
+            ?.setAttribute("content", "#161311");
+        }
+      })();
+    </script>
   </head>
   <body class="min-h-screen bg-paper text-ink font-sans">
     <slot />

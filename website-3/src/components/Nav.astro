@@ -1,4 +1,6 @@
 ---
+import ThemeToggle from "./ThemeToggle.astro";
+
 const links = [
   { href: "/commands", label: "Commands" },
   { href: "/dashboard", label: "Dashboard" },
@@ -19,10 +21,11 @@ const links = [
           </a>
         ))
       }
+      <ThemeToggle />
       <a
         href="/dashboard"
         data-invite
-        class="bg-accent rounded-full px-3.5 py-1.5 whitespace-nowrap text-white transition-opacity hover:opacity-90 sm:px-4"
+        class="bg-accent-solid rounded-full px-3.5 py-1.5 whitespace-nowrap text-white transition-opacity hover:opacity-90 sm:px-4"
       >
         Add to Discord
       </a>

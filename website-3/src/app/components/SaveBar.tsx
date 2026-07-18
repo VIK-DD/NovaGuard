@@ -28,7 +28,7 @@ export default function SaveBar({ visible, saving, error, onSave, onDiscard }: P
             type="button"
             onClick={onSave}
             disabled={saving || !visible}
-            className="bg-accent rounded-full px-5 py-2 text-sm text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="bg-accent-solid rounded-full px-5 py-2 text-sm text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}
           </button>

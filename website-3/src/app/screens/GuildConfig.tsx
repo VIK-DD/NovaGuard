@@ -44,7 +44,7 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
         aria-label={props.label}
         onClick={() => props.onChange(!props.checked)}
         className={`relative h-6 w-11 rounded-full transition-colors ${
-          props.checked ? "bg-accent" : "bg-line"
+          props.checked ? "bg-accent-solid" : "bg-line"
         }`}
       >
         <span

@@ -31,7 +31,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           </p>
           <button
             onClick={() => window.location.assign(loginUrl())}
-            className="bg-accent mt-8 rounded-full px-6 py-3 text-white transition-opacity hover:opacity-90"
+            className="bg-accent-solid mt-8 rounded-full px-6 py-3 text-white transition-opacity hover:opacity-90"
           >
             Continue with Discord
           </button>
