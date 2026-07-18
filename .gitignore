@@ -3,6 +3,7 @@
 .github_state.json
 __pycache__/
 .venv/
+.venv-mac/
 node_modules/
 .claude/
 data/
