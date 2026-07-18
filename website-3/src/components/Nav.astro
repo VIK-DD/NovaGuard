@@ -1,5 +1,5 @@
 ---
-import ThemeToggle from "./ThemeToggle.astro";
+import Masthead from "./Masthead.astro";
 
 const links = [
   { href: "/commands", label: "Commands" },
@@ -7,6 +7,7 @@ const links = [
 ];
 ---
 
+<Masthead />
 <header class="border-b border-line">
   <nav class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
     <a href="/" class="font-display flex items-center gap-2.5 text-xl italic" aria-label="NovaGuard home">
@@ -21,7 +22,6 @@ const links = [
           </a>
         ))
       }
-      <ThemeToggle />
       <a
         href="/dashboard"
         data-invite

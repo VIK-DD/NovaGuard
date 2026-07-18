@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useLogout, useMe } from "../queries";
-import ThemeToggle from "./ThemeToggle";
 
 export default function Shell({ children }: { children: ReactNode }) {
   const me = useMe();
@@ -23,10 +22,8 @@ export default function Shell({ children }: { children: ReactNode }) {
               Servers
             </Link>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <ThemeToggle />
-            {user && (
-              <>
+          {user && (
+            <div className="flex items-center gap-3 text-sm">
               {user.avatar ? (
                 <img
                   src={`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`}
@@ -46,9 +43,8 @@ export default function Shell({ children }: { children: ReactNode }) {
               >
                 Sign out
               </button>
-              </>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </header>
       {children}
