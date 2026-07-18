@@ -67,7 +67,7 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 - `/setup` opens a real setup wizard with select menus, channel picker and quick buttons.
 - `/config view`, `/config export`, `/config backup`, `/config reset` keep admin work clean and centralized.
 - Per-server settings live in SQLite, not in a pile of fragile environment variables.
-- A lightweight static coming-soon site keeps the public launch page simple while the full dashboard evolves.
+- A full website (`website-3/`) ships the public landing page plus a browser dashboard for per-server configuration, with the classic coming-soon page preserved as a maintenance mode.
 
 #### Rich server experience
 - Public `/status`, private `/doctor`, polished `/help`, rotating streaming presence.
