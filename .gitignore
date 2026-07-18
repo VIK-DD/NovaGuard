@@ -6,5 +6,7 @@ __pycache__/
 node_modules/
 .claude/
 data/
+!website-3/src/data/
+!website-3/src/data/**
 backups/
 .DS_Store
