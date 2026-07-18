@@ -7,6 +7,7 @@ import {
 import AuthGate from "./components/AuthGate";
 import Shell from "./components/Shell";
 import GuildPicker from "./screens/GuildPicker";
+import GuildConfig from "./screens/GuildConfig";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -33,7 +34,7 @@ const guildRoute = createRoute({
 const guildConfigRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "/",
-  component: () => null,
+  component: GuildConfig,
 });
 
 const guildAuditRoute = createRoute({
