@@ -3,6 +3,7 @@ import Masthead from "./Masthead.astro";
 
 const links = [
   { href: "/commands", label: "Commands" },
+  { href: "/status", label: "Status" },
   { href: "/dashboard", label: "Dashboard" },
 ];
 ---
@@ -27,7 +28,8 @@ const links = [
         data-invite
         class="bg-accent-solid rounded-full px-3.5 py-1.5 whitespace-nowrap text-white transition-opacity hover:opacity-90 sm:px-4"
       >
-        Add to Discord
+        <span class="sm:hidden">Add</span>
+        <span class="hidden sm:inline">Add to Discord</span>
       </a>
     </div>
   </nav>
