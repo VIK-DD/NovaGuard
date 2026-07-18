@@ -1,0 +1,157 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Base title="Status — NovaGuard" description="Live operational status of the NovaGuard bot.">
+  <Nav />
+  <main class="mx-auto max-w-2xl px-6 py-20">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">System bulletin</p>
+    <h1 data-status-headline class="font-display mt-4 text-5xl leading-tight">
+      Taking the pulse…
+    </h1>
+    <p data-status-sub class="mt-4 text-ink-muted">Checking the bot's vital signs.</p>
+
+    <dl class="mt-12">
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Status</dt>
+        <dd class="flex items-center gap-2">
+          <span data-status-dot class="h-2 w-2 rounded-full bg-line"></span>
+          <span data-f="status" class="font-display text-xl">—</span>
+        </dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Version</dt>
+        <dd data-f="version" class="font-display text-xl">—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Uptime</dt>
+        <dd data-f="uptime" class="font-display text-xl tabular-nums">—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Servers</dt>
+        <dd data-f="guilds" class="font-display text-xl">—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Members</dt>
+        <dd data-f="members" class="font-display text-xl">—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Commands</dt>
+        <dd data-f="commands" class="font-display text-xl">—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Database</dt>
+        <dd data-f="database" class="font-display text-xl">—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
+        <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Gateway</dt>
+        <dd data-f="gateway" class="font-display text-xl">—</dd>
+      </div>
+    </dl>
+
+    <p data-status-checked class="mt-6 text-xs tracking-wide text-ink-muted"></p>
+  </main>
+  <Footer />
+</Base>
+
+<script>
+  const base = import.meta.env.PUBLIC_API_BASE;
+  const OK_GREEN = "#3d8a57";
+
+  const el = (sel: string) => document.querySelector<HTMLElement>(sel);
+  const set = (key: string, value: string) => {
+    const node = el(`[data-f="${key}"]`);
+    if (node) node.textContent = value;
+  };
+  const fmt = (n: number) => new Intl.NumberFormat("en").format(n);
+
+  const fmtUptime = (total: number) => {
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = Math.floor(total % 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    return `${m}m ${s}s`;
+  };
+
+  let uptimeBase = 0;
+  let fetchedAt = 0;
+
+  const setHeadline = (headline: string, sub: string) => {
+    const h = el("[data-status-headline]");
+    const p = el("[data-status-sub]");
+    if (h) h.textContent = headline;
+    if (p) p.textContent = sub;
+  };
+
+  const setDot = (color: string) => {
+    const dot = el("[data-status-dot]");
+    if (dot) dot.style.backgroundColor = color;
+  };
+
+  const stampChecked = () => {
+    const node = el("[data-status-checked]");
+    if (node) {
+      const time = new Intl.DateTimeFormat("en", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(new Date());
+      node.textContent = `Last checked ${time} · refreshes every 30 s`;
+    }
+  };
+
+  async function poll() {
+    if (!base) return;
+    try {
+      const opts = { signal: AbortSignal.timeout(5000) };
+      const [health, stats] = await Promise.all([
+        fetch(`${base}/api/v1/health`, opts).then((r) => r.json()),
+        fetch(`${base}/api/v1/stats`, opts).then((r) => r.json()),
+      ]);
+
+      const allGood = health.ok && health.db_ok && stats.ready;
+      setHeadline(
+        allGood ? "All systems operational." : "Running with a limp.",
+        allGood
+          ? "NovaGuard is awake and answering."
+          : "The bot is up, but something needs attention.",
+      );
+      setDot(allGood ? OK_GREEN : "var(--accent)");
+      set("status", allGood ? "Operational" : "Degraded");
+      set("version", `v${stats.version} · ${stats.codename}`);
+      set("guilds", fmt(stats.guilds));
+      set("members", fmt(stats.members));
+      set("commands", fmt(stats.commands));
+      set("database", health.db_ok ? "Healthy" : "Degraded");
+      set("gateway", health.bot_ready ? "Connected" : "Connecting…");
+      uptimeBase = stats.uptime_seconds;
+      fetchedAt = Date.now();
+    } catch {
+      setHeadline(
+        "The bot is resting.",
+        "NovaGuard is unreachable right now — most likely an update or planned maintenance.",
+      );
+      setDot("var(--accent)");
+      set("status", "Offline");
+      for (const key of ["version", "uptime", "guilds", "members", "commands", "database", "gateway"]) {
+        set(key, "—");
+      }
+      fetchedAt = 0;
+    }
+    stampChecked();
+  }
+
+  setInterval(() => {
+    if (fetchedAt) {
+      set("uptime", fmtUptime(uptimeBase + (Date.now() - fetchedAt) / 1000));
+    }
+  }, 1000);
+
+  void poll();
+  setInterval(() => void poll(), 30_000);
+</script>
