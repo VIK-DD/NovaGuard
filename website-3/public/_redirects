@@ -1,0 +1,10 @@
+# NovaGuard redirects (Netlify / Cloudflare Pages)
+
+# MAINTENANCE MODE — uncomment while shipping bot updates to route the
+# whole site to the classic Coming Soon page, redeploy, then re-comment:
+# /*  /coming-soon/  302!
+
+/hq  https://novaguard.fun  301
+
+# Dashboard is a client-routed SPA — deep links fall back to its shell:
+/dashboard/*  /dashboard/  200

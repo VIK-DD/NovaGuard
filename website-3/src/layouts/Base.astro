@@ -1,0 +1,31 @@
+---
+import "../styles/global.css";
+interface Props {
+  title: string;
+  description?: string;
+}
+const {
+  title,
+  description = "NovaGuard — the friendly guardian for your Discord community.",
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#faf9f5" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/favicon.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+  </head>
+  <body class="min-h-screen bg-paper text-ink font-sans">
+    <slot />
+  </body>
+</html>
