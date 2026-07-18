@@ -1,0 +1,57 @@
+---
+const features = [
+  {
+    kicker: "Moderation",
+    title: "Order, kept quietly.",
+    body: "Purge, kick, ban, timeout and warnings — slash-native, logged, and centralized where your staff can see them.",
+  },
+  {
+    kicker: "Setup",
+    title: "A setup wizard that respects you.",
+    body: "/setup opens real select menus and channel pickers. Settings live per-server in SQLite, not in a pile of environment variables.",
+  },
+  {
+    kicker: "Server life",
+    title: "Levels, tickets, giveaways.",
+    body: "XP with level-up celebrations, button-entry giveaways, private-thread tickets and self-role panels that survive restarts.",
+  },
+  {
+    kicker: "Developer layer",
+    title: "GitHub-aware, out of the box.",
+    body: "Commits, releases and repository watch delivered straight to the channels you choose.",
+  },
+  {
+    kicker: "Dashboard",
+    title: "Configured from the browser.",
+    body: "Sign in with Discord, pick a server, change settings — every change audit-trailed with a name on it.",
+  },
+  {
+    kicker: "Self-hosted",
+    title: "Runs on hardware you own.",
+    body: "Python, SQLite and PM2 on a Raspberry Pi, with automatic backups and health alerts. No cloud bill.",
+  },
+];
+---
+
+<section class="mx-auto max-w-5xl px-6 py-20">
+  <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">What it does</p>
+  <div class="mt-8 grid gap-x-16 sm:grid-cols-2">
+    {
+      features.map((f) => (
+        <article class="reveal border-t border-line py-8">
+          <p class="text-xs tracking-[0.2em] text-accent uppercase">{f.kicker}</p>
+          <h2 class="font-display mt-2 text-2xl">{f.title}</h2>
+          <p class="mt-2 text-sm leading-relaxed text-ink-muted">{f.body}</p>
+        </article>
+      ))
+    }
+  </div>
+</section>
+<script>
+  const io = new IntersectionObserver(
+    (entries) =>
+      entries.forEach((e) => e.isIntersecting && e.target.classList.add("is-visible")),
+    { threshold: 0.15 },
+  );
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+</script>

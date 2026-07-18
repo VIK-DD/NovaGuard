@@ -1,7 +1,18 @@
 ---
 import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Hero from "../components/Hero.astro";
+import Features from "../components/Features.astro";
+import Cta from "../components/Cta.astro";
+import Footer from "../components/Footer.astro";
 ---
 
-<Base title="NovaGuard">
-  <h1 class="font-display p-12 text-5xl">NovaGuard</h1>
+<Base title="NovaGuard — The friendly guardian for your Discord community">
+  <Nav />
+  <main>
+    <Hero />
+    <Features />
+    <Cta />
+  </main>
+  <Footer />
 </Base>

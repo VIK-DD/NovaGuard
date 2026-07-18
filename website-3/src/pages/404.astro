@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Base title="404 — NovaGuard">
+  <Nav />
+  <main class="mx-auto flex max-w-5xl flex-col items-center px-6 py-32 text-center">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">404</p>
+    <h1 class="font-display mt-4 text-5xl">This page drifted off.</h1>
+    <a href="/" class="mt-8 rounded-full border border-line px-6 py-3 transition-colors hover:border-ink">
+      Back home
+    </a>
+  </main>
+  <Footer />
+</Base>

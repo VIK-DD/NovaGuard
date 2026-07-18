@@ -1,0 +1,40 @@
+---
+const links = [
+  { href: "/commands", label: "Commands" },
+  { href: "/dashboard", label: "Dashboard" },
+];
+---
+
+<header class="border-b border-line">
+  <nav class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+    <a href="/" class="font-display flex items-center gap-2.5 text-xl italic">
+      <img src="/favicon.png" alt="" width="28" height="28" class="rounded-md" />
+      NovaGuard
+    </a>
+    <div class="flex items-center gap-4 text-sm sm:gap-7">
+      {
+        links.map((l) => (
+          <a href={l.href} class="text-ink-muted transition-colors hover:text-ink">
+            {l.label}
+          </a>
+        ))
+      }
+      <a
+        href="/dashboard"
+        data-invite
+        class="bg-accent rounded-full px-4 py-1.5 text-white transition-opacity hover:opacity-90"
+      >
+        Add to Discord
+      </a>
+    </div>
+  </nav>
+</header>
+<script>
+  // Invite buttons point at the bot API's install redirect when configured.
+  const base = import.meta.env.PUBLIC_API_BASE;
+  if (base) {
+    document
+      .querySelectorAll<HTMLAnchorElement>("[data-invite]")
+      .forEach((a) => (a.href = `${base}/api/v1/invite`));
+  }
+</script>
