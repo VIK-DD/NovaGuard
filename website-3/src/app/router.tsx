@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import AuthGate from "./components/AuthGate";
 import Shell from "./components/Shell";
+import GuildPicker from "./screens/GuildPicker";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -17,15 +18,10 @@ const rootRoute = createRootRoute({
   ),
 });
 
-// Placeholder screens — replaced by real ones in later tasks.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: () => (
-    <main className="mx-auto max-w-5xl px-6 py-16">
-      <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">Your servers</p>
-    </main>
-  ),
+  component: GuildPicker,
 });
 
 const guildRoute = createRoute({
