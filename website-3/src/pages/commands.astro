@@ -1,0 +1,48 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import { commandCategories } from "../data/commands";
+---
+
+<Base
+  title="Commands — NovaGuard"
+  description="Every NovaGuard slash command, organized by category."
+>
+  <Nav />
+  <main class="mx-auto max-w-5xl px-6 py-20">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Command catalog</p>
+    <h1 class="font-display mt-4 max-w-2xl text-5xl leading-tight">Every command, one page.</h1>
+    <p class="mt-4 text-ink-muted">
+      Tip: <code class="rounded-md border border-line bg-surface px-1.5 py-0.5 text-sm">/help</code>
+      opens an interactive hub inside Discord.
+    </p>
+
+    <div class="mt-12">
+      {
+        commandCategories.map((cat) => (
+          <section class="border-t border-line py-8">
+            <div class="grid gap-4 sm:grid-cols-[14rem_1fr]">
+              <div>
+                <h2 class="font-display text-xl">
+                  <span aria-hidden="true">{cat.emoji}</span> {cat.name}
+                </h2>
+                <p class="mt-1 text-sm text-ink-muted">{cat.blurb}</p>
+              </div>
+              <ul class="flex flex-wrap content-start gap-2">
+                {cat.commands.map((c) => (
+                  <li>
+                    <code class="inline-block rounded-md border border-line bg-surface px-2 py-0.5 text-sm">
+                      {c}
+                    </code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ))
+      }
+    </div>
+  </main>
+  <Footer />
+</Base>

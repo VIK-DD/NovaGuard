@@ -1,0 +1,58 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+
+// Wording ported from docs/terms.html — keep the two in sync.
+const sections = [
+  {
+    h: "1. Service Description",
+    p: "NovaGuard is a Discord bot that may provide moderation, logging, setup automation, utility tools, tickets, giveaways, GitHub integrations, status commands and other community management features.",
+  },
+  {
+    h: "2. Acceptable Use",
+    p: "You may not use NovaGuard to abuse others, spam, exploit systems, violate privacy or break applicable laws or Discord platform rules.",
+  },
+  {
+    h: "3. Administrator Responsibility",
+    p: "Server owners and administrators are responsible for how the bot is configured and used in their communities, including moderation settings, logs and automations.",
+  },
+  {
+    h: "4. Availability",
+    p: "NovaGuard is provided on an “as available” basis. Features may change, be interrupted or become unavailable during maintenance, updates, provider issues or host outages.",
+  },
+  {
+    h: "5. Third-Party Services",
+    p: "NovaGuard may interact with third-party services such as Discord, GitHub and optional AI providers. Those services are governed by their own terms and policies.",
+  },
+  {
+    h: "6. Disclaimer and Liability",
+    p: "NovaGuard is provided without warranties of any kind. To the fullest extent permitted by law, the operator is not liable for indirect or consequential damages, data loss, moderation outcomes or server disruptions related to use of the bot.",
+  },
+  {
+    h: "7. Contact",
+    p: "For questions about these terms, contact the operator through the NovaGuard repository or VIK-DD on GitHub.",
+  },
+];
+---
+
+<Base title="Terms of Service — NovaGuard">
+  <Nav />
+  <main class="mx-auto max-w-2xl px-6 py-20">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Effective July 9, 2026</p>
+    <h1 class="font-display mt-4 text-5xl">Terms of Service</h1>
+    <p class="mt-6 leading-relaxed text-ink-muted">
+      These Terms of Service govern your access to and use of NovaGuard, a self-hosted Discord
+      bot operated by VIK-DD. By using NovaGuard or adding it to a server, you agree to these terms.
+    </p>
+    {
+      sections.map((s) => (
+        <section class="mt-10 border-t border-line pt-6">
+          <h2 class="font-display text-2xl">{s.h}</h2>
+          <p class="mt-3 leading-relaxed text-ink-muted">{s.p}</p>
+        </section>
+      ))
+    }
+  </main>
+  <Footer />
+</Base>

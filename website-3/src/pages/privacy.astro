@@ -1,0 +1,62 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+
+// Wording ported from docs/privacy.html — keep the two in sync.
+const sections = [
+  {
+    h: "1. Information We May Process",
+    p: "NovaGuard may process Discord user IDs, guild IDs, channel IDs, role IDs, server configuration data, moderation or feature state, and other metadata required to operate the bot's features.",
+  },
+  {
+    h: "2. Purpose of Processing",
+    p: "Data is used only to provide requested bot features, preserve configuration, keep feature state, generate embeds, support moderation tools and maintain service stability.",
+  },
+  {
+    h: "3. Storage",
+    p: "NovaGuard stores selected bot data in self-hosted local storage, including SQLite databases and JSON files, depending on the active feature.",
+  },
+  {
+    h: "4. Third-Party Services",
+    p: "NovaGuard may use third-party services such as Discord, GitHub and optional AI providers. When those integrations are enabled, relevant data may pass through those services under their own policies.",
+  },
+  {
+    h: "5. Data Sharing",
+    p: "NovaGuard does not sell personal data. Information is only shared when required for core bot functionality or optional integrations explicitly used by the operator.",
+  },
+  {
+    h: "6. Retention",
+    p: "Data may be retained as long as needed for bot operation, server continuity, backups and configuration persistence, unless manually removed by the operator.",
+  },
+  {
+    h: "7. Security",
+    p: "Reasonable efforts are made to protect stored data, but no method of transmission or storage is completely secure. Server owners should use safe secrets handling and secure hosting practices.",
+  },
+  {
+    h: "8. Contact",
+    p: "For privacy-related questions, contact the operator through the NovaGuard repository or VIK-DD on GitHub.",
+  },
+];
+---
+
+<Base title="Privacy Policy — NovaGuard">
+  <Nav />
+  <main class="mx-auto max-w-2xl px-6 py-20">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Effective July 9, 2026</p>
+    <h1 class="font-display mt-4 text-5xl">Privacy Policy</h1>
+    <p class="mt-6 leading-relaxed text-ink-muted">
+      This Privacy Policy explains what information NovaGuard may process, why it is used and
+      how it is handled. NovaGuard is a self-hosted Discord bot operated by VIK-DD.
+    </p>
+    {
+      sections.map((s) => (
+        <section class="mt-10 border-t border-line pt-6">
+          <h2 class="font-display text-2xl">{s.h}</h2>
+          <p class="mt-3 leading-relaxed text-ink-muted">{s.p}</p>
+        </section>
+      ))
+    }
+  </main>
+  <Footer />
+</Base>
