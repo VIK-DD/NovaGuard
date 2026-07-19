@@ -1,14 +1,10 @@
-# NovaGuard redirects (Netlify / Cloudflare Pages)
+# NovaGuard redirects (Netlify / Cloudflare Pages / Workers static assets)
 
-# SOFT-LAUNCH MODE — the root shows the classic Coming Soon page while the
-# full site stays live at its own routes (/home, /commands, /status,
-# /dashboard). Delete this whole block + redeploy for the public launch.
-# (The /assets + /overrides.css lines exist because the legacy page uses
-# relative URLs that resolve against / when it is served at the root.)
-/home  /index.html    200
-/      /coming-soon/  200
-/assets/*  /coming-soon/assets/:splat  200
-/overrides.css  /coming-soon/overrides.css  200
+# Soft-launch: the root ("/") is a real Coming Soon index.html, physically
+# copied there at build time by scripts/soft-launch.mjs — not a rewrite rule
+# here. Some hosts (Cloudflare Workers static assets) don't honor 200
+# "rewrite" rules in this file, only real redirects (3xx) below are
+# guaranteed to work everywhere. See README.md for how to go fully live.
 
 # MAINTENANCE MODE — uncomment while shipping bot updates to route the
 # whole site to the classic Coming Soon page, redeploy, then re-comment:

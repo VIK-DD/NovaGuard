@@ -32,15 +32,19 @@ Bot-side requirements (see `docs/API.md`):
 
 ## Soft-launch mode (default right now)
 
-`public/_redirects` currently rewrites `/` to the classic Coming Soon page,
-while the full site stays live at its own routes: `/home` (the real landing),
-`/commands`, `/status`, `/dashboard`. Share those links freely — the dashboard
-is protected by Discord login regardless. For the public launch, delete the
-two SOFT-LAUNCH lines in `public/_redirects` and redeploy.
+`npm run build` physically copies the Coming Soon page onto `dist/index.html`
+after the Astro build (`scripts/soft-launch.mjs`), while the full site stays
+live at its own routes: `/home` (the real landing), `/commands`, `/status`,
+`/dashboard`. Share those links freely — the dashboard is protected by
+Discord login regardless.
 
-Note: rewrites only apply on Cloudflare Pages/Netlify — the local
-`npm run preview` server ignores `_redirects`, so locally `/` always shows
-the full landing.
+This uses a file copy rather than a `_redirects` rewrite rule because some
+static hosts (Cloudflare Workers static assets, unlike classic Pages) only
+honor real redirects (3xx) from `_redirects`, not 200 "rewrite" rules —
+confirmed by testing against a live deploy.
+
+**For the public launch:** build with `npm run build:launch` instead (skips
+the Coming Soon copy step, so `/` serves the real landing), then redeploy.
 
 ## Maintenance mode (classic Coming Soon page)
 
