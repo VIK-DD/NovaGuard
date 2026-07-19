@@ -30,6 +30,18 @@ Bot-side requirements (see `docs/API.md`):
 - `WEB_CORS_ORIGIN` must include this site's origin
 - `WEB_AFTER_LOGIN` should point to `https://<site>/dashboard`
 
+## Soft-launch mode (default right now)
+
+`public/_redirects` currently rewrites `/` to the classic Coming Soon page,
+while the full site stays live at its own routes: `/home` (the real landing),
+`/commands`, `/status`, `/dashboard`. Share those links freely — the dashboard
+is protected by Discord login regardless. For the public launch, delete the
+two SOFT-LAUNCH lines in `public/_redirects` and redeploy.
+
+Note: rewrites only apply on Cloudflare Pages/Netlify — the local
+`npm run preview` server ignores `_redirects`, so locally `/` always shows
+the full landing.
+
 ## Maintenance mode (classic Coming Soon page)
 
 The original launch page is preserved byte-identical at `/coming-soon/`.
