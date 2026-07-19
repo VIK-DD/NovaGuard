@@ -2,9 +2,13 @@
 
 # SOFT-LAUNCH MODE — the root shows the classic Coming Soon page while the
 # full site stays live at its own routes (/home, /commands, /status,
-# /dashboard). Delete the next two lines + redeploy for the public launch.
+# /dashboard). Delete this whole block + redeploy for the public launch.
+# (The /assets + /overrides.css lines exist because the legacy page uses
+# relative URLs that resolve against / when it is served at the root.)
 /home  /index.html    200
 /      /coming-soon/  200
+/assets/*  /coming-soon/assets/:splat  200
+/overrides.css  /coming-soon/overrides.css  200
 
 # MAINTENANCE MODE — uncomment while shipping bot updates to route the
 # whole site to the classic Coming Soon page, redeploy, then re-comment:
