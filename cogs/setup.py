@@ -54,29 +54,29 @@ def build_setup_embed(guild):
     settings = get_guild_settings(guild.id)
     done, total = setup_score(settings)
     ratio_text = f"{done}/{total}"
+    completed = bool(settings.get("setup_completed"))
 
-    if done >= total:
+    if completed:
         color = Palette.SUCCESS
-        status = "NovaGuard is fully configured for this server."
-    elif done:
-        color = Palette.WARNING
-        status = "NovaGuard is partially configured. A few finishing touches remain."
+        title = "✅ NovaGuard Setup — Complete"
+        status = (
+            "**Setup is marked complete.** Every channel below is optional — NovaGuard "
+            "runs fine with none, some, or all of them set. Re-open `/setup` anytime to change things."
+        )
     else:
-        color = Palette.PRIMARY
-        status = "Welcome. Let's configure NovaGuard in a couple of clicks."
+        color = Palette.PRIMARY if not done else Palette.INFO
+        title = "🚀 NovaGuard Setup"
+        status = (
+            "Every channel here is **optional** — set the ones you want, leave the rest empty. "
+            "Pick an item from the menu then choose a channel, or use the quick buttons. "
+            "To remove a channel, select it and press **Clear selected**. "
+            "Press **Mark Complete** when you're happy (even with none set)."
+        )
 
-    embed = make_embed(
-        "🚀 NovaGuard Setup",
-        (
-            f"{status}\n\n"
-            "Pick a setup item from the menu, then choose a channel from the dropdown. "
-            "You can also run `/setup` inside a channel and use the quick buttons below."
-        ),
-        color=color,
-    )
+    embed = make_embed(title, status, color=color)
     embed.add_field(
-        name="Progress",
-        value=f"{progress_bar(done, total, slots=12)} `{ratio_text}` recommended items",
+        name="Optional channels set",
+        value=f"{progress_bar(done, total, slots=12)} `{ratio_text}` configured — all optional",
         inline=False,
     )
 
@@ -261,6 +261,10 @@ class SetupView(discord.ui.View):
     async def mark_complete(self, interaction, button):
         update_guild_settings(interaction.guild_id, setup_completed=True)
         await interaction.response.edit_message(embed=build_setup_embed(interaction.guild), view=self)
+        await interaction.followup.send(
+            "✅ Setup marked complete. Channels are optional — re-open `/setup` anytime to change them.",
+            ephemeral=True,
+        )
 
 
 class Setup(commands.Cog):
