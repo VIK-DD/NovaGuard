@@ -3,5 +3,5 @@
 #   .venv/bin/pip freeze > requirements.lock   (then install from the lock)
 discord.py>=2.4,<3
 aiohttp>=3.9,<4
-anthropic>=0.40,<1
+anthropic>=0.117.0,<1
 cryptography>=42.0,<50
