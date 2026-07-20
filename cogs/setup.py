@@ -244,6 +244,19 @@ class SetupView(discord.ui.View):
     async def set_goodbye(self, interaction, button):
         await self.set_current_channel(interaction, "goodbye_channel")
 
+    @discord.ui.button(label="Clear selected", emoji="🗑️", style=discord.ButtonStyle.secondary, row=4)
+    async def clear_selected(self, interaction, button):
+        key = getattr(self, "selected_key", None)
+        if not key or key not in CHANNEL_KEYS:
+            return await interaction.response.send_message(
+                "Pick a setting from the top menu first, then press **Clear selected** to unset it.",
+                ephemeral=True,
+            )
+        update_guild_settings(interaction.guild_id, **{key: None})
+        label, _ = CHANNEL_KEYS[key]
+        await interaction.response.edit_message(embed=build_setup_embed(interaction.guild), view=self)
+        await interaction.followup.send(f"Cleared **{label}**. It is now unset.", ephemeral=True)
+
     @discord.ui.button(label="Mark Complete", emoji="✅", style=discord.ButtonStyle.success, row=4)
     async def mark_complete(self, interaction, button):
         update_guild_settings(interaction.guild_id, setup_completed=True)

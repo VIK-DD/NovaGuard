@@ -961,6 +961,40 @@ class System(commands.Cog):
             ephemeral=True,
         )
 
+    @app_commands.command(name="resync", description="Owner: re-push all slash commands to Discord")
+    async def resync(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not await user_can_bypass_maintenance(self.bot, interaction.user):
+            embed = make_embed(
+                "🔒 Owner Only",
+                "Only the bot owner can re-sync slash commands.",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed, "Command resync")
+            return await respond(interaction, embed, ephemeral=True)
+
+        try:
+            synced = await self.bot.tree.sync()
+        except discord.HTTPException as error:
+            embed = make_embed(
+                "⚠️ Resync failed",
+                f"Discord API issue: `{error}`",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed, "Command resync")
+            return await respond(interaction, embed, ephemeral=True)
+
+        embed = make_embed(
+            "🔄 Commands re-synced",
+            (
+                f"Re-pushed `{len(synced)}` slash commands globally. New or changed "
+                "commands can take up to ~1h to appear on every server (usually minutes)."
+            ),
+            color=Palette.SUCCESS,
+        )
+        brand_footer(embed, "Command resync")
+        await respond(interaction, embed, ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(System(bot))

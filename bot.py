@@ -17,7 +17,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.config import BOT_CODENAME, BOT_VERSION, GUILD_ID
+from core.config import BOT_CODENAME, BOT_VERSION
 from core.error_digest import send_error_digest
 from core.github_api import github_api
 from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
@@ -152,16 +152,14 @@ class DevBot(commands.Bot):
     async def sync_commands_later(self):
         await self.wait_until_ready()
 
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            scope = f"guild {GUILD_ID} (instant)"
-        else:
-            guild = None
-            scope = "global (may take up to 1 hour to appear)"
-
+        # Sync GLOBALLY so every server the bot is in receives every command.
+        # Global commands can take up to ~1h to propagate (usually minutes).
+        # We deliberately do NOT also guild-sync: mixing global commands with
+        # guild-scoped copies makes Discord show every command twice in that
+        # guild. Use /resync (owner only) to force a re-push without a restart.
+        scope = "global (up to ~1h to appear on all servers)"
         try:
-            synced = await asyncio.wait_for(self.tree.sync(guild=guild), timeout=30)
+            synced = await asyncio.wait_for(self.tree.sync(), timeout=30)
         except asyncio.TimeoutError:
             print(f"Command sync skipped: Discord did not respond within 30s • {scope}")
             return
