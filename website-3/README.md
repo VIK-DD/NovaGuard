@@ -11,7 +11,8 @@ npm install
 npm run dev               # http://localhost:4321
 ```
 
-Set `PUBLIC_API_BASE` to the public NovaGuard bot API origin.
+Set `PUBLIC_API_BASE` to the public NovaGuard bot API origin for local work.
+Production builds already use `https://api.novaguard.fun` from `.env.production`.
 
 The `/status` page reads `GET /api/v1/health` and `GET /api/v1/stats` from this
 origin. For production, use an HTTPS hostname published through Cloudflare

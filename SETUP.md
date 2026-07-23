@@ -73,10 +73,11 @@ endpoints from the embedded web server. To make them reachable by the website:
    `WEB_CORS_ORIGIN=https://novaguard.fun`.
 3. Set `WEB_OAUTH_REDIRECT=https://api.novaguard.fun/api/v1/auth/callback` and
    `WEB_AFTER_LOGIN=https://novaguard.fun/dashboard/`.
-4. In `website-3/.env`, set
-   `PUBLIC_API_BASE=https://api.novaguard.fun`, then rebuild and deploy the
-   website. The Status page will show bot readiness, database health, uptime,
-   guilds, members, commands and gateway state.
+4. Production builds already use
+   `website-3/.env.production` with
+   `PUBLIC_API_BASE=https://api.novaguard.fun`. Rebuild and deploy the website;
+   the Status page will show bot readiness, database health, uptime, guilds,
+   members, commands and gateway state.
 5. Restart the bot after changing `.env`:
    `pm2 restart pythonbot && pm2 save`.
 
