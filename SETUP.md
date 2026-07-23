@@ -1,4 +1,4 @@
-# VIK-DD Dev System — Setup
+# NovaGuard — Setup
 
 Modern, fully slash-command Discord bot (v3.0.0 "Nova").
 Colorful embeds, interactive buttons & menus, automatic update changelogs, GitHub intelligence, XP levels and more.
@@ -61,6 +61,28 @@ pm2 save
 
 The bot loads `.env` automatically on startup — no manual exports needed.
 
+### Public website status and dashboard API
+
+The bot already exposes live `GET /api/v1/health` and `GET /api/v1/stats`
+endpoints from the embedded web server. To make them reachable by the website:
+
+1. Publish the Pi's `http://localhost:8300` through an HTTPS Cloudflare Tunnel,
+   for example at `https://api.novaguard.fun`.
+2. On the Pi, set `WEB_ENABLED=true`, `WEB_COOKIE_SECURE=true`,
+   `WEB_TRUST_PROXY=true`, and add the website origin to `WEB_CORS_ORIGIN`:
+   `WEB_CORS_ORIGIN=https://novaguard.fun`.
+3. Set `WEB_OAUTH_REDIRECT=https://api.novaguard.fun/api/v1/auth/callback` and
+   `WEB_AFTER_LOGIN=https://novaguard.fun/dashboard/`.
+4. In `website-3/.env`, set
+   `PUBLIC_API_BASE=https://api.novaguard.fun`, then rebuild and deploy the
+   website. The Status page will show bot readiness, database health, uptime,
+   guilds, members, commands and gateway state.
+5. Restart the bot after changing `.env`:
+   `pm2 restart pythonbot && pm2 save`.
+
+Keep port `8300` closed to the public internet; Cloudflare Tunnel should be the
+only public path to the API.
+
 ## 4. Project layout
 
 ```
@@ -93,7 +115,8 @@ backups/          automatic/manual backup archives — auto-created
 `/purge` `/kick` `/ban` `/timeout` `/untimeout` `/slowmode` `/announce` `/warn add|list|clear`
 
 ### 🏆 Levels
-`/rank` `/leaderboard` (+ automatic XP for chatting, level-up celebrations)
+`/rank` `/leaderboard` (+ slower automatic chat XP, private DM level-up cards with progress bars)
+Admin: `/levels backfill preview` estimates historical XP, `/levels backfill run confirm:true` applies it after a backup.
 
 ### 👋 Welcome
 `/welcome set` `/welcome off` `/welcome test` (+ auto join/leave embeds, auto-role)

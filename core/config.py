@@ -89,7 +89,7 @@ github_config = GitHubConfig(
     event_channel_id=env_int("GITHUB_EVENT_CHANNEL_ID"),
     update_channel_id=env_int("UPDATE_CHANNEL_ID"),
     poll_seconds=env_int("GITHUB_POLL_SECONDS", 300),
-    brand_name=os.getenv("BOT_BRAND", "VIK-DD Dev System"),
+    brand_name=os.getenv("BOT_BRAND", "Developed by VIK & CloudMediaSRL"),
     uptime_url=os.getenv("UPTIME_URL"),
 )
 

@@ -21,7 +21,7 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
       <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
         Blocked words
       </span>
-      <div className="mt-1.5 flex gap-2">
+      <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
         <input
           type="text"
           value={input}
@@ -41,7 +41,7 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
         <button
           type="button"
           onClick={add}
-          className="shrink-0 rounded-md border border-line px-4 text-sm transition-colors hover:border-ink"
+          className="shrink-0 rounded-md border border-line px-4 py-2 text-sm transition-colors hover:border-ink sm:py-0"
         >
           Add
         </button>

@@ -1,6 +1,21 @@
 .content {
   -webkit-user-select: text;
   user-select: text;
+  min-width: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+body {
+  touch-action: pan-y;
 }
 
 .content h1 {
@@ -24,13 +39,41 @@
 }
 
 @media (max-width: 540px) {
+  .page {
+    min-height: 100svh;
+    padding: 1rem;
+  }
+
+  .content {
+    max-width: 100%;
+  }
+
   .content h1 {
     font-size: 54px;
+    line-height: 0.92;
   }
 
   .site-credit {
     max-width: 18rem;
     margin-top: 1.6rem;
     font-size: 0.64rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .content h1 {
+    font-size: 46px;
+  }
+
+  .description {
+    max-width: 17rem;
+  }
+
+  .countdown {
+    gap: 0.5rem;
+  }
+
+  .time-unit {
+    min-width: 2rem;
   }
 }

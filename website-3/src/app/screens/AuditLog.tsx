@@ -46,14 +46,14 @@ export default function AuditLog() {
         <ul className="mt-6">
           {audit.data.audit.map((entry, i) => (
             <li key={`${entry.created_at}-${i}`} className="border-t border-line py-4">
-              <div className="flex items-baseline justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
                 <p className="text-sm">
                   <strong>{entry.username}</strong>{" "}
                   <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
                     {entry.action.replaceAll("_", " ")}
                   </span>
                 </p>
-                <time className="shrink-0 text-xs text-ink-muted">
+                <time className="text-xs text-ink-muted sm:shrink-0">
                   {dateFmt.format(new Date(entry.created_at))}
                 </time>
               </div>

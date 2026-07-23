@@ -78,24 +78,26 @@ function init() {
 let lastY = window.scrollY;
 let ticking = false;
 let maxScroll = 0;
+let progressEl: HTMLElement | null = null;
+let navEl: HTMLElement | null = null;
 
 function measure() {
   const d = document.documentElement;
   maxScroll = d.scrollHeight - d.clientHeight;
+  progressEl = document.getElementById("scroll-progress");
+  navEl = document.querySelector<HTMLElement>("[data-nav]");
 }
 
 function onScrollFrame() {
   const y = window.scrollY;
 
-  const progress = document.getElementById("scroll-progress");
-  if (progress) {
-    progress.style.transform = `scaleX(${maxScroll > 0 ? y / maxScroll : 0})`;
+  if (progressEl) {
+    progressEl.style.transform = `scaleX(${maxScroll > 0 ? Math.min(y / maxScroll, 1) : 0})`;
   }
 
-  const nav = document.querySelector<HTMLElement>("[data-nav]");
-  if (nav && !prefersReduce()) {
+  if (navEl && !prefersReduce()) {
     // Hide when scrolling down past the header; reveal on any upward scroll.
-    nav.dataset.hidden = y > lastY && y > 120 ? "true" : "false";
+    navEl.dataset.hidden = y > lastY && y > 120 ? "true" : "false";
   }
 
   lastY = y;

@@ -90,31 +90,31 @@ html {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-sans);
+  max-width: 100%;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
+}
+
+body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
 }
 
 ::selection {
   background: hsl(var(--primary) / 0.9);
   color: hsl(var(--primary-foreground));
 }
-
-/* Film-grain — the 2026 counter-trend to flat AI gradients. Keeps the dark
-   surface feeling like paper/material. NO mix-blend-mode: a fixed full-screen
-   blended layer forces the compositor to re-blend the whole page every scroll
-   frame (the #1 scroll-jank cause). Plain opacity on its own fixed layer is
-   composited once and never repaints on scroll. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-:root[data-theme="light"] body::before { opacity: 0.05; }
 
 /* Premium thin scrollbars */
 * {
@@ -153,6 +153,25 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   background-position: right 0.7rem center;
 }
 #app select:hover { border-color: hsl(var(--border-strong)); }
+
+/* Let the browser skip layout/paint work for long sections until they are
+   close to the viewport. The intrinsic size prevents scroll jumps. */
+[data-perf-section] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px;
+}
+
+@media (max-width: 640px) {
+  #app main {
+    min-width: 0;
+  }
+
+  #app input,
+  #app select,
+  #app button {
+    min-height: 44px;
+  }
+}
 
 /* Dashboard route content eases in on mount and on navigation. */
 @keyframes ng-enter {

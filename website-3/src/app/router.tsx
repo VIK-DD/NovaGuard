@@ -18,7 +18,7 @@ function GuildLayout() {
   return (
     <>
       <nav className="border-b border-line">
-        <div className="mx-auto flex max-w-3xl gap-6 px-6 pt-4">
+        <div className="mx-auto flex max-w-3xl gap-5 overflow-x-auto px-4 pt-4 sm:gap-6 sm:px-6">
           <Link
             to="/g/$guildId"
             params={{ guildId }}

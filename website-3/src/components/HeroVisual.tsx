@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   motion,
   useMotionValue,
@@ -44,13 +44,24 @@ function useTilt(strength: number, enabled: boolean) {
 
 export default function HeroVisual() {
   const reduce = useReducedMotion() ?? false;
-  const { ref, rx, ry, onMouseMove, onMouseLeave } = useTilt(8, !reduce);
+  const [canHover, setCanHover] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const update = () => setCanHover(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  const motionEnabled = !reduce && canHover;
+  const { ref, rx, ry, onMouseMove, onMouseLeave } = useTilt(8, motionEnabled);
 
   // Perpetual ambient float — skipped entirely when motion is reduced.
-  const floatA: TargetAndTransition = reduce
+  const floatA: TargetAndTransition = !motionEnabled
     ? {}
     : { y: [0, -7, 0], transition: { y: { duration: 7, repeat: Infinity, ease: "easeInOut", delay: 1 } } };
-  const floatB: TargetAndTransition = reduce
+  const floatB: TargetAndTransition = !motionEnabled
     ? {}
     : { y: [0, -9, 0], transition: { y: { duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.7 } } };
 

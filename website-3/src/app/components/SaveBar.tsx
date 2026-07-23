@@ -12,13 +12,13 @@ export default function SaveBar({ visible, saving, error, onSave, onDiscard }: P
   return (
     <div
       data-savebar
-      className="fixed inset-x-0 bottom-0 border-t border-line bg-background/95 backdrop-blur"
+      className="fixed inset-x-0 bottom-0 border-t border-line bg-background"
     >
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
+      <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6">
         <p className={`truncate text-sm ${error ? "text-primary" : "text-ink-muted"}`}>
           {error ?? "Unsaved changes"}
         </p>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center justify-end gap-3">
           <button
             type="button"
             onClick={onDiscard}

@@ -962,7 +962,14 @@ class System(commands.Cog):
         )
 
     @app_commands.command(name="resync", description="Owner: re-push all slash commands to Discord")
-    async def resync(self, interaction: discord.Interaction):
+    @app_commands.describe(scope="server is immediate; global can take up to ~1h")
+    @app_commands.choices(scope=[
+        app_commands.Choice(name="server - current server, usually immediate", value="server"),
+        app_commands.Choice(name="global - every server, slower propagation", value="global"),
+        app_commands.Choice(name="clear-server - remove instant server copies", value="clear-server"),
+    ])
+    @app_commands.guild_only()
+    async def resync(self, interaction: discord.Interaction, scope: str = "server"):
         await interaction.response.defer(ephemeral=True)
         if not await user_can_bypass_maintenance(self.bot, interaction.user):
             embed = make_embed(
@@ -973,8 +980,28 @@ class System(commands.Cog):
             brand_footer(embed, "Command resync")
             return await respond(interaction, embed, ephemeral=True)
 
+        guild = discord.Object(id=interaction.guild_id)
         try:
-            synced = await self.bot.tree.sync()
+            if scope == "global":
+                synced = await self.bot.tree.sync()
+                description = (
+                    f"Re-pushed `{len(synced)}` slash commands globally. New or changed "
+                    "commands can take up to ~1h to appear on every server (usually minutes)."
+                )
+            elif scope == "clear-server":
+                self.bot.tree.clear_commands(guild=guild)
+                synced = await self.bot.tree.sync(guild=guild)
+                description = (
+                    "Cleared this server's instant command copies. Discord will fall back "
+                    "to the global commands after propagation."
+                )
+            else:
+                self.bot.tree.copy_global_to(guild=guild)
+                synced = await self.bot.tree.sync(guild=guild)
+                description = (
+                    f"Synced `{len(synced)}` slash commands directly to this server. "
+                    "They should appear almost immediately; reopen Discord if the UI is stale."
+                )
         except discord.HTTPException as error:
             embed = make_embed(
                 "⚠️ Resync failed",
@@ -986,10 +1013,7 @@ class System(commands.Cog):
 
         embed = make_embed(
             "🔄 Commands re-synced",
-            (
-                f"Re-pushed `{len(synced)}` slash commands globally. New or changed "
-                "commands can take up to ~1h to appear on every server (usually minutes)."
-            ),
+            description,
             color=Palette.SUCCESS,
         )
         brand_footer(embed, "Command resync")
