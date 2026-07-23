@@ -31,6 +31,7 @@ from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
 from core.webserver import (  # noqa: E402
     _CIPHER,
     _hash_sid,
+    ApiError,
     WebServer,
     db_load_session,
     db_ping,
@@ -84,6 +85,19 @@ class FakeBot:
         pass
 
 
+class TimeoutRequest:
+    async def __aenter__(self):
+        raise asyncio.TimeoutError
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class TimeoutHttp:
+    def get(self, *args, **kwargs):
+        return TimeoutRequest()
+
+
 async def main():
     server = WebServer(FakeBot())
     await server.start()
@@ -93,6 +107,24 @@ async def main():
         async def check(name, ok):
             results.append((name, ok))
             print(("PASS" if ok else "FAIL"), name)
+
+        # ── Discord upstream timeout stays a retryable API response ─────
+        original_http = server.http
+        server.http = TimeoutHttp()
+        try:
+            await server._discord_get("/users/@me/guilds", "test-token")
+            timeout_result = None
+        except ApiError as error:
+            timeout_result = error
+        finally:
+            server.http = original_http
+        await check(
+            "Discord timeout becomes retryable 503",
+            timeout_result is not None
+            and timeout_result.status == 503
+            and timeout_result.code == "upstream_unavailable"
+            and timeout_result.retry_after == 3,
+        )
 
         # ── health + DB probe (fix #5) ────────────────────────────────
         async with http.get(f"{V1}/health") as r:

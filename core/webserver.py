@@ -93,6 +93,8 @@ STATE_COOKIE = "ng_state"
 SESSION_TTL = 7 * 24 * 3600
 STATE_TTL = 600
 GUILDS_CACHE_SECONDS = 120
+DISCORD_DNS_CACHE_SECONDS = 300
+DISCORD_REQUEST_TIMEOUT_SECONDS = 10
 MAX_SESSIONS_PER_USER = 5
 AUDIT_KEEP_DAYS = 90
 MAX_BODY_BYTES = 64 * 1024
@@ -435,7 +437,19 @@ class WebServer:
             return
         await asyncio.to_thread(init_web_tables)
         await asyncio.to_thread(db_gc)
-        self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
+        connector = aiohttp.TCPConnector(
+            ttl_dns_cache=DISCORD_DNS_CACHE_SECONDS,
+            limit=8,
+            limit_per_host=4,
+            keepalive_timeout=45,
+        )
+        timeout = aiohttp.ClientTimeout(
+            total=DISCORD_REQUEST_TIMEOUT_SECONDS,
+            connect=4,
+            sock_connect=4,
+            sock_read=8,
+        )
+        self.http = aiohttp.ClientSession(connector=connector, timeout=timeout)
 
         self.runner = web.AppRunner(self._build_app(), access_log=None)
         await self.runner.setup()
@@ -627,19 +641,28 @@ class WebServer:
 
     async def _discord_get(self, path, token):
         assert self.http is not None
-        async with self.http.get(
-            f"{DISCORD_API}{path}", headers={"Authorization": f"Bearer {token}"}
-        ) as response:
-            if response.status == 401:
-                raise ApiError(401, "Discord session expired — log in again.", code="session_expired")
-            if response.status == 429:
-                raise ApiError(
-                    429, "Discord is rate limiting us — try again shortly.",
-                    code="upstream_rate_limited", retry_after=5,
-                )
-            if response.status >= 400:
-                raise ApiError(502, f"Discord API error {response.status}.", code="upstream_error")
-            return await response.json()
+        try:
+            async with self.http.get(
+                f"{DISCORD_API}{path}", headers={"Authorization": f"Bearer {token}"}
+            ) as response:
+                if response.status == 401:
+                    raise ApiError(401, "Discord session expired — log in again.", code="session_expired")
+                if response.status == 429:
+                    raise ApiError(
+                        429, "Discord is rate limiting us — try again shortly.",
+                        code="upstream_rate_limited", retry_after=5,
+                    )
+                if response.status >= 400:
+                    raise ApiError(502, f"Discord API error {response.status}.", code="upstream_error")
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            log.warning("Discord API request timed out for %s: %s", path, type(error).__name__)
+            raise ApiError(
+                503,
+                "Discord is temporarily unavailable — retry in a few seconds.",
+                code="upstream_unavailable",
+                retry_after=3,
+            ) from error
 
     async def _token_request(self, data):
         assert self.http is not None
