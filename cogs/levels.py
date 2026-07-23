@@ -405,12 +405,12 @@ class Levels(commands.Cog):
             cap_per_user=cap_per_user,
         )
 
-        if stats["channels_scanned"] == 0 or stats["errors"]:
+        if stats["channels_scanned"] == 0 or stats["channels_skipped"] or stats["errors"]:
             embed = make_embed(
                 "XP rebuild not applied",
                 (
                     "No data changed because the scan was incomplete. "
-                    "Check channel access or retry after Discord API errors are gone."
+                    "Give the bot access to every text channel or retry after Discord API errors are gone."
                 ),
                 color=Palette.WARNING,
             )
