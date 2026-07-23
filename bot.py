@@ -1,4 +1,4 @@
-"""Developed by VIK & CloudMediaSRL — modern, slash-command Discord bot.
+"""Developed by VIK & CloudMedia — modern, slash-command Discord bot.
 
 Entry point: loads the category cogs and keeps startup responsive even when
 Discord's command-sync API is slow.

@@ -12,7 +12,7 @@
 
 - Node ≥ 20 (machine has v24.13.1). TypeScript `strict: true`.
 - No dependencies beyond the Tech Stack list. No motion library — CSS transitions only; every animation guarded by `prefers-reduced-motion`.
-- All copy in English. Creator credit: `Developed by VIK & CloudMediaSRL`.
+- All copy in English. Creator credit: `Developed by VIK & CloudMedia`.
 - Coming Soon page files byte-identical (git mv only). `_redirects` keeps `/hq https://novaguard.fun 301`.
 - API errors branch on `code` field, never message text (API.md contract).
 - Every fetch to the API sends `credentials: "include"`. Login is a browser navigation, not fetch.
@@ -313,7 +313,7 @@ const links = [
 
 - [ ] **Step 4: `Cta.astro` + `Footer.astro`**
 
-Footer: hairline top border; left — `NovaGuard` serif wordmark + creator credit exactly `Developed by VIK & CloudMediaSRL`; right — links `/commands`, `/dashboard`, `/coming-soon` (label "Classic page"), `/privacy`, `/terms`, GitHub repo.
+Footer: hairline top border; left — `NovaGuard` serif wordmark + creator credit exactly `Developed by VIK & CloudMedia`; right — links `/commands`, `/dashboard`, `/coming-soon` (label "Classic page"), `/privacy`, `/terms`, GitHub repo.
 
 - [ ] **Step 5: assemble `index.astro`; create `404.astro`** (Base + Nav + serif "404 — This page drifted off." + link home + Footer).
 
