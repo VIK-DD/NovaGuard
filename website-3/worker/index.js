@@ -108,6 +108,35 @@ function isMaintenanceEnabled(env) {
   return MAINTENANCE_VALUES.has(String(env.MAINTENANCE_MODE || "").trim().toLowerCase());
 }
 
+function assetCacheControl(pathname) {
+  if (
+    pathname.startsWith("/_astro/") ||
+    pathname.startsWith("/assets/") ||
+    pathname.startsWith("/coming-soon/assets/")
+  ) {
+    return "public, max-age=31536000, immutable";
+  }
+  if (pathname === "/overrides.css") return "public, max-age=3600, stale-while-revalidate=86400";
+  if (pathname === "/favicon.png" || pathname === "/favicon.ico") {
+    return "public, max-age=86400, stale-while-revalidate=604800";
+  }
+  return null;
+}
+
+async function serveAsset(request, env) {
+  const response = await env.ASSETS.fetch(request);
+  const cacheControl = assetCacheControl(new URL(request.url).pathname);
+  if (!response.ok || !cacheControl) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", cacheControl);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function handleLogin(request, env) {
   if (!env.AUTH_PASSWORD) {
     return new Response("AUTH_PASSWORD is not configured.", { status: 500 });
@@ -157,7 +186,7 @@ export default {
     if (url.pathname === "/api/auth/login") return handleLogin(request, env);
     if (url.pathname === "/api/auth/logout") return handleLogout(request);
     if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
-    if (isPublicPath(url.pathname)) return env.ASSETS.fetch(request);
+    if (isPublicPath(url.pathname)) return serveAsset(request, env);
 
     const authenticated = await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD);
     if (!authenticated) return Response.redirect(loginUrl(request), 302);
@@ -167,15 +196,15 @@ export default {
     }
 
     if (isMaintenanceEnabled(env)) {
-      return env.ASSETS.fetch(new Request(new URL("/maintenance/", request.url), request));
+      return serveAsset(new Request(new URL("/maintenance/", request.url), request), env);
     }
 
     // The dashboard owns its nested routes client-side. Serve its static shell
     // on direct visits so refreshes at /dashboard/g/:id keep working.
     if (url.pathname.startsWith("/dashboard/") && url.pathname !== "/dashboard/") {
-      return env.ASSETS.fetch(new Request(new URL("/dashboard/", request.url), request));
+      return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
     }
 
-    return env.ASSETS.fetch(request);
+    return serveAsset(request, env);
   },
 };

@@ -16,6 +16,7 @@ body,
 
 body {
   touch-action: pan-y;
+  min-height: 100svh;
 }
 
 .content h1 {
@@ -41,7 +42,11 @@ body {
 @media (max-width: 540px) {
   .page {
     min-height: 100svh;
-    padding: 1rem;
+    padding:
+      max(1rem, env(safe-area-inset-top))
+      max(1rem, env(safe-area-inset-right))
+      max(1rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
   }
 
   .content {
@@ -49,8 +54,13 @@ body {
   }
 
   .content h1 {
-    font-size: 54px;
+    font-size: 50px;
     line-height: 0.92;
+  }
+
+  .theme-toggle {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .site-credit {
@@ -62,7 +72,7 @@ body {
 
 @media (max-width: 360px) {
   .content h1 {
-    font-size: 46px;
+    font-size: 42px;
   }
 
   .description {

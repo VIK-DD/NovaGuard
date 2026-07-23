@@ -14,7 +14,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 items-center gap-4 sm:gap-6">
             <a href="/" className="flex items-center gap-2.5" aria-label="NovaGuard home">
               <img src="/favicon.png" alt="" width="28" height="28" className="h-7 w-7" />
-              <span className="font-display whitespace-nowrap text-lg font-semibold tracking-tight">NovaGuard</span>
+              <span className="font-display whitespace-nowrap text-base font-semibold tracking-tight sm:text-lg">NovaGuard</span>
             </a>
             <Link
               to="/"
@@ -36,11 +36,11 @@ export default function Shell({ children }: { children: ReactNode }) {
                   {user.username.charAt(0).toUpperCase()}
                 </span>
               )}
-              <span className="max-w-[7rem] truncate sm:max-w-none">{user.username}</span>
+              <span className="hidden max-w-[7rem] truncate sm:inline sm:max-w-none">{user.username}</span>
               <button
                 onClick={() => logout.mutate()}
                 disabled={logout.isPending}
-                className="shrink-0 text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
+                className="min-h-11 shrink-0 px-2 text-ink-muted transition-colors hover:text-ink disabled:opacity-50 sm:min-h-0 sm:px-0"
               >
                 Sign out
               </button>

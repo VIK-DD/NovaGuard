@@ -1,43 +1,43 @@
 ---
-import HeroVisual from "./HeroVisual";
+import HeroVisual from "./HeroVisualStatic.astro";
 ---
 
 <section class="border-b border-line">
-  <div class="mx-auto grid max-w-6xl gap-10 px-6 py-20 sm:py-28 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-6">
+  <div class="mx-auto grid max-w-6xl gap-8 px-5 py-14 sm:gap-10 sm:px-6 sm:py-28 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-6">
     <div>
       <p data-hero-item class="font-mono text-xs tracking-[0.14em] text-primary uppercase">
         NovaGuard — v3.0.0 "Nova"
       </p>
       <h1
         data-hero-item
-        class="mt-5 max-w-xl font-display text-[2.75rem] leading-[1.05] font-semibold tracking-[-0.02em] text-balance sm:text-6xl"
+        class="mt-5 max-w-xl font-display text-[2.35rem] leading-[1.06] font-semibold tracking-[-0.02em] text-balance sm:text-6xl"
       >
         A guardian for your Discord server, not another bot to babysit.
       </h1>
-      <p data-hero-item class="mt-5 max-w-md text-[17px] leading-relaxed text-ink-muted">
+      <p data-hero-item class="mt-5 max-w-md text-base leading-relaxed text-ink-muted sm:text-[17px]">
         Moderation, levels, tickets and giveaways with a setup wizard that
         actually finishes. Configure it from Discord or from a dashboard —
         every channel optional, nothing forced on you.
       </p>
-      <div data-hero-item class="mt-8 flex flex-wrap items-center gap-3">
+      <div data-hero-item class="mt-7 flex flex-wrap items-center gap-3 sm:mt-8">
         <a
           href="/dashboard"
           data-invite
-          class="rounded-[6px] bg-primary px-5 py-2.5 text-sm font-medium text-primary-ink transition-colors hover:bg-primary/90"
+          class="flex min-h-11 flex-1 items-center justify-center rounded-[6px] bg-primary px-4 py-2.5 text-sm font-medium text-primary-ink transition-colors hover:bg-primary/90 sm:flex-none sm:px-5"
         >
           Add to Discord
         </a>
         <a
           href="/dashboard"
-          class="rounded-[6px] border border-line-strong px-5 py-2.5 text-sm font-medium transition-colors hover:bg-card"
+          class="flex min-h-11 flex-1 items-center justify-center rounded-[6px] border border-line-strong px-4 py-2.5 text-sm font-medium transition-colors hover:bg-card sm:flex-none sm:px-5"
         >
           Open dashboard
         </a>
-        <a href="/status" class="ml-1 text-sm text-ink-faint underline-offset-4 hover:text-ink hover:underline">
+        <a href="/status" class="basis-full text-sm text-ink-faint underline-offset-4 hover:text-ink hover:underline sm:ml-1 sm:basis-auto">
           System status →
         </a>
       </div>
     </div>
-    <HeroVisual client:load />
+    <HeroVisual />
   </div>
 </section>

@@ -41,11 +41,19 @@ export async function apiFetch<T>(
   init?: RequestInit,
 ): Promise<T> {
   let res: Response;
+  const headers = new Headers(init?.headers);
+
+  // Keep read requests CORS-simple. Setting application/json on a GET makes
+  // the browser send an OPTIONS preflight before every dashboard read.
+  if (init?.body != null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   try {
     res = await fetch(`${API_BASE}/api/v1${path}`, {
       credentials: "include",
       ...init,
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      headers,
     });
   } catch {
     throw new ApiError("Could not reach the bot.", "network_error", 0);

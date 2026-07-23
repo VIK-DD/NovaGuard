@@ -48,8 +48,8 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
         }`}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-            props.checked ? "translate-x-[1.375rem]" : "translate-x-0.5"
+          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+            props.checked ? "translate-x-5" : "translate-x-0"
           }`}
         />
       </button>
@@ -97,7 +97,7 @@ export default function GuildConfig() {
 
   if (config.isPending || (config.data && !draft)) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-16" aria-busy="true">
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16" aria-busy="true">
         <div className="h-8 w-1/3 animate-pulse rounded bg-line/60" />
       </main>
     );
@@ -106,7 +106,7 @@ export default function GuildConfig() {
   if (config.isError || !config.data || !draft) {
     const code = config.error instanceof ApiError ? config.error.code : "internal_error";
     return (
-      <main className="mx-auto max-w-3xl px-6 py-16">
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16">
         <h1 className="font-display text-3xl">
           {code === "forbidden"
             ? "You need Manage Server here."
@@ -135,11 +135,11 @@ export default function GuildConfig() {
     setDraft({ ...draft, [key]: value });
 
   return (
-    <main className="mx-auto max-w-3xl px-6 pt-10 pb-32">
+    <main className="mx-auto max-w-3xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
       <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
         {guild.member_count.toLocaleString("en")} members
       </p>
-      <h1 className="font-display mt-2 text-4xl">{guild.name}</h1>
+      <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">{guild.name}</h1>
 
       <Section kicker="Channels">
         <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">

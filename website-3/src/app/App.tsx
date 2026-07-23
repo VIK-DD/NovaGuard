@@ -10,7 +10,9 @@ const NO_RETRY_CODES = ["unauthorized", "session_expired", "forbidden", "guild_n
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      staleTime: 2 * 60_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
       retry: (failureCount, error) => {
         if (error instanceof ApiError && NO_RETRY_CODES.includes(error.code)) return false;
         return failureCount < 2;

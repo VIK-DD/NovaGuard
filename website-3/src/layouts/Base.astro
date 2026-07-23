@@ -1,6 +1,5 @@
 ---
 import "../styles/global.css";
-import { ClientRouter } from "astro:transitions";
 interface Props {
   title: string;
   description?: string;
@@ -18,7 +17,7 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0a0c" />
     <title>{title}</title>
     <meta name="description" content={description} />
@@ -42,34 +41,6 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
           ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
       })();
     </script>
-    <ClientRouter />
-    <script is:inline>
-      // Under ClientRouter the swapped <html> loses its JS-set data-theme, so
-      // re-apply the stored theme after each swap, before the frame paints.
-      // Registered once (document survives swaps) to avoid stacking listeners.
-      if (!window.__ngThemeSwap) {
-        window.__ngThemeSwap = true;
-        document.addEventListener("astro:after-swap", () => {
-          const stored = localStorage.getItem("ng-theme");
-          const light = stored
-            ? stored === "light"
-            : matchMedia("(prefers-color-scheme: light)").matches;
-          document.documentElement.dataset.theme = light ? "light" : "dark";
-          document
-            .querySelector('meta[name="theme-color"]')
-            ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
-        });
-        // A navigation View Transition aborted by the browser (notably under
-        // prefers-reduced-motion) rejects with InvalidStateError even though the
-        // navigation completes. Swallow only that benign rejection.
-        window.addEventListener("unhandledrejection", (e) => {
-          const r = e.reason;
-          if (r && r.name === "InvalidStateError" && /Transition was aborted/.test(r.message || "")) {
-            e.preventDefault();
-          }
-        });
-      }
-    </script>
     {
       mockEnabled && (
         <>
@@ -92,7 +63,6 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
     }
   </head>
   <body class="min-h-screen bg-background font-sans text-ink">
-    <div id="scroll-progress" aria-hidden="true"></div>
     <slot />
     <script>
       import "../scripts/motion";

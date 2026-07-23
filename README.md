@@ -353,7 +353,7 @@ Run the bot locally, verify the slash-command flow, and keep changes friendly to
 </p>
 
 <p align="center">
-  <strong>Copyright © 2026 VIK-DD</strong>
+  <strong>Copyright © 2026 VIK &amp; CloudMediaSRL</strong>
 </p>
 
 <p align="center">

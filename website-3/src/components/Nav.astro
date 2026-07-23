@@ -11,10 +11,10 @@ const links = [
 
 <Masthead />
 <header data-nav class="sticky top-0 z-30 border-b border-line bg-background">
-  <nav class="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
+  <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
     <a href="/" class="flex items-center gap-2.5" aria-label="NovaGuard home">
       <img src="/favicon.png" alt="" width="32" height="32" class="h-8 w-8" />
-      <span class="font-display text-lg font-semibold tracking-tight">NovaGuard</span>
+      <span class="font-display text-base font-semibold tracking-tight sm:text-lg">NovaGuard</span>
     </a>
     <div class="flex items-center gap-2 sm:gap-6">
       {
@@ -30,7 +30,7 @@ const links = [
       <a
         href="/dashboard"
         data-invite
-        class="rounded-[6px] bg-primary px-3.5 py-1.5 text-sm font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 sm:px-4"
+        class="min-h-11 rounded-[6px] bg-primary px-3.5 py-1.5 text-sm font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:px-4"
       >
         <span class="sm:hidden">Add</span>
         <span class="hidden sm:inline">Add to Discord</span>
@@ -41,7 +41,7 @@ const links = [
         aria-label="Open menu"
         aria-expanded="false"
         aria-controls="nav-mobile"
-        class="grid h-9 w-9 place-items-center rounded-[6px] border border-line text-ink transition-colors hover:border-line-strong sm:hidden"
+        class="grid h-11 w-11 place-items-center rounded-[6px] border border-line text-ink transition-colors hover:border-line-strong sm:hidden"
       >
         <span class="icon-menu"><Icon name="menu" size={18} /></span>
         <span class="icon-close hidden"><Icon name="x" size={18} /></span>
@@ -53,11 +53,18 @@ const links = [
   <div id="nav-mobile" class="nav-drawer sm:hidden">
     <div class="overflow-hidden">
       <nav class="flex flex-col gap-0.5 px-4 pt-1 pb-3">
+        <a
+          href="/dashboard"
+          data-invite
+          class="mb-1 flex min-h-11 items-center rounded-[6px] bg-primary px-3 text-sm font-medium text-primary-ink"
+        >
+          Add to Discord
+        </a>
         {
           links.map((l) => (
             <a
               href={l.href}
-              class="rounded-[6px] px-3 py-2.5 text-sm text-ink-muted transition-colors hover:bg-card hover:text-ink"
+              class="flex min-h-11 items-center rounded-[6px] px-3 py-2.5 text-sm text-ink-muted transition-colors hover:bg-card hover:text-ink"
             >
               {l.label}
             </a>
@@ -87,7 +94,7 @@ const links = [
 </style>
 
 <script>
-  // Invite-link rewriting lives in scripts/motion.ts (runs on every page-load).
+  // Invite-link rewriting lives in scripts/motion.ts.
   function init() {
     const toggle = document.getElementById("nav-toggle");
     const drawer = document.getElementById("nav-mobile");
@@ -110,23 +117,17 @@ const links = [
     );
   }
 
-  // Escape closes an open drawer; bound once on the persistent document so
-  // client-side navigations don't stack duplicate listeners.
-  const w = window as unknown as { __ngNavEsc?: boolean };
-  if (!w.__ngNavEsc) {
-    w.__ngNavEsc = true;
-    document.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape") return;
-      const drawer = document.getElementById("nav-mobile");
-      if (!drawer?.classList.contains("open")) return;
-      const toggle = document.getElementById("nav-toggle");
-      drawer.classList.remove("open");
-      toggle?.setAttribute("aria-expanded", "false");
-      toggle?.setAttribute("aria-label", "Open menu");
-      toggle?.querySelector(".icon-menu")?.classList.remove("hidden");
-      toggle?.querySelector(".icon-close")?.classList.add("hidden");
-    });
-  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const drawer = document.getElementById("nav-mobile");
+    if (!drawer?.classList.contains("open")) return;
+    const toggle = document.getElementById("nav-toggle");
+    drawer.classList.remove("open");
+    toggle?.setAttribute("aria-expanded", "false");
+    toggle?.setAttribute("aria-label", "Open menu");
+    toggle?.querySelector(".icon-menu")?.classList.remove("hidden");
+    toggle?.querySelector(".icon-close")?.classList.add("hidden");
+  });
 
-  document.addEventListener("astro:page-load", init);
+  init();
 </script>

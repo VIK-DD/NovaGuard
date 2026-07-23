@@ -21,10 +21,21 @@ describe("apiFetch", () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({}));
     vi.stubGlobal("fetch", fetchMock);
     await apiFetch("/me", z.object({}));
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/me"),
-      expect.objectContaining({ credentials: "include" }),
-    );
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/me"), expect.anything());
+    const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(requestInit.credentials).toBe("include");
+    expect(new Headers(requestInit.headers).has("Content-Type")).toBe(false);
+  });
+
+  it("adds JSON content type only when a request has a body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await apiFetch("/guilds/1/config", z.object({}), {
+      method: "PUT",
+      body: JSON.stringify({ automod: { spam: true } }),
+    });
+    const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(requestInit.headers).get("Content-Type")).toBe("application/json");
   });
 
   it("throws ApiError with the stable machine code on API errors", async () => {

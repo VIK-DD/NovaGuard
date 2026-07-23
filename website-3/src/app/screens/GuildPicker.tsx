@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { inviteUrl } from "../../lib/api/client";
 import type { Guild } from "../../lib/api/schemas";
-import { useGuilds } from "../queries";
+import { guildConfigQuery, useGuilds } from "../queries";
 
 function GuildIcon({ guild, muted = false }: { guild: Guild; muted?: boolean }) {
   if (guild.icon) {
@@ -24,14 +25,19 @@ function GuildIcon({ guild, muted = false }: { guild: Guild; muted?: boolean }) 
 
 export default function GuildPicker() {
   const guilds = useGuilds();
+  const queryClient = useQueryClient();
   const all = guilds.data?.guilds ?? [];
   const active = all.filter((g) => g.bot_present);
   const invitable = all.filter((g) => !g.bot_present);
 
+  const warmConfig = (guildId: string) => {
+    void queryClient.prefetchQuery(guildConfigQuery(guildId));
+  };
+
   return (
-    <main className="mx-auto max-w-3xl px-6 py-16">
+    <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16">
       <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">Your servers</p>
-      <h1 className="font-display mt-3 text-4xl">Pick a server to configure.</h1>
+      <h1 className="font-display mt-3 text-3xl sm:text-4xl">Pick a server to configure.</h1>
 
       {guilds.isPending && (
         <div className="mt-10" aria-busy="true">
@@ -62,7 +68,7 @@ export default function GuildPicker() {
       {active.length > 0 && (
         <ul className="mt-10 divide-y divide-line border-t border-line">
           {active.map((g) => (
-            <li key={g.id} className="flex items-center justify-between gap-4 py-5">
+            <li key={g.id} className="flex items-center justify-between gap-3 py-4 sm:gap-4 sm:py-5">
               <div className="flex min-w-0 items-center gap-4">
                 <GuildIcon guild={g} />
                 <div className="min-w-0">
@@ -75,7 +81,9 @@ export default function GuildPicker() {
               <Link
                 to="/g/$guildId"
                 params={{ guildId: g.id }}
-                className="shrink-0 rounded-full border border-line-strong px-4 py-1.5 text-sm font-medium transition-colors hover:border-ink hover:bg-card"
+                onMouseEnter={() => warmConfig(g.id)}
+                onFocus={() => warmConfig(g.id)}
+                className="flex min-h-11 shrink-0 items-center rounded-full border border-line-strong px-4 py-1.5 text-sm font-medium transition-colors hover:border-ink hover:bg-card"
               >
                 Configure
               </Link>
@@ -94,7 +102,7 @@ export default function GuildPicker() {
           </p>
           <ul className="mt-5 divide-y divide-line border-t border-line">
             {invitable.map((g) => (
-              <li key={g.id} className="flex items-center justify-between gap-4 py-5">
+              <li key={g.id} className="flex items-center justify-between gap-3 py-4 sm:gap-4 sm:py-5">
                 <div className="flex min-w-0 items-center gap-4">
                   <GuildIcon guild={g} muted />
                   <div className="min-w-0">
@@ -106,7 +114,7 @@ export default function GuildPicker() {
                 </div>
                 <a
                   href={inviteUrl()}
-                  className="shrink-0 rounded-full px-4 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary-soft"
+                  className="flex min-h-11 shrink-0 items-center rounded-full px-4 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary-soft"
                 >
                   Add NovaGuard
                 </a>

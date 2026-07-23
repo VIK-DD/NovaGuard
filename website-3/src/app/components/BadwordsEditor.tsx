@@ -52,9 +52,9 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
           {value.map((word) => (
             <li
               key={word}
-              className="flex items-center gap-1.5 rounded-md border border-line bg-card px-2 py-0.5 text-sm"
+              className="flex max-w-full items-center gap-1.5 rounded-md border border-line bg-card px-2 py-0.5 text-sm"
             >
-              <code>{word}</code>
+              <code className="min-w-0 break-all">{word}</code>
               <button
                 type="button"
                 aria-label={`Remove ${word}`}

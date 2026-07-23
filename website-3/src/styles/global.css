@@ -129,8 +129,22 @@ canvas {
   background-clip: content-box;
 }
 
-/* Motion One reveal base — elements start hidden, animated in by scripts. */
-[data-reveal], [data-reveal-item] { opacity: 0; }
+/* One-shot page reveals. JavaScript only adds a class; CSS performs the
+   compositor-friendly opacity/transform transition without scroll work. */
+[data-reveal], [data-reveal-item], [data-hero-item] {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+  transition:
+    opacity 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-reveal].is-revealed,
+[data-hero-item].is-revealed,
+[data-reveal-group].is-revealed [data-reveal-item],
+[data-reveal-item].is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
 
 /* Crisp keyboard focus — interaction reads as intentional, never sluggish. */
 :where(a, button, select, input, [role="switch"]):focus-visible {
@@ -162,14 +176,32 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 }
 
 @media (max-width: 640px) {
+  /* A phone is an interaction-first surface. Don't defer visible content or
+     spend compositing work on decorative entrance motion while scrolling. */
+  [data-reveal], [data-reveal-item], [data-hero-item] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  [data-perf-section] {
+    content-visibility: visible;
+    contain-intrinsic-size: auto;
+  }
+
   #app main {
     min-width: 0;
+    animation: none;
   }
 
   #app input,
   #app select,
   #app button {
     min-height: 44px;
+  }
+
+  [data-savebar] {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
@@ -187,28 +219,21 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 }
 [data-savebar] { animation: ng-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* ── Scroll progress bar: thin amber bar tracking page scroll (scaleX = GPU). ── */
-#scroll-progress {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 2px;
-  z-index: 60;
-  transform: scaleX(0);
-  transform-origin: 0 50%;
-  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary) / 0.5));
-  will-change: transform;
-  pointer-events: none;
+/* The public hero is static HTML. Drift is enabled only for precise-pointer
+   desktops, so phones never spend a frame budget on decorative animation. */
+.hero-visual { contain: layout paint; }
+@media (hover: hover) and (pointer: fine) {
+  .hero-float-a { animation: ng-hero-drift-a 7s ease-in-out 1s infinite; }
+  .hero-float-b { animation: ng-hero-drift-b 6s ease-in-out 0.7s infinite; }
 }
-
-/* ── Nav hide-on-scroll: slides out on scroll-down, back on scroll-up. ── */
-[data-nav] {
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
+@keyframes ng-hero-drift-a {
+  0%, 100% { transform: rotate(-6deg) translate3d(0, 0, 0); }
+  50% { transform: rotate(-6deg) translate3d(0, -7px, 0); }
 }
-[data-nav][data-hidden="true"] { transform: translateY(-100%); }
-
-/* ── Hero headline reveal: items start hidden, staggered rise in on load. ── */
-[data-hero-item] { opacity: 0; }
+@keyframes ng-hero-drift-b {
+  0%, 100% { transform: rotate(2deg) translate3d(0, 0, 0); }
+  50% { transform: rotate(2deg) translate3d(0, -9px, 0); }
+}
 
 /* ── Theme wipe (night ↔ day): a circular clip reveal driven from the toggle,
    scoped to .theme-wipe so it never touches the page-navigation transition. ── */
@@ -251,7 +276,6 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   [data-reveal], [data-reveal-item], [data-hero-item] { opacity: 1 !important; transform: none !important; }
-  [data-nav] { transform: none !important; }
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;

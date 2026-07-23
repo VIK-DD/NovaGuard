@@ -73,4 +73,20 @@ describe("password session", () => {
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toContain("/login/?next=%2Fmaintenance%2F");
   });
+
+  it("caches hashed static assets without caching protected HTML", async () => {
+    const asset = await worker.fetch(
+      new Request("https://novaguard.fun/_astro/app.123abc.js"),
+      env,
+    );
+    expect(asset.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+
+    const login = await worker.fetch(loginRequest(), env);
+    const cookie = login.headers.get("Set-Cookie").split(";", 1)[0];
+    const page = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      env,
+    );
+    expect(page.headers.get("Cache-Control")).toBeNull();
+  });
 });

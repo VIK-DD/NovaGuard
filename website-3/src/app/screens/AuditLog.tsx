@@ -14,7 +14,7 @@ export default function AuditLog() {
   const audit = useAudit(guildId);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
       <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">Dashboard changes</p>
 
       {audit.isPending && (
@@ -61,7 +61,7 @@ export default function AuditLog() {
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {Object.entries(entry.changes).map(([key, value]) => (
                     <li key={key}>
-                      <code className="rounded-md border border-line bg-card px-2 py-0.5 text-xs">
+                      <code className="block max-w-full break-all rounded-md border border-line bg-card px-2 py-0.5 text-xs whitespace-normal">
                         {key} → {value === null ? "none" : String(value)}
                       </code>
                     </li>

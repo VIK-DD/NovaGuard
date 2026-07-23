@@ -1,7 +1,7 @@
 ---
 ---
 
-<section data-perf-section class="mx-auto max-w-6xl px-6">
+<section data-perf-section class="mx-auto max-w-6xl px-5 sm:px-6">
   <dl
     data-stats
     data-reveal-group
@@ -17,7 +17,7 @@
       ].map(([key, label]) => (
         <div
           data-reveal-item
-          class="rounded-[var(--radius-card)] border border-line bg-card p-5 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] transition-colors hover:border-line-strong"
+          class="rounded-[var(--radius-card)] border border-line bg-card p-4 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] transition-colors hover:border-line-strong sm:p-5"
         >
           <dt class="text-[11px] tracking-[0.18em] text-ink-faint uppercase">{label}</dt>
           <dd
@@ -38,59 +38,37 @@
   </p>
 </section>
 <script>
-  import { animate, inView } from "motion";
+  import { getLiveStats } from "../lib/api/liveStats";
 
   function init() {
-  const base = import.meta.env.PUBLIC_API_BASE;
-  const dl = document.querySelector<HTMLElement>("[data-stats]");
-  const fb = document.querySelector<HTMLElement>("[data-stats-fallback]");
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const fmt = (n: number) => new Intl.NumberFormat("en").format(Math.round(n));
-  const dur = (s: number) =>
-    s >= 86400
-      ? `${Math.floor(s / 86400)}d`
-      : s >= 3600
-        ? `${Math.floor(s / 3600)}h`
-        : `${Math.floor(s / 60)}m`;
+    const dl = document.querySelector<HTMLElement>("[data-stats]");
+    const fb = document.querySelector<HTMLElement>("[data-stats-fallback]");
+    const fmt = (n: number) => new Intl.NumberFormat("en").format(Math.round(n));
+    const dur = (s: number) =>
+      s >= 86400
+        ? `${Math.floor(s / 86400)}d`
+        : s >= 3600
+          ? `${Math.floor(s / 3600)}h`
+          : `${Math.floor(s / 60)}m`;
 
-  // Count-up on scroll-into-view, values baked into the target text once fetched.
-  const countUp = (el: Element, to: number, format: (n: number) => string) => {
-    if (reduce) {
-      el.textContent = format(to);
-      return;
-    }
-    inView(
-      el,
-      () => {
-        animate(0, to, {
-          duration: 1.1,
-          ease: [0.16, 1, 0.3, 1],
-          onUpdate: (v) => (el.textContent = format(v)),
-        });
-      },
-      { amount: 0.6 },
-    );
-  };
-
-  if (base && dl && fb) {
-    fetch(`${base}/api/v1/stats`, { signal: AbortSignal.timeout(4000) })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    if (dl && fb) {
+      getLiveStats()
       .then((s) => {
         const target = (k: string) => dl.querySelector(`[data-stat="${k}"]`);
         const gEl = target("guilds");
         const mEl = target("members");
         const cEl = target("commands");
         const uEl = target("uptime");
-        if (gEl) countUp(gEl, s.guilds, fmt);
-        if (mEl) countUp(mEl, s.members, fmt);
-        if (cEl) countUp(cEl, s.commands, fmt);
+        if (gEl) gEl.textContent = fmt(s.guilds);
+        if (mEl) mEl.textContent = fmt(s.members);
+        if (cEl) cEl.textContent = fmt(s.commands);
         if (uEl) uEl.textContent = dur(s.uptime_seconds);
         dl.hidden = false;
         fb.hidden = true;
       })
       .catch(() => {});
-  }
+    }
   }
 
-  document.addEventListener("astro:page-load", init);
+  init();
 </script>

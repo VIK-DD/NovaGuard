@@ -1,6 +1,6 @@
 <footer class="border-t border-line">
   <div
-    class="mx-auto flex max-w-6xl flex-col items-center gap-6 px-6 py-10 text-sm sm:flex-row sm:items-end sm:justify-between"
+    class="mx-auto flex max-w-6xl flex-col items-center gap-6 px-5 py-9 text-sm sm:px-6 sm:py-10 sm:flex-row sm:items-end sm:justify-between"
   >
     <div class="text-center sm:text-left">
       <p class="font-display text-lg font-semibold">NovaGuard</p>
@@ -28,12 +28,12 @@
   </div>
 </footer>
 <script>
-  const base = import.meta.env.PUBLIC_API_BASE;
+  import { getLiveStats } from "../lib/api/liveStats";
+
   const link = document.querySelector<HTMLElement>("[data-heartbeat]");
   const text = document.querySelector<HTMLElement>("[data-heartbeat-text]");
-  if (base && link && text) {
-    fetch(`${base}/api/v1/stats`, { signal: AbortSignal.timeout(4000) })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+  if (link && text) {
+    getLiveStats()
       .then((s) => {
         text.textContent = `Bot online · v${s.version} · ${s.guilds} servers`;
         link.hidden = false;

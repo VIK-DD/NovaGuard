@@ -4,14 +4,14 @@ import Icon from "./Icon.astro";
 
 <div class="border-b border-line">
   <div
-    class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-2 text-[11px] tracking-[0.16em] text-ink-faint uppercase"
+    class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-2 text-[11px] tracking-[0.13em] text-ink-faint uppercase sm:gap-4 sm:px-6 sm:tracking-[0.16em]"
   >
-    <time data-masthead-date></time>
+    <time data-masthead-date class="max-w-[58%] truncate sm:max-w-none"></time>
     <button
       type="button"
       data-theme-toggle
       aria-label="Toggle dark mode"
-      class="flex items-center gap-1.5 transition-colors hover:text-ink"
+      class="flex min-h-11 items-center gap-1.5 transition-colors hover:text-ink"
     >
       <span class="hidden items-center gap-1.5 dark:flex">
         <Icon name="sun" size={13} /> Day edition
@@ -91,5 +91,5 @@ import Icon from "./Icon.astro";
     });
   }
 
-  document.addEventListener("astro:page-load", init);
+  init();
 </script>
