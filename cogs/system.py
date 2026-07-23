@@ -718,7 +718,9 @@ class System(commands.Cog):
         config_lines = [
             ok_line("TOKEN", "configured") if os.getenv("TOKEN") else fail_line("TOKEN", "missing"),
             ok_line(".env", "found") if (BASE_DIR / ".env").exists() else warn_line(".env", "not found; using shell env only"),
-            ok_line("GUILD_ID", f"{GUILD_ID} (instant sync)") if GUILD_ID else warn_line("GUILD_ID", "global sync can be slower"),
+            ok_line("GUILD_ID", f"{GUILD_ID} (use /resync server for instant updates)")
+            if GUILD_ID
+            else warn_line("GUILD_ID", "global sync can be slower"),
             ok_line("Update channel", f"<#{update_channel_id}>")
             if update_channel_id
             else warn_line("Update channel", "not configured; run /setup"),

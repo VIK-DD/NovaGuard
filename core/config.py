@@ -98,7 +98,7 @@ if not github_config.watch_repos and github_config.primary_repo:
 if not github_config.event_channel_id and github_config.update_channel_id:
     github_config.event_channel_id = github_config.update_channel_id
 
-# Optional: set GUILD_ID for instant slash command sync in one server.
+# Optional main server ID for defaults; use /resync scope:server for an immediate command update.
 GUILD_ID = env_int("GUILD_ID")
 ERROR_LOG_CHANNEL_ID = env_int("ERROR_LOG_CHANNEL_ID")
 

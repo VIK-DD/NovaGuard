@@ -11,8 +11,9 @@ Colorful embeds, interactive buttons & menus, automatic update changelogs, GitHu
 Important values that should stay in `.env`:
 
 - `TOKEN`: your Discord bot token
-- `GUILD_ID`: **recommended** — your server ID for instant slash command sync.
-  Without it, sync is global and can take up to 1 hour to appear the first time.
+- `GUILD_ID`: **recommended** — your main server ID for default channel setup.
+  Run `/resync scope:server` after a deploy when you need command changes immediately;
+  global sync can take up to an hour to propagate.
 - `GITHUB_USERNAME`: the GitHub profile used by `/github` and `/dev`
 - `GITHUB_PRIMARY_REPO`: the default repo used by `/repo`, `/dev`, `/health`, `/commits`, `/release`
 - `GITHUB_WATCH_REPOS`: comma-separated list of repos the watcher should monitor

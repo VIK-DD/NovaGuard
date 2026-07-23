@@ -188,7 +188,7 @@ NovaGuard loads `.env` automatically at startup.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `TOKEN` | Yes | Discord bot token |
-| `GUILD_ID` | Recommended | Instant slash-command sync in one server |
+| `GUILD_ID` | Recommended | Main server defaults; use `/resync scope:server` for immediate command updates |
 | `GITHUB_USERNAME` | Optional | GitHub profile used by GitHub commands |
 | `GITHUB_PRIMARY_REPO` | Optional | Main repository used by repo/dev/health cards |
 | `GITHUB_WATCH_REPOS` | Optional | Comma-separated repo list for GitHub feed |
