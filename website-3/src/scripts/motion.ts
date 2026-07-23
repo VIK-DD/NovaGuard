@@ -16,14 +16,17 @@ function init() {
       .forEach((anchor) => (anchor.href = `${base}/api/v1/invite`));
   }
 
+  // Small-screen CSS already renders every section in its final state. Avoid
+  // touching the whole document during startup so touch scrolling gets the
+  // main thread immediately.
+  const compactViewport = window.matchMedia("(max-width: 640px)").matches;
+  if (compactViewport || reduceQuery.matches) return;
+
   const heroItems = Array.from(document.querySelectorAll<HTMLElement>("[data-hero-item]"));
   const singleItems = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
   const groups = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal-group]"));
-  const compactViewport = window.matchMedia("(max-width: 640px)").matches;
 
-  // On a phone content should be immediately available while someone flicks
-  // through the page. It also keeps the main thread free for touch scrolling.
-  if (compactViewport || reduceQuery.matches || !("IntersectionObserver" in window)) {
+  if (!("IntersectionObserver" in window)) {
     [...heroItems, ...singleItems].forEach((element) => reveal(element));
     groups.forEach((group) => {
       group.classList.add("is-revealed");

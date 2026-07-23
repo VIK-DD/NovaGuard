@@ -1,4 +1,4 @@
-<footer class="border-t border-line">
+<footer data-site-footer class="border-t border-line">
   <div
     class="mx-auto flex max-w-6xl flex-col items-center gap-6 px-5 py-9 text-sm sm:px-6 sm:py-10 sm:flex-row sm:items-end sm:justify-between"
   >
@@ -32,12 +32,29 @@
 
   const link = document.querySelector<HTMLElement>("[data-heartbeat]");
   const text = document.querySelector<HTMLElement>("[data-heartbeat-text]");
-  if (link && text) {
+  const loadHeartbeat = () => {
+    if (!link || !text) return;
+
     getLiveStats()
       .then((s) => {
         text.textContent = `Bot online · v${s.version} · ${s.guilds} servers`;
         link.hidden = false;
       })
       .catch(() => {});
+  };
+
+  const footer = document.querySelector<HTMLElement>("[data-site-footer]");
+  if (footer && "IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        observer.disconnect();
+        loadHeartbeat();
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(footer);
+  } else {
+    loadHeartbeat();
   }
 </script>
