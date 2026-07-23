@@ -207,8 +207,8 @@ class Utility(commands.Cog):
     ):
         options = [option for option in (option1, option2, option3, option4, option5) if option]
         view = PollView(question, options, interaction.user)
-        await interaction.response.send_message(embed=view.build_embed(), view=view)
-        view.message = await interaction.original_response()
+        message = await respond(interaction, view.build_embed(), view=view)
+        view.message = message or await interaction.original_response()
 
     @app_commands.command(name="remind", description="Set a reminder (e.g. 10m, 1h30m, 2d)")
     @app_commands.describe(duration="When? e.g. 10m, 1h30m, 2d", message="What should I remind you about?")

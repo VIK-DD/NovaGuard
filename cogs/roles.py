@@ -135,7 +135,7 @@ class Roles(commands.Cog):
             color=Palette.PURPLE,
         )
         brand_footer(embed, "Click a button to toggle a role")
-        await interaction.response.send_message(embed=embed, view=view)
+        await respond(interaction, embed, view=view)
 
 
 async def setup(bot):

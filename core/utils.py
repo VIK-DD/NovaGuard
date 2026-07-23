@@ -95,12 +95,14 @@ async def send_embed(destination, embed, view=None, **kwargs):
     return await destination.send(embed=embed, **kwargs)
 
 
-async def respond(interaction, embed, view=None, ephemeral=False):
+async def respond(interaction, embed=None, view=None, ephemeral=False, content=None):
     """Reply to an interaction whether or not it was already deferred."""
     extra = {"view": view} if view is not None else {}
+    if content is not None:
+        extra["content"] = content
     try:
         if interaction.response.is_done():
-            return await interaction.followup.send(embed=embed, ephemeral=ephemeral, **extra)
+            return await interaction.followup.send(embed=embed, ephemeral=ephemeral, wait=True, **extra)
         return await interaction.response.send_message(embed=embed, ephemeral=ephemeral, **extra)
     except discord.NotFound as error:
         if getattr(error, "code", None) == 10062:

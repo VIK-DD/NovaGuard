@@ -72,6 +72,21 @@ discord_client_logger.addFilter(DiscordNoiseFilter())
 
 
 class NovaCommandTree(app_commands.CommandTree):
+    async def _acknowledge_command(self, interaction: discord.Interaction) -> bool:
+        """Claim each slash interaction before command work can exceed Discord's deadline."""
+        try:
+            await interaction.response.defer(thinking=True)
+        except discord.NotFound as error:
+            if getattr(error, "code", None) == 10062:
+                print("Interaction expired before the bot could acknowledge it.")
+                return False
+            raise
+        except discord.HTTPException as error:
+            # Keep the command callable when Discord has a brief REST hiccup; its
+            # normal response path still gets a chance to reach the user.
+            print(f"Interaction acknowledgement delayed by Discord API: {error!r}")
+        return True
+
     async def interaction_check(self, interaction: discord.Interaction, /):
         command = interaction.command
         if command is None:
@@ -82,38 +97,34 @@ class NovaCommandTree(app_commands.CommandTree):
             return True
 
         maintenance_state = load_maintenance_state()
-        if not maintenance_state.get("enabled"):
-            return True
+        if maintenance_state.get("enabled") and not await user_can_bypass_maintenance(
+            interaction.client, interaction.user
+        ):
+            interaction.extras["maintenance_blocked"] = True
+            embed = make_embed(
+                "🛠️ Maintenance Mode",
+                "NovaGuard is temporarily under maintenance.\nPlease try again in a little while.",
+                color=Palette.WARNING,
+            )
+            embed.add_field(
+                name="Current Status",
+                value=f"`{maintenance_state.get('message', 'Working Mode Active')}`",
+                inline=False,
+            )
+            embed.add_field(
+                name="Access",
+                value="Commands are temporarily limited while updates or fixes are being applied.",
+                inline=False,
+            )
+            brand_footer(embed, "Maintenance notice")
 
-        if await user_can_bypass_maintenance(interaction.client, interaction.user):
-            return True
-
-        interaction.extras["maintenance_blocked"] = True
-        embed = make_embed(
-            "🛠️ Maintenance Mode",
-            "NovaGuard is temporarily under maintenance.\nPlease try again in a little while.",
-            color=Palette.WARNING,
-        )
-        embed.add_field(
-            name="Current Status",
-            value=f"`{maintenance_state.get('message', 'Working Mode Active')}`",
-            inline=False,
-        )
-        embed.add_field(
-            name="Access",
-            value="Commands are temporarily limited while updates or fixes are being applied.",
-            inline=False,
-        )
-        brand_footer(embed, "Maintenance notice")
-
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
+            try:
                 await interaction.response.send_message(embed=embed, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+            except discord.HTTPException:
+                pass
+            return False
+
+        return await self._acknowledge_command(interaction)
 
 
 class DevBot(commands.Bot):

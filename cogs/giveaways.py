@@ -213,8 +213,9 @@ class Giveaways(commands.Cog):
             "ended": False,
         }
 
-        await interaction.response.send_message(embed=build_giveaway_embed(entry))
-        message = await interaction.original_response()
+        message = await respond(interaction, build_giveaway_embed(entry))
+        if message is None:
+            message = await interaction.original_response()
         entry["message_id"] = message.id
 
         view = discord.ui.View(timeout=None)
