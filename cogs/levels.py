@@ -21,10 +21,14 @@ XP_FLUSH_SECONDS = 30
 XP_GAIN_MIN = 5
 XP_GAIN_MAX = 10
 MIN_XP_MESSAGE_CHARS = 4
-BACKFILL_DEFAULT_DAYS = 365
+MAX_LEVEL = 169
+# 118 × 169 = 19,942 XP. This keeps the 20k historical import cap aligned
+# with the intended maximum while giving active members roughly one level/day.
+XP_PER_LEVEL = 118
+BACKFILL_DEFAULT_DAYS = 700
+BACKFILL_MAX_DAYS = 700
 BACKFILL_DEFAULT_XP_PER_MESSAGE = 2
 BACKFILL_DEFAULT_CAP_PER_USER = 20_000
-BACKFILL_DEFAULT_MAX_PER_CHANNEL = 50_000
 RANK_COLORS = {1: Palette.GOLD, 2: 0xBDC3C7, 3: 0xCD7F32}
 MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
@@ -42,16 +46,15 @@ def parse_saved_datetime(value):
 
 
 def xp_needed(level):
-    return 5 * level * level + 50 * level + 100
+    return XP_PER_LEVEL if level < MAX_LEVEL else 0
 
 
 def level_from_xp(total_xp):
-    level = 0
-    remaining = total_xp
-    while remaining >= xp_needed(level):
-        remaining -= xp_needed(level)
-        level += 1
-    return level, remaining
+    total_xp = max(int(total_xp or 0), 0)
+    level = min(total_xp // XP_PER_LEVEL, MAX_LEVEL)
+    if level >= MAX_LEVEL:
+        return MAX_LEVEL, 0
+    return level, total_xp - level * XP_PER_LEVEL
 
 
 def meaningful_message(message: discord.Message):
@@ -73,16 +76,11 @@ def rank_position(guild_data, user_id):
     return position, len(ordered)
 
 
-def historical_cutoff_before(guild_data, now=None):
-    now = now or datetime.now(UTC)
-    timestamps = [
-        parsed
-        for record in guild_data.values()
-        if isinstance(record, dict)
-        for parsed in [parse_saved_datetime(record.get("last_gain"))]
-        if parsed
-    ]
-    return min(timestamps) if timestamps else now
+def backfill_window(days, now=None):
+    """Return the exact recent calendar window, hard-capped at 700 days."""
+    before = now or datetime.now(UTC)
+    bounded_days = min(max(int(days), 1), BACKFILL_MAX_DAYS)
+    return before - timedelta(days=bounded_days), before
 
 
 def xp_from_message_counts(message_counts, xp_per_message, cap_per_user):
@@ -93,18 +91,21 @@ def xp_from_message_counts(message_counts, xp_per_message, cap_per_user):
     }
 
 
-def apply_backfill_to_guild(guild_data, message_counts, xp_by_user):
-    now = datetime.now(UTC).isoformat()
+def replace_backfill_for_guild(guild_data, message_counts, xp_by_user):
+    """Replace a guild's XP data with one complete historical scan."""
     applied_xp = 0
     applied_messages = 0
 
+    guild_data.clear()
     for user_id, xp_amount in xp_by_user.items():
         if xp_amount <= 0:
             continue
-        record = guild_data.setdefault(user_id, {"xp": 0, "messages": 0, "last_gain": None})
-        record["xp"] = int(record.get("xp", 0) or 0) + int(xp_amount)
-        record["messages"] = int(record.get("messages", 0) or 0) + int(message_counts.get(user_id, 0))
-        record["last_gain"] = record.get("last_gain") or now
+        record = {
+            "xp": int(xp_amount),
+            "messages": int(message_counts.get(user_id, 0)),
+            "last_gain": None,
+        }
+        guild_data[user_id] = record
         applied_xp += int(xp_amount)
         applied_messages += int(message_counts.get(user_id, 0))
 
@@ -117,7 +118,7 @@ def backfill_top_lines(xp_by_user, message_counts, limit=10):
     for index, (user_id, xp_amount) in enumerate(ranked[:limit], 1):
         medal = MEDALS.get(index, f"`#{index}`")
         lines.append(
-            f"{medal} <@{user_id}> — `+{humanize_number(xp_amount)} XP` "
+            f"{medal} <@{user_id}> — `{humanize_number(xp_amount)} XP` "
             f"from `{humanize_number(message_counts.get(user_id, 0))}` message(s)"
         )
     return lines
@@ -136,16 +137,17 @@ def build_backfill_embed(
     message_counts,
     after,
     before,
+    days,
     xp_per_message,
     cap_per_user,
-    max_per_channel,
     backup=None,
 ):
     total_xp = sum(xp_by_user.values())
-    title = "XP backfill preview" if mode == "preview" else "XP backfill applied"
+    title = "XP rebuild preview" if mode == "preview" else "XP rebuild applied"
     description = (
         f"Scanned historical messages in **{guild.name}**.\n"
-        f"Window: {readable_dt(after)} -> {readable_dt(before)}"
+        f"Window: {readable_dt(after)} -> {readable_dt(before)}\n"
+        "Existing XP and message totals are replaced, never added to."
     )
     embed = make_embed(title, description, color=Palette.INFO if mode == "preview" else Palette.SUCCESS)
     embed.add_field(
@@ -162,7 +164,7 @@ def build_backfill_embed(
         name="XP",
         value=(
             f"`{humanize_number(len(xp_by_user))}` member(s)\n"
-            f"`+{humanize_number(total_xp)}` XP total\n"
+            f"`{humanize_number(total_xp)}` XP rebuilt\n"
             f"`{xp_per_message}` XP/message\n"
             f"`{humanize_number(cap_per_user)}` XP cap/user"
         ),
@@ -171,7 +173,9 @@ def build_backfill_embed(
     embed.add_field(
         name="Safety",
         value=(
-            f"`{humanize_number(max_per_channel)}` max/channel\n"
+            f"Latest `{days}` day window (`{BACKFILL_MAX_DAYS}` max)\n"
+            "Rebuilds this server's XP from scratch\n"
+            "No per-channel message cap\n"
             f"`{stats['errors']}` channel error(s)\n"
             + (f"Backup: `{backup['name']}`" if backup else "No data changed")
         ),
@@ -180,14 +184,14 @@ def build_backfill_embed(
 
     lines = backfill_top_lines(xp_by_user, message_counts)
     embed.add_field(
-        name="Top estimated changes" if mode == "preview" else "Top applied changes",
+        name="Top rebuilt totals",
         value="\n".join(lines) if lines else "`No eligible historical messages found.`",
         inline=False,
     )
     if mode == "preview" and xp_by_user:
         embed.add_field(
             name="Apply",
-            value="Run `/levels backfill run confirm:true` with the same options to write these XP changes.",
+            value="Run `/levels backfill run confirm:true` with the same options to replace the current XP totals.",
             inline=False,
         )
     brand_footer(embed, "Levels backfill")
@@ -198,7 +202,6 @@ def build_level_up_embed(member, guild, record, new_level, xp_gain, position, ra
     total_xp = record.get("xp", 0)
     into_level = level_from_xp(total_xp)[1]
     needed = xp_needed(new_level)
-    bar = progress_bar(into_level, needed, slots=14)
 
     embed = make_embed(
         f"Level {new_level} unlocked",
@@ -209,11 +212,15 @@ def build_level_up_embed(member, guild, record, new_level, xp_gain, position, ra
         color=Palette.GOLD,
     )
     embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(
-        name="Next level",
-        value=f"{bar}\n`{humanize_number(into_level)} / {humanize_number(needed)} XP`",
-        inline=False,
-    )
+    if new_level >= MAX_LEVEL:
+        embed.add_field(name="Level cap", value=f"`Level {MAX_LEVEL}` is the maximum.", inline=False)
+    else:
+        bar = progress_bar(into_level, needed, slots=14)
+        embed.add_field(
+            name="Next level",
+            value=f"{bar}\n`{humanize_number(into_level)} / {humanize_number(needed)} XP`",
+            inline=False,
+        )
     embed.add_field(name="Total XP", value=f"`{humanize_number(total_xp)}`", inline=True)
     embed.add_field(name="Reward", value=f"`+{xp_gain} XP`", inline=True)
     if position:
@@ -236,7 +243,7 @@ class Levels(commands.Cog):
     )
     backfill = app_commands.Group(
         name="backfill",
-        description="Import historical chat activity into XP",
+        description="Rebuild XP from historical chat activity",
         parent=levels,
     )
 
@@ -274,7 +281,7 @@ class Levels(commands.Cog):
         except Exception as error:
             print(f"Levels flush skipped due to storage issue: {error!r}")
 
-    async def scan_historical_messages(self, guild, *, after, before, max_per_channel):
+    async def scan_historical_messages(self, guild, *, after, before):
         counts = Counter()
         stats = {
             "channels_scanned": 0,
@@ -299,7 +306,7 @@ class Levels(commands.Cog):
 
             stats["channels_scanned"] += 1
             try:
-                async for message in channel.history(limit=max_per_channel, after=after, before=before):
+                async for message in channel.history(limit=None, after=after, before=before):
                     stats["messages_seen"] += 1
                     if message.author.bot or message.webhook_id:
                         continue
@@ -316,34 +323,30 @@ class Levels(commands.Cog):
         stats["elapsed_seconds"] = round(time.monotonic() - started, 2)
         return counts, stats
 
-    async def calculate_backfill(self, guild, *, days, xp_per_message, cap_per_user, max_per_channel):
+    async def calculate_backfill(self, guild, *, days, xp_per_message, cap_per_user):
         guild_data = self.data.setdefault(str(guild.id), {})
-        before = historical_cutoff_before(guild_data)
-        after = before - timedelta(days=days)
+        after, before = backfill_window(days)
         message_counts, stats = await self.scan_historical_messages(
             guild,
             after=after,
             before=before,
-            max_per_channel=max_per_channel,
         )
         xp_by_user = xp_from_message_counts(message_counts, xp_per_message, cap_per_user)
         return guild_data, message_counts, xp_by_user, stats, after, before
 
-    @backfill.command(name="preview", description="Preview historical XP import without changing data")
+    @backfill.command(name="preview", description="Preview an XP rebuild without changing data")
     @app_commands.describe(
-        days="How many days before the XP system started to scan",
+        days="Latest calendar days to scan (maximum 700)",
         xp_per_message="XP awarded for each eligible historical message",
         cap_per_user="Maximum historical XP one member can receive",
-        max_per_channel="Maximum messages to scan per channel",
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backfill_preview(
         self,
         interaction: discord.Interaction,
-        days: app_commands.Range[int, 1, 3650] = BACKFILL_DEFAULT_DAYS,
+        days: app_commands.Range[int, 1, BACKFILL_MAX_DAYS] = BACKFILL_DEFAULT_DAYS,
         xp_per_message: app_commands.Range[int, 1, 10] = BACKFILL_DEFAULT_XP_PER_MESSAGE,
         cap_per_user: app_commands.Range[int, 500, 100000] = BACKFILL_DEFAULT_CAP_PER_USER,
-        max_per_channel: app_commands.Range[int, 100, 100000] = BACKFILL_DEFAULT_MAX_PER_CHANNEL,
     ):
         await interaction.response.defer(ephemeral=True, thinking=True)
         _, message_counts, xp_by_user, stats, after, before = await self.calculate_backfill(
@@ -351,7 +354,6 @@ class Levels(commands.Cog):
             days=days,
             xp_per_message=xp_per_message,
             cap_per_user=cap_per_user,
-            max_per_channel=max_per_channel,
         )
         embed = build_backfill_embed(
             guild=interaction.guild,
@@ -361,29 +363,27 @@ class Levels(commands.Cog):
             message_counts=message_counts,
             after=after,
             before=before,
+            days=days,
             xp_per_message=xp_per_message,
             cap_per_user=cap_per_user,
-            max_per_channel=max_per_channel,
         )
         await respond(interaction, embed, ephemeral=True)
 
-    @backfill.command(name="run", description="Apply historical XP import after creating a backup")
+    @backfill.command(name="run", description="Replace XP with a historical rebuild after a backup")
     @app_commands.describe(
         confirm="Must be true before any XP is written",
-        days="How many days before the XP system started to scan",
+        days="Latest calendar days to scan (maximum 700)",
         xp_per_message="XP awarded for each eligible historical message",
         cap_per_user="Maximum historical XP one member can receive",
-        max_per_channel="Maximum messages to scan per channel",
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backfill_run(
         self,
         interaction: discord.Interaction,
         confirm: bool = False,
-        days: app_commands.Range[int, 1, 3650] = BACKFILL_DEFAULT_DAYS,
+        days: app_commands.Range[int, 1, BACKFILL_MAX_DAYS] = BACKFILL_DEFAULT_DAYS,
         xp_per_message: app_commands.Range[int, 1, 10] = BACKFILL_DEFAULT_XP_PER_MESSAGE,
         cap_per_user: app_commands.Range[int, 500, 100000] = BACKFILL_DEFAULT_CAP_PER_USER,
-        max_per_channel: app_commands.Range[int, 100, 100000] = BACKFILL_DEFAULT_MAX_PER_CHANNEL,
     ):
         await interaction.response.defer(ephemeral=True, thinking=True)
         if not confirm:
@@ -391,7 +391,7 @@ class Levels(commands.Cog):
                 "Confirmation needed",
                 (
                     "Run `/levels backfill preview` first. If the numbers look good, run "
-                    "`/levels backfill run confirm:true` with the same options."
+                    "`/levels backfill run confirm:true` with the same options to rebuild the totals."
                 ),
                 color=Palette.WARNING,
             )
@@ -403,15 +403,24 @@ class Levels(commands.Cog):
             days=days,
             xp_per_message=xp_per_message,
             cap_per_user=cap_per_user,
-            max_per_channel=max_per_channel,
         )
 
-        backup = None
-        if xp_by_user:
-            backup = await self.bot.loop.run_in_executor(None, create_backup, "levels-backfill")
-            apply_backfill_to_guild(guild_data, message_counts, xp_by_user)
-            self.dirty = True
-            await self.flush()
+        if stats["channels_scanned"] == 0 or stats["errors"]:
+            embed = make_embed(
+                "XP rebuild not applied",
+                (
+                    "No data changed because the scan was incomplete. "
+                    "Check channel access or retry after Discord API errors are gone."
+                ),
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Levels backfill")
+            return await respond(interaction, embed, ephemeral=True)
+
+        backup = await self.bot.loop.run_in_executor(None, create_backup, "levels-backfill")
+        replace_backfill_for_guild(guild_data, message_counts, xp_by_user)
+        self.dirty = True
+        await self.flush()
 
         embed = build_backfill_embed(
             guild=interaction.guild,
@@ -421,9 +430,9 @@ class Levels(commands.Cog):
             message_counts=message_counts,
             after=after,
             before=before,
+            days=days,
             xp_per_message=xp_per_message,
             cap_per_user=cap_per_user,
-            max_per_channel=max_per_channel,
             backup=backup,
         )
         await respond(interaction, embed, ephemeral=True)
@@ -496,19 +505,24 @@ class Levels(commands.Cog):
 
         color = RANK_COLORS.get(position, Palette.PRIMARY)
         medal = MEDALS.get(position, "🏅")
-        bar = progress_bar(into_level, needed, slots=12)
-
         embed = make_embed(
             f"{medal} {target.display_name}",
-            f"**Level {level}** • Rank `#{position}` of `{ranked_count}`",
+            (
+                f"**Level {level}** • Rank `#{position}` of `{ranked_count}`"
+                + (" • **MAX**" if level >= MAX_LEVEL else "")
+            ),
             color=color,
         )
         embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(
-            name="Progress to next level",
-            value=f"{bar}\n`{humanize_number(into_level)} / {humanize_number(needed)} XP`",
-            inline=False,
-        )
+        if level >= MAX_LEVEL:
+            embed.add_field(name="Level cap", value=f"`Level {MAX_LEVEL}` is the maximum.", inline=False)
+        else:
+            bar = progress_bar(into_level, needed, slots=12)
+            embed.add_field(
+                name="Progress to next level",
+                value=f"{bar}\n`{humanize_number(into_level)} / {humanize_number(needed)} XP`",
+                inline=False,
+            )
         embed.add_field(name="Total XP", value=f"`{humanize_number(total_xp)}`", inline=True)
         embed.add_field(name="Messages", value=f"`{humanize_number(record.get('messages', 0))}`", inline=True)
         brand_footer(embed, "XP card")

@@ -7,15 +7,21 @@ Run standalone:
 import os
 import sys
 import unittest
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cogs.levels import (  # noqa: E402
     XP_COOLDOWN_SECONDS,
+    BACKFILL_DEFAULT_DAYS,
+    BACKFILL_MAX_DAYS,
+    MAX_LEVEL,
     XP_GAIN_MAX,
     XP_GAIN_MIN,
-    apply_backfill_to_guild,
+    XP_PER_LEVEL,
+    replace_backfill_for_guild,
+    backfill_window,
     build_level_up_embed,
     level_from_xp,
     meaningful_message,
@@ -31,12 +37,15 @@ class LevelsHelperTests(unittest.TestCase):
         self.assertLessEqual(XP_GAIN_MAX, 10)
         self.assertGreaterEqual(XP_GAIN_MIN, 5)
 
-    def test_level_math_stays_compatible(self):
+    def test_level_math_uses_a_fixed_169_level_curve(self):
         first_level_xp = xp_needed(0)
         level, into_level = level_from_xp(first_level_xp)
 
+        self.assertEqual(first_level_xp, XP_PER_LEVEL)
         self.assertEqual(level, 1)
         self.assertEqual(into_level, 0)
+        self.assertEqual(xp_needed(MAX_LEVEL), 0)
+        self.assertEqual(level_from_xp(MAX_LEVEL * XP_PER_LEVEL + 500), (MAX_LEVEL, 0))
 
     def test_meaningful_message_ignores_short_xp_farming(self):
         short = SimpleNamespace(content="ok", attachments=[], stickers=[])
@@ -65,21 +74,33 @@ class LevelsHelperTests(unittest.TestCase):
             "2": 1000,
         })
 
-    def test_backfill_applies_without_erasing_existing_xp(self):
+    def test_backfill_window_uses_latest_days_and_hard_caps_to_700(self):
+        now = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+        after, before = backfill_window(5_000, now=now)
+
+        self.assertEqual(BACKFILL_DEFAULT_DAYS, 700)
+        self.assertEqual(BACKFILL_MAX_DAYS, 700)
+        self.assertEqual(before, now)
+        self.assertEqual(after, now - timedelta(days=700))
+
+    def test_backfill_replaces_existing_xp_and_messages(self):
         guild_data = {
             "1": {"xp": 200, "messages": 5, "last_gain": "2026-07-23T00:00:00+00:00"},
+            "stale-user": {"xp": 900, "messages": 50, "last_gain": None},
         }
         message_counts = {"1": 10, "2": 4}
         xp_by_user = {"1": 20, "2": 8}
 
-        applied_xp, applied_messages = apply_backfill_to_guild(guild_data, message_counts, xp_by_user)
+        applied_xp, applied_messages = replace_backfill_for_guild(guild_data, message_counts, xp_by_user)
 
         self.assertEqual(applied_xp, 28)
         self.assertEqual(applied_messages, 14)
-        self.assertEqual(guild_data["1"]["xp"], 220)
-        self.assertEqual(guild_data["1"]["messages"], 15)
+        self.assertEqual(guild_data["1"]["xp"], 20)
+        self.assertEqual(guild_data["1"]["messages"], 10)
+        self.assertIsNone(guild_data["1"]["last_gain"])
         self.assertEqual(guild_data["2"]["xp"], 8)
         self.assertEqual(guild_data["2"]["messages"], 4)
+        self.assertNotIn("stale-user", guild_data)
 
     def test_level_up_embed_contains_private_progress(self):
         member = SimpleNamespace(display_avatar=SimpleNamespace(url="https://example.com/avatar.png"))
@@ -100,7 +121,7 @@ class LevelsHelperTests(unittest.TestCase):
         self.assertIn("NovaGuard", embed.description)
         self.assertIn("No channel spam", embed.description)
         self.assertEqual(embed.fields[0].name, "Next level")
-        self.assertIn("/ 155 XP", embed.fields[0].value)
+        self.assertIn(f"/ {XP_PER_LEVEL} XP", embed.fields[0].value)
         self.assertEqual(embed.fields[2].value, "`+7 XP`")
 
 

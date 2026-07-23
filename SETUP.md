@@ -116,7 +116,7 @@ backups/          automatic/manual backup archives — auto-created
 
 ### 🏆 Levels
 `/rank` `/leaderboard` (+ slower automatic chat XP, private DM level-up cards with progress bars)
-Admin: `/levels backfill preview` estimates historical XP, `/levels backfill run confirm:true` applies it after a backup.
+Admin: `/levels backfill preview` estimates historical XP, `/levels backfill run confirm:true` rebuilds the current XP totals after a backup.
 
 ### 👋 Welcome
 `/welcome set` `/welcome off` `/welcome test` (+ auto join/leave embeds, auto-role)
