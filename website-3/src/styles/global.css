@@ -1,91 +1,240 @@
 @import "tailwindcss";
-@import "@fontsource-variable/newsreader";
-@import "@fontsource-variable/inter";
+@import "@fontsource-variable/outfit";
+@import "@fontsource-variable/hanken-grotesk";
+@import "@fontsource-variable/geist-mono";
 
-/* Theme variant: `dark:` utilities apply when <html data-theme="dark">. */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* `dark:` utilities apply when <html data-theme="dark"> (dark is the default).
+   The `*` must live INSIDE each :where() branch so the utility element is the
+   descendant of the themed root — `&:where(…) *` (outside) never matches. */
+@custom-variant dark (&:where(:root:not([data-theme="light"]) *, [data-theme="dark"] *));
 
-/* Day edition */
+/* ── NovaGuard design system — "signal flare in the dark". Warm neutral
+   near-black, warm off-white text, one accent: a lit-ember amber (Nova).
+   Deliberately not violet/indigo or cyan-on-dark — those are the most
+   recognized AI-generated-UI tells in 2026. ── */
 :root {
-  color-scheme: light;
-  --paper: #faf9f5;
-  --surface: #ffffff;
-  --ink: #1c1917;
-  --ink-muted: #6f6a61;
-  --line: #e7e3da;
-  --accent: #8c2b1a;
-  --accent-solid: #8c2b1a;
-  --accent-soft: #f6ebe8;
+  color-scheme: dark;
+  --background: 30 7% 5%;
+  --bg-subtle: 30 6% 7%;
+  --card: 28 7% 9%;
+  --card-hover: 28 6% 12%;
+  --border: 30 6% 16%;
+  --border-strong: 30 6% 24%;
+  --foreground: 40 20% 96%;
+  --muted-foreground: 30 6% 62%;
+  --faint-foreground: 30 6% 44%;
+  --primary: 28 96% 56%;
+  --primary-foreground: 20 45% 8%;
+  --primary-soft: 28 55% 14%;
+  --good: 142 40% 48%;
+  --radius: 0.5rem;
 }
 
-/* Night edition — warm ink, terracotta accents */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --paper: #161311;
-  --surface: #1f1b17;
-  --ink: #ece7df;
-  --ink-muted: #a49d91;
-  --line: #332d27;
-  --accent: #d07a58;
-  --accent-solid: #9c341e;
-  --accent-soft: #2b1d16;
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: 40 32% 98%;
+  --bg-subtle: 38 28% 95%;
+  --card: 0 0% 100%;
+  --card-hover: 38 30% 97%;
+  --border: 35 15% 88%;
+  --border-strong: 35 14% 78%;
+  --foreground: 20 15% 9%;
+  --muted-foreground: 25 8% 38%;
+  --faint-foreground: 25 8% 54%;
+  --primary: 26 90% 45%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 30 90% 94%;
+  --good: 142 45% 32%;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --background: 40 32% 98%;
+    --bg-subtle: 38 28% 95%;
+    --card: 0 0% 100%;
+    --card-hover: 38 30% 97%;
+    --border: 35 15% 88%;
+    --border-strong: 35 14% 78%;
+    --foreground: 20 15% 9%;
+    --muted-foreground: 25 8% 38%;
+    --faint-foreground: 25 8% 54%;
+    --primary: 26 90% 45%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 30 90% 94%;
+    --good: 142 45% 32%;
+  }
 }
 
 @theme inline {
-  --color-paper: var(--paper);
-  --color-surface: var(--surface);
-  --color-ink: var(--ink);
-  --color-ink-muted: var(--ink-muted);
-  --color-line: var(--line);
-  --color-accent: var(--accent);
-  --color-accent-solid: var(--accent-solid);
-  --color-accent-soft: var(--accent-soft);
-  --font-display: "Newsreader Variable", Georgia, "Times New Roman", serif;
-  --font-sans: "Inter Variable", system-ui, -apple-system, sans-serif;
+  --color-background: hsl(var(--background));
+  --color-bg-subtle: hsl(var(--bg-subtle));
+  --color-card: hsl(var(--card));
+  --color-card-hover: hsl(var(--card-hover));
+  --color-line: hsl(var(--border));
+  --color-line-strong: hsl(var(--border-strong));
+  --color-ink: hsl(var(--foreground));
+  --color-ink-muted: hsl(var(--muted-foreground));
+  --color-ink-faint: hsl(var(--faint-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-ink: hsl(var(--primary-foreground));
+  --color-primary-soft: hsl(var(--primary-soft));
+  --color-good: hsl(var(--good));
+  --font-display: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Hanken Grotesk Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-card: var(--radius);
 }
 
 html {
-  background: var(--paper);
-  color: var(--ink);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
-  transition:
-    background-color 0.3s ease,
-    color 0.3s ease;
 }
 
 ::selection {
-  background: var(--accent-solid);
-  color: #fff;
+  background: hsl(var(--primary) / 0.9);
+  color: hsl(var(--primary-foreground));
 }
 
-/* Editorial scroll reveal — observer script lives in Features.astro */
-.reveal {
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    opacity 0.6s ease,
-    transform 0.6s ease;
+/* Film-grain — the 2026 counter-trend to flat AI gradients. Keeps the dark
+   surface feeling like paper/material. NO mix-blend-mode: a fixed full-screen
+   blended layer forces the compositor to re-blend the whole page every scroll
+   frame (the #1 scroll-jank cause). Plain opacity on its own fixed layer is
+   composited once and never repaints on scroll. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.reveal.is-visible {
-  opacity: 1;
-  transform: none;
+:root[data-theme="light"] body::before { opacity: 0.05; }
+
+/* Premium thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border-strong)) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong));
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Motion One reveal base — elements start hidden, animated in by scripts. */
+[data-reveal], [data-reveal-item] { opacity: 0; }
+
+/* Crisp keyboard focus — interaction reads as intentional, never sluggish. */
+:where(a, button, select, input, [role="switch"]):focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+/* Kill the blue tap-flash on mobile; native selects feel clickable. */
+a, button, [role="switch"] { -webkit-tap-highlight-color: transparent; }
+select { cursor: pointer; }
+select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+
+/* Dashboard selects: swap the OS-native arrow for a crafted chevron so all
+   pickers read as one designed system instead of raw form controls. */
+#app select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%239a938c' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+}
+#app select:hover { border-color: hsl(var(--border-strong)); }
+
+/* Dashboard route content eases in on mount and on navigation. */
+@keyframes ng-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+#app main { animation: ng-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Save bar rises from the bottom edge when changes appear. */
+@keyframes ng-rise {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: none; }
+}
+[data-savebar] { animation: ng-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* ── Scroll progress bar: thin amber bar tracking page scroll (scaleX = GPU). ── */
+#scroll-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 2px;
+  z-index: 60;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary) / 0.5));
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* ── Nav hide-on-scroll: slides out on scroll-down, back on scroll-up. ── */
+[data-nav] {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+[data-nav][data-hidden="true"] { transform: translateY(-100%); }
+
+/* ── Hero headline reveal: items start hidden, staggered rise in on load. ── */
+[data-hero-item] { opacity: 0; }
+
+/* ── Theme wipe (night ↔ day): a circular clip reveal driven from the toggle,
+   scoped to .theme-wipe so it never touches the page-navigation transition. ── */
+:root.theme-wipe::view-transition-old(root),
+:root.theme-wipe::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+:root.theme-wipe::view-transition-new(root) { z-index: 1; }
+:root.theme-wipe::view-transition-old(root) { z-index: 0; }
+
+/* ── Dashboard boot screen: branded placeholder shown until React mounts. ── */
+.ng-boot-mark { animation: ng-boot-pulse 1.8s ease-in-out infinite; }
+@keyframes ng-boot-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.97); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.ng-boot-bar {
+  width: 160px;
+  height: 3px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: hsl(var(--border));
+  position: relative;
+}
+.ng-boot-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  animation: ng-boot-slide 1.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes ng-boot-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
+  html { scroll-behavior: auto; }
+  [data-reveal], [data-reveal-item], [data-hero-item] { opacity: 1 !important; transform: none !important; }
+  [data-nav] { transform: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
   }
 }

@@ -1,12 +1,23 @@
 ---
 import Base from "../../layouts/Base.astro";
 import Masthead from "../../components/Masthead.astro";
+import App from "../../app/App";
 ---
 
 <Base title="Dashboard — NovaGuard" description="Configure NovaGuard from your browser.">
   <Masthead />
-  <div id="app"></div>
-  <script>
-    import "../../app/main";
-  </script>
+  <div id="app">
+    <App client:only="react">
+      <div slot="fallback" class="grid min-h-[70vh] place-items-center px-6">
+        <div class="text-center">
+          <div class="ng-boot-mark mx-auto flex h-16 w-16 items-center justify-center">
+            <img src="/favicon.png" alt="" width="48" height="48" class="h-12 w-12" />
+          </div>
+          <p class="mt-5 font-display text-lg">Opening your dashboard…</p>
+          <p class="mt-1.5 text-sm text-ink-muted">Checking your Discord session</p>
+          <div class="ng-boot-bar mx-auto mt-6"></div>
+        </div>
+      </div>
+    </App>
+  </div>
 </Base>

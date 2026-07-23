@@ -23,7 +23,7 @@ function GuildLayout() {
             to="/g/$guildId"
             params={{ guildId }}
             activeOptions={{ exact: true }}
-            activeProps={{ className: `${tab} border-accent text-ink` }}
+            activeProps={{ className: `${tab} border-primary text-ink` }}
             inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
           >
             Configuration
@@ -31,7 +31,7 @@ function GuildLayout() {
           <Link
             to="/g/$guildId/audit"
             params={{ guildId }}
-            activeProps={{ className: `${tab} border-accent text-ink` }}
+            activeProps={{ className: `${tab} border-primary text-ink` }}
             inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
           >
             Audit log

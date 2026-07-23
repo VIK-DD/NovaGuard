@@ -1,70 +1,84 @@
 # NovaGuard Website
 
-Editorial landing + admin dashboard for NovaGuard, built with Astro 5 and a
-React 19 island. Consumes the bot's embedded API (`docs/API.md`, `/api/v1`).
+Editorial landing page and administration dashboard built with Astro 5 and a
+React 19 dashboard island. The site exports to static files and is served by a
+Cloudflare Worker that protects private routes with a shared password.
 
 ## Develop
 
 ```bash
-cp .env.example .env      # set PUBLIC_API_BASE to the bot API origin
 npm install
 npm run dev               # http://localhost:4321
 ```
 
-## Test & build
+Set `PUBLIC_API_BASE` to the public NovaGuard bot API origin.
+
+## Test and build
 
 ```bash
-npm test                  # vitest — API client + config form logic
-npm run build             # astro check + static build into dist/
+npm test                  # API client and configuration-form tests
+npm run build             # static Astro export into dist/
 ```
 
-## Deploy (Cloudflare Pages / Netlify)
+`npm run build` runs the soft-launch step after the Astro export. It copies
+the preserved Coming Soon page onto `dist/index.html`, while the full landing
+remains available at `/home/`.
 
-Static output — publish `dist/`. Build command `npm run build`, no server needed.
-Set `PUBLIC_API_BASE` as a build-time environment variable pointing at the
-public bot API origin (e.g. the Cloudflare Tunnel domain of the Pi).
+To export the full landing at `/` without the Coming Soon override:
 
-Bot-side requirements (see `docs/API.md`):
-
-- `WEB_ENABLED=true`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`
-- `WEB_CORS_ORIGIN` must include this site's origin
-- `WEB_AFTER_LOGIN` should point to `https://<site>/dashboard`
-
-## Soft-launch mode (default right now)
-
-`npm run build` physically copies the Coming Soon page onto `dist/index.html`
-after the Astro build (`scripts/soft-launch.mjs`), while the full site stays
-live at its own routes: `/home` (the real landing), `/commands`, `/status`,
-`/dashboard`. Share those links freely — the dashboard is protected by
-Discord login regardless.
-
-This uses a file copy rather than a `_redirects` rewrite rule because some
-static hosts (Cloudflare Workers static assets, unlike classic Pages) only
-honor real redirects (3xx) from `_redirects`, not 200 "rewrite" rules —
-confirmed by testing against a live deploy.
-
-**For the public launch:** build with `npm run build:launch` instead (skips
-the Coming Soon copy step, so `/` serves the real landing), then redeploy.
-
-## Maintenance mode (classic Coming Soon page)
-
-The original launch page is preserved byte-identical at `/coming-soon/`.
-While shipping bot updates, route the whole site to it by uncommenting one
-line in `public/_redirects`, then redeploying:
-
-```
-/*  /coming-soon/  302!
+```bash
+npm run build:launch
 ```
 
-Re-comment and redeploy to go live again. The `/hq` shortcut redirect is kept.
+## Deploy to Cloudflare
+
+The Worker serves `dist/`, validates the signed password cookie, and sends
+unauthenticated visitors to `/login/`. The root Coming Soon page and its assets
+remain public.
+
+Set the password once, then deploy:
+
+```bash
+npx wrangler secret put AUTH_PASSWORD
+npm run deploy
+```
+
+Protected routes can be temporarily replaced with the update page by setting the
+Worker variable `MAINTENANCE_MODE`.
+
+```bash
+npx wrangler secret put MAINTENANCE_MODE
+# type: protected
+```
+
+Turn it back off with:
+
+```bash
+npx wrangler secret put MAINTENANCE_MODE
+# type: off
+```
+
+Accepted enabled values are `1`, `true`, `on`, `enabled`, `protected` and
+`private`. When enabled, users still enter the password first, then private
+routes serve `/maintenance/`.
+
+Cloudflare Access applications must be disabled for this hostname because the
+custom Worker performs the access check.
+
+Bot-side requirements:
+
+- `WEB_ENABLED=true`, `DISCORD_CLIENT_ID`, and `DISCORD_CLIENT_SECRET`
+- `WEB_CORS_ORIGIN` includes this website origin
+- `WEB_AFTER_LOGIN` points to `https://<site>/dashboard/`
 
 ## Structure
 
-```
-public/coming-soon/   preserved legacy page (do not edit)
-src/pages/            landing, commands, privacy, terms, 404, dashboard shell
-src/components/       Astro landing components (zero client JS where possible)
-src/app/              React dashboard — TanStack Router + Query
-src/lib/api/          typed client + zod schemas mirroring docs/API.md
-src/styles/global.css design tokens (single source of truth)
+```text
+src/pages/              Astro landing, login, legal, status and dashboard shell
+src/components/         Astro landing components and React visual islands
+src/app/                existing dashboard application and TanStack Router
+src/lib/api/            typed API client and Zod schemas
+public/coming-soon/     preserved legacy page; do not edit
+worker/                 Cloudflare password gate and static asset handler
+scripts/soft-launch.mjs root Coming Soon copy step
 ```

@@ -28,8 +28,8 @@ export default function ChannelSelect({ label, value, channels, error, onChange 
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
         aria-invalid={error ? true : undefined}
-        className={`mt-1.5 w-full rounded-md border bg-surface px-3 py-2 text-sm outline-none focus:border-ink ${
-          error ? "border-accent" : "border-line"
+        className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
+          error ? "border-primary" : "border-line"
         }`}
       >
         <option value="">— none —</option>
@@ -43,7 +43,7 @@ export default function ChannelSelect({ label, value, channels, error, onChange 
           </optgroup>
         ))}
       </select>
-      {error && <p className="text-accent mt-1 text-xs">{error}</p>}
+      {error && <p className="text-primary mt-1 text-xs">{error}</p>}
     </label>
   );
 }

@@ -44,7 +44,7 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
         aria-label={props.label}
         onClick={() => props.onChange(!props.checked)}
         className={`relative h-6 w-11 rounded-full transition-colors ${
-          props.checked ? "bg-accent-solid" : "bg-line"
+          props.checked ? "bg-primary" : "bg-line"
         }`}
       >
         <span
@@ -60,7 +60,7 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
 function Section(props: { kicker: string; children: React.ReactNode }) {
   return (
     <section className="mt-12">
-      <p className="text-xs tracking-[0.2em] text-accent uppercase">{props.kicker}</p>
+      <p className="text-xs tracking-[0.2em] text-primary uppercase">{props.kicker}</p>
       <div className="mt-4">{props.children}</div>
     </section>
   );

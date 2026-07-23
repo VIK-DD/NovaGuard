@@ -1,5 +1,6 @@
 ---
 import Masthead from "./Masthead.astro";
+import Icon from "./Icon.astro";
 
 const links = [
   { href: "/commands", label: "Commands" },
@@ -9,16 +10,19 @@ const links = [
 ---
 
 <Masthead />
-<header class="border-b border-line">
-  <nav class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-    <a href="/" class="font-display flex items-center gap-2.5 text-xl italic" aria-label="NovaGuard home">
-      <img src="/favicon.png" alt="" width="28" height="28" class="rounded-md" />
-      <span class="hidden sm:inline">NovaGuard</span>
+<header data-nav class="sticky top-0 z-30 border-b border-line bg-background/85 backdrop-blur-md">
+  <nav class="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
+    <a href="/" class="flex items-center gap-2.5" aria-label="NovaGuard home">
+      <img src="/favicon.png" alt="" width="32" height="32" class="h-8 w-8" />
+      <span class="font-display text-lg font-semibold tracking-tight">NovaGuard</span>
     </a>
-    <div class="flex items-center gap-4 text-sm sm:gap-7">
+    <div class="flex items-center gap-2 sm:gap-6">
       {
         links.map((l) => (
-          <a href={l.href} class="text-ink-muted transition-colors hover:text-ink">
+          <a
+            href={l.href}
+            class="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:inline"
+          >
             {l.label}
           </a>
         ))
@@ -26,20 +30,103 @@ const links = [
       <a
         href="/dashboard"
         data-invite
-        class="bg-accent-solid rounded-full px-3.5 py-1.5 whitespace-nowrap text-white transition-opacity hover:opacity-90 sm:px-4"
+        class="rounded-[6px] bg-primary px-3.5 py-1.5 text-sm font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 sm:px-4"
       >
         <span class="sm:hidden">Add</span>
         <span class="hidden sm:inline">Add to Discord</span>
       </a>
+      <button
+        id="nav-toggle"
+        type="button"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="nav-mobile"
+        class="grid h-9 w-9 place-items-center rounded-[6px] border border-line text-ink transition-colors hover:border-line-strong sm:hidden"
+      >
+        <span class="icon-menu"><Icon name="menu" size={18} /></span>
+        <span class="icon-close hidden"><Icon name="x" size={18} /></span>
+      </button>
     </div>
   </nav>
+
+  <!-- Mobile drawer: grid-rows 0fr→1fr = pure-CSS height animation, no JS layout. -->
+  <div id="nav-mobile" class="nav-drawer sm:hidden">
+    <div class="overflow-hidden">
+      <nav class="flex flex-col gap-0.5 px-4 pt-1 pb-3">
+        {
+          links.map((l) => (
+            <a
+              href={l.href}
+              class="rounded-[6px] px-3 py-2.5 text-sm text-ink-muted transition-colors hover:bg-card hover:text-ink"
+            >
+              {l.label}
+            </a>
+          ))
+        }
+      </nav>
+    </div>
+  </div>
 </header>
-<script>
-  // Invite buttons point at the bot API's install redirect when configured.
-  const base = import.meta.env.PUBLIC_API_BASE;
-  if (base) {
-    document
-      .querySelectorAll<HTMLAnchorElement>("[data-invite]")
-      .forEach((a) => (a.href = `${base}/api/v1/invite`));
+
+<style>
+  .nav-drawer {
+    display: grid;
+    grid-template-rows: 0fr;
+    border-top: 1px solid transparent;
+    transition:
+      grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.34s ease;
   }
+  .nav-drawer.open {
+    grid-template-rows: 1fr;
+    border-top-color: hsl(var(--border));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-drawer { transition: none; }
+  }
+</style>
+
+<script>
+  // Invite-link rewriting lives in scripts/motion.ts (runs on every page-load).
+  function init() {
+    const toggle = document.getElementById("nav-toggle");
+    const drawer = document.getElementById("nav-mobile");
+    const menuIcon = toggle?.querySelector<HTMLElement>(".icon-menu");
+    const closeIcon = toggle?.querySelector<HTMLElement>(".icon-close");
+
+    const setOpen = (open: boolean) => {
+      drawer?.classList.toggle("open", open);
+      toggle?.setAttribute("aria-expanded", String(open));
+      toggle?.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      menuIcon?.classList.toggle("hidden", open);
+      closeIcon?.classList.toggle("hidden", !open);
+    };
+
+    toggle?.addEventListener("click", () =>
+      setOpen(toggle.getAttribute("aria-expanded") !== "true"),
+    );
+    drawer?.querySelectorAll("a").forEach((a) =>
+      a.addEventListener("click", () => setOpen(false)),
+    );
+  }
+
+  // Escape closes an open drawer; bound once on the persistent document so
+  // client-side navigations don't stack duplicate listeners.
+  const w = window as unknown as { __ngNavEsc?: boolean };
+  if (!w.__ngNavEsc) {
+    w.__ngNavEsc = true;
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const drawer = document.getElementById("nav-mobile");
+      if (!drawer?.classList.contains("open")) return;
+      const toggle = document.getElementById("nav-toggle");
+      drawer.classList.remove("open");
+      toggle?.setAttribute("aria-expanded", "false");
+      toggle?.setAttribute("aria-label", "Open menu");
+      toggle?.querySelector(".icon-menu")?.classList.remove("hidden");
+      toggle?.querySelector(".icon-close")?.classList.add("hidden");
+    });
+  }
+
+  document.addEventListener("astro:page-load", init);
 </script>

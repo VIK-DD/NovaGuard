@@ -34,8 +34,8 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
           }}
           placeholder="Type a word, press Enter"
           aria-label="Add blocked word"
-          className={`w-full rounded-md border bg-surface px-3 py-2 text-sm outline-none focus:border-ink ${
-            error ? "border-accent" : "border-line"
+          className={`w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
+            error ? "border-primary" : "border-line"
           }`}
         />
         <button
@@ -46,13 +46,13 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
           Add
         </button>
       </div>
-      {error && <p className="text-accent mt-1 text-xs">{error}</p>}
+      {error && <p className="text-primary mt-1 text-xs">{error}</p>}
       {value.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {value.map((word) => (
             <li
               key={word}
-              className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-0.5 text-sm"
+              className="flex items-center gap-1.5 rounded-md border border-line bg-card px-2 py-0.5 text-sm"
             >
               <code>{word}</code>
               <button

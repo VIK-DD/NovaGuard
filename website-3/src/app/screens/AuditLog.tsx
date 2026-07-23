@@ -61,7 +61,7 @@ export default function AuditLog() {
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {Object.entries(entry.changes).map(([key, value]) => (
                     <li key={key}>
-                      <code className="rounded-md border border-line bg-surface px-2 py-0.5 text-xs">
+                      <code className="rounded-md border border-line bg-card px-2 py-0.5 text-xs">
                         {key} → {value === null ? "none" : String(value)}
                       </code>
                     </li>

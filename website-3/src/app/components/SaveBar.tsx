@@ -10,9 +10,12 @@ export default function SaveBar({ visible, saving, error, onSave, onDiscard }: P
   if (!visible && !error) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 border-t border-line bg-paper/95 backdrop-blur">
+    <div
+      data-savebar
+      className="fixed inset-x-0 bottom-0 border-t border-line bg-background/95 backdrop-blur"
+    >
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
-        <p className={`truncate text-sm ${error ? "text-accent" : "text-ink-muted"}`}>
+        <p className={`truncate text-sm ${error ? "text-primary" : "text-ink-muted"}`}>
           {error ?? "Unsaved changes"}
         </p>
         <div className="flex shrink-0 items-center gap-3">
@@ -28,7 +31,7 @@ export default function SaveBar({ visible, saving, error, onSave, onDiscard }: P
             type="button"
             onClick={onSave}
             disabled={saving || !visible}
-            className="bg-accent-solid rounded-full px-5 py-2 text-sm text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="bg-primary rounded-full px-5 py-2 text-sm text-primary-ink transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}
           </button>

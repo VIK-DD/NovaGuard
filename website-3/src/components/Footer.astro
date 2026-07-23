@@ -1,10 +1,10 @@
 <footer class="border-t border-line">
   <div
-    class="mx-auto flex max-w-5xl flex-col items-center gap-6 px-6 py-10 text-sm sm:flex-row sm:items-end sm:justify-between"
+    class="mx-auto flex max-w-6xl flex-col items-center gap-6 px-6 py-10 text-sm sm:flex-row sm:items-end sm:justify-between"
   >
     <div class="text-center sm:text-left">
-      <p class="font-display text-lg italic">NovaGuard</p>
-      <p class="mt-1 text-xs tracking-wide text-ink-muted">
+      <p class="font-display text-lg font-semibold">NovaGuard</p>
+      <p class="mt-1 text-xs tracking-wide text-ink-faint">
         Designed &amp; Developed by VIK &amp; CloudMediaSRL
       </p>
       <a
@@ -13,14 +13,14 @@
         hidden
         class="mt-2 inline-flex items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
       >
-        <span class="h-1.5 w-1.5 rounded-full" style="background-color: #3d8a57"></span>
+        <span class="h-1.5 w-1.5 rounded-full bg-good"></span>
         <span data-heartbeat-text></span>
       </a>
     </div>
     <nav class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-ink-muted">
       <a href="/commands" class="transition-colors hover:text-ink">Commands</a>
-      <a href="/dashboard" class="transition-colors hover:text-ink">Dashboard</a>
       <a href="/status" class="transition-colors hover:text-ink">Status</a>
+      <a href="/dashboard" class="transition-colors hover:text-ink">Dashboard</a>
       <a href="/coming-soon/" class="transition-colors hover:text-ink">Classic page</a>
       <a href="/privacy" class="transition-colors hover:text-ink">Privacy</a>
       <a href="/terms" class="transition-colors hover:text-ink">Terms</a>
@@ -28,7 +28,6 @@
   </div>
 </footer>
 <script>
-  // Quiet heartbeat: only shown when the bot answers.
   const base = import.meta.env.PUBLIC_API_BASE;
   const link = document.querySelector<HTMLElement>("[data-heartbeat]");
   const text = document.querySelector<HTMLElement>("[data-heartbeat-text]");

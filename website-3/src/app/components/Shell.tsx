@@ -12,8 +12,9 @@ export default function Shell({ children }: { children: ReactNode }) {
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-6">
-            <a href="/" className="font-display text-xl italic">
-              NovaGuard
+            <a href="/" className="flex items-center gap-2.5" aria-label="NovaGuard home">
+              <img src="/favicon.png" alt="" width="28" height="28" className="h-7 w-7" />
+              <span className="font-display text-lg font-semibold tracking-tight">NovaGuard</span>
             </a>
             <Link
               to="/"

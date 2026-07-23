@@ -14,7 +14,7 @@ const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const comingSoon = fileURLToPath(new URL("../dist/coming-soon/", import.meta.url));
 
 if (!existsSync(comingSoon)) {
-  console.error("soft-launch: dist/coming-soon not found — run `astro build` first");
+  console.error("soft-launch: dist/coming-soon not found - run `astro build` first");
   process.exit(1);
 }
 

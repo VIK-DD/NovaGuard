@@ -1,27 +1,43 @@
-<section class="mx-auto max-w-5xl px-6 pt-24 pb-20 text-center sm:pt-32">
-  <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">
-    Self-hosted · Open source · Raspberry Pi friendly
-  </p>
-  <h1 class="font-display mx-auto mt-6 max-w-3xl text-5xl leading-[1.05] sm:text-7xl">
-    The friendly <em class="text-accent">guardian</em> for your Discord community.
-  </h1>
-  <p class="mx-auto mt-6 max-w-xl text-lg text-ink-muted">
-    Moderation, levels, tickets, giveaways and a real setup wizard — run from
-    hardware you own, configured from your browser.
-  </p>
-  <div class="mt-10 flex items-center justify-center gap-4">
-    <a
-      href="/dashboard"
-      data-invite
-      class="bg-accent-solid rounded-full px-6 py-3 text-white transition-opacity hover:opacity-90"
-    >
-      Add to Discord
-    </a>
-    <a
-      href="/dashboard"
-      class="rounded-full border border-line px-6 py-3 transition-colors hover:border-ink"
-    >
-      Open dashboard
-    </a>
+---
+import HeroVisual from "./HeroVisual";
+---
+
+<section class="border-b border-line">
+  <div class="mx-auto grid max-w-6xl gap-10 px-6 py-20 sm:py-28 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-6">
+    <div>
+      <p data-hero-item class="font-mono text-xs tracking-[0.14em] text-primary uppercase">
+        NovaGuard — v3.0.0 "Nova"
+      </p>
+      <h1
+        data-hero-item
+        class="mt-5 max-w-xl font-display text-[2.75rem] leading-[1.05] font-semibold tracking-[-0.02em] text-balance sm:text-6xl"
+      >
+        A guardian for your Discord server, not another bot to babysit.
+      </h1>
+      <p data-hero-item class="mt-5 max-w-md text-[17px] leading-relaxed text-ink-muted">
+        Moderation, levels, tickets and giveaways with a setup wizard that
+        actually finishes. Configure it from Discord or from a dashboard —
+        every channel optional, nothing forced on you.
+      </p>
+      <div data-hero-item class="mt-8 flex flex-wrap items-center gap-3">
+        <a
+          href="/dashboard"
+          data-invite
+          class="rounded-[6px] bg-primary px-5 py-2.5 text-sm font-medium text-primary-ink transition-colors hover:bg-primary/90"
+        >
+          Add to Discord
+        </a>
+        <a
+          href="/dashboard"
+          class="rounded-[6px] border border-line-strong px-5 py-2.5 text-sm font-medium transition-colors hover:bg-card"
+        >
+          Open dashboard
+        </a>
+        <a href="/status" class="ml-1 text-sm text-ink-faint underline-offset-4 hover:text-ink hover:underline">
+          System status →
+        </a>
+      </div>
+    </div>
+    <HeroVisual client:load />
   </div>
 </section>

@@ -31,10 +31,21 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           </p>
           <button
             onClick={() => window.location.assign(loginUrl())}
-            className="bg-accent-solid mt-8 rounded-full px-6 py-3 text-white transition-opacity hover:opacity-90"
+            className="bg-primary mt-8 rounded-full px-6 py-3 text-primary-ink transition-opacity hover:opacity-90"
           >
             Continue with Discord
           </button>
+          {import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "1" && (
+            <button
+              onClick={() => {
+                sessionStorage.setItem("ng_mock_session", "on");
+                void me.refetch();
+              }}
+              className="mt-4 text-xs text-ink-faint underline underline-offset-4 transition-colors hover:text-ink"
+            >
+              Preview with demo data (dev)
+            </button>
+          )}
         </Screen>
       );
     }

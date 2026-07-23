@@ -1,61 +1,96 @@
-<section class="border-y border-line bg-surface">
+---
+---
+
+<section class="mx-auto max-w-6xl px-6">
   <dl
     data-stats
-    class="mx-auto grid max-w-5xl grid-cols-2 gap-y-8 px-6 py-10 text-center sm:grid-cols-4"
+    data-reveal-group
+    class="grid grid-cols-2 gap-3 sm:grid-cols-4"
     hidden
   >
-    <div>
-      <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Servers</dt>
-      <dd data-stat="guilds" class="font-display mt-1 text-4xl">–</dd>
-    </div>
-    <div>
-      <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Members</dt>
-      <dd data-stat="members" class="font-display mt-1 text-4xl">–</dd>
-    </div>
-    <div>
-      <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Commands</dt>
-      <dd data-stat="commands" class="font-display mt-1 text-4xl">–</dd>
-    </div>
-    <div>
-      <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Uptime</dt>
-      <dd data-stat="uptime" class="font-display mt-1 text-4xl">–</dd>
-    </div>
+    {
+      [
+        ["guilds", "Servers"],
+        ["members", "Members"],
+        ["commands", "Commands"],
+        ["uptime", "Uptime"],
+      ].map(([key, label]) => (
+        <div
+          data-reveal-item
+          class="rounded-[var(--radius-card)] border border-line bg-card p-5 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] transition-colors hover:border-line-strong"
+        >
+          <dt class="text-[11px] tracking-[0.18em] text-ink-faint uppercase">{label}</dt>
+          <dd
+            data-stat={key}
+            class="mt-1.5 font-display text-3xl font-semibold tabular-nums sm:text-4xl"
+          >
+            –
+          </dd>
+        </div>
+      ))
+    }
   </dl>
   <p
     data-stats-fallback
-    class="mx-auto max-w-5xl px-6 py-8 text-center text-sm text-ink-muted"
+    class="rounded-[var(--radius-card)] border border-line bg-card px-6 py-5 text-center text-sm text-ink-muted"
   >
     Live numbers appear when the bot is online.
   </p>
 </section>
 <script>
+  import { animate, inView } from "motion";
+
+  function init() {
   const base = import.meta.env.PUBLIC_API_BASE;
   const dl = document.querySelector<HTMLElement>("[data-stats]");
   const fb = document.querySelector<HTMLElement>("[data-stats-fallback]");
-  const fmt = (n: number) => new Intl.NumberFormat("en").format(n);
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fmt = (n: number) => new Intl.NumberFormat("en").format(Math.round(n));
   const dur = (s: number) =>
     s >= 86400
       ? `${Math.floor(s / 86400)}d`
       : s >= 3600
         ? `${Math.floor(s / 3600)}h`
         : `${Math.floor(s / 60)}m`;
+
+  // Count-up on scroll-into-view, values baked into the target text once fetched.
+  const countUp = (el: Element, to: number, format: (n: number) => string) => {
+    if (reduce) {
+      el.textContent = format(to);
+      return;
+    }
+    inView(
+      el,
+      () => {
+        animate(0, to, {
+          duration: 1.1,
+          ease: [0.16, 1, 0.3, 1],
+          onUpdate: (v) => (el.textContent = format(v)),
+        });
+      },
+      { amount: 0.6 },
+    );
+  };
+
   if (base && dl && fb) {
     fetch(`${base}/api/v1/stats`, { signal: AbortSignal.timeout(4000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((s) => {
-        const set = (k: string, v: string) => {
-          const el = dl.querySelector(`[data-stat="${k}"]`);
-          if (el) el.textContent = v;
-        };
-        set("guilds", fmt(s.guilds));
-        set("members", fmt(s.members));
-        set("commands", fmt(s.commands));
-        set("uptime", dur(s.uptime_seconds));
+        const target = (k: string) => dl.querySelector(`[data-stat="${k}"]`);
+        const gEl = target("guilds");
+        const mEl = target("members");
+        const cEl = target("commands");
+        const uEl = target("uptime");
+        if (gEl) countUp(gEl, s.guilds, fmt);
+        if (mEl) countUp(mEl, s.members, fmt);
+        if (cEl) countUp(cEl, s.commands, fmt);
+        if (uEl) uEl.textContent = dur(s.uptime_seconds);
         dl.hidden = false;
         fb.hidden = true;
       })
-      .catch(() => {
-        /* bot offline — fallback line stays */
-      });
+      .catch(() => {});
   }
+  }
+
+  document.addEventListener("astro:page-load", init);
 </script>

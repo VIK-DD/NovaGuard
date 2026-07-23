@@ -8,11 +8,124 @@
     <link rel="icon" type="image/png" sizes="512x512" href="./assets/novaguard-icon.png" />
     <link rel="apple-touch-icon" href="./assets/novaguard-icon.png" />
     <title>NovaGuard - Coming Soon</title>
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem("ng-maintenance-theme");
+          document.documentElement.dataset.theme = saved === "light" ? "light" : "dark";
+        } catch (error) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      })();
+    </script>
     <script type="module" crossorigin src="./assets/index-B3_iJ6Zt.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CAD1rHsh.css">
     <link rel="stylesheet" href="./overrides.css">
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const themeKey = "ng-maintenance-theme";
+        const root = document.getElementById("root");
+
+        const icons = {
+          dark:
+            '<svg data-ng-theme-icon="dark" stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" width="16" height="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>',
+          light:
+            '<svg data-ng-theme-icon="light" stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" width="16" height="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>',
+        };
+
+        const getStoredTheme = () => {
+          try {
+            return localStorage.getItem(themeKey) === "light" ? "light" : "dark";
+          } catch (error) {
+            return "dark";
+          }
+        };
+
+        const setTheme = (theme) => {
+          document.documentElement.dataset.theme = theme;
+
+          try {
+            localStorage.setItem(themeKey, theme);
+          } catch (error) {
+            // Ignore private browsing or blocked storage.
+          }
+        };
+
+        const syncToggleIcon = () => {
+          const button = root.querySelector(".theme-toggle");
+          if (!button) return;
+
+          const theme = getStoredTheme();
+          const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+          button.setAttribute("aria-label", label);
+          button.setAttribute("title", label);
+
+          if (!button.querySelector(`[data-ng-theme-icon="${theme}"]`)) {
+            button.innerHTML = icons[theme];
+          }
+        };
+
+        const attachThemeSync = () => {
+          const button = root.querySelector(".theme-toggle");
+          if (!button || button.dataset.themeSync === "true") return;
+
+          button.dataset.themeSync = "true";
+          button.addEventListener(
+            "click",
+            (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+
+              const current = getStoredTheme();
+              const next = current === "dark" ? "light" : "dark";
+              setTheme(next);
+              syncToggleIcon();
+            },
+            true,
+          );
+
+          syncToggleIcon();
+        };
+
+        const attachCredit = () => {
+          const content = root.querySelector(".content");
+          if (!content || content.querySelector(".site-credit")) return;
+
+          const credit = document.createElement("p");
+          credit.className = "site-credit";
+          credit.textContent = "Designed & Developed by VIK & CloudMediaSRL";
+          content.appendChild(credit);
+        };
+
+        const syncFromStorage = () => {
+          const saved = getStoredTheme();
+          if (document.documentElement.dataset.theme !== saved) {
+            document.documentElement.dataset.theme = saved;
+          }
+          syncToggleIcon();
+        };
+
+        setTheme(getStoredTheme());
+
+        new MutationObserver(() => {
+          attachCredit();
+          attachThemeSync();
+          syncFromStorage();
+        }).observe(root, { childList: true, subtree: true });
+
+        new MutationObserver(syncFromStorage).observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["data-theme"],
+        });
+
+        attachCredit();
+        attachThemeSync();
+        syncFromStorage();
+      })();
+    </script>
   </body>
 </html>
