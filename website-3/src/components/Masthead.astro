@@ -2,6 +2,9 @@
 import Icon from "./Icon.astro";
 ---
 
+<div data-theme-curtain class="theme-curtain" aria-hidden="true">
+  <span class="theme-curtain-edge"></span>
+</div>
 <div class="border-b border-line">
   <div
     class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-2 text-[11px] tracking-[0.13em] text-ink-faint uppercase sm:gap-4 sm:px-6 sm:tracking-[0.16em]"
@@ -37,6 +40,7 @@ import Icon from "./Icon.astro";
     const KEY = "ng-theme";
     const root = document.documentElement;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const curtain = document.querySelector<HTMLElement>("[data-theme-curtain]");
     let themeTransitioning = false;
 
     const setTheme = (light: boolean) => {
@@ -53,7 +57,28 @@ import Icon from "./Icon.astro";
     const transitionTheme = async (light: boolean, button: HTMLElement) => {
       themeTransitioning = true;
       button.setAttribute("aria-busy", "true");
+      let incoming: HTMLElement | null = null;
+      let exitAnimation: Animation | undefined;
+      let enterAnimation: Animation | undefined;
+      let curtainIn: Animation | undefined;
+      let curtainOut: Animation | undefined;
       try {
+        if (curtain) {
+          curtain.style.setProperty("--curtain-background", light ? "#fbfbfe" : "#0a0a0c");
+          curtain.style.setProperty("--curtain-accent", light ? "#d4660c" : "#f37f2c");
+          curtainIn = curtain.animate(
+            [
+              { transform: "translate3d(101%, 0, 0)", opacity: 1 },
+              { transform: "translate3d(0, 0, 0)", opacity: 1 },
+            ],
+            {
+              duration: reduce ? 180 : 250,
+              easing: "cubic-bezier(0.76, 0, 0.24, 1)",
+              fill: "both",
+            },
+          );
+        }
+
         const outgoing = button.querySelector<HTMLElement>(
           light ? "[data-theme-day-label]" : "[data-theme-night-label]",
         );
@@ -66,15 +91,17 @@ import Icon from "./Icon.astro";
                 transform: "translate3d(0, -5px, 0) scale(0.94) rotate(-5deg)",
               },
             ];
-        const exitAnimation = outgoing?.animate(exitFrames, {
+        exitAnimation = outgoing?.animate(exitFrames, {
           duration: reduce ? 90 : 120,
           easing: "cubic-bezier(0.4, 0, 1, 1)",
           fill: "forwards",
         });
-        await exitAnimation?.finished.catch(() => {});
-        exitAnimation?.cancel();
+        await Promise.all([
+          curtainIn?.finished.catch(() => {}),
+          exitAnimation?.finished.catch(() => {}),
+        ]);
 
-        const incoming = button.querySelector<HTMLElement>(
+        incoming = button.querySelector<HTMLElement>(
           light ? "[data-theme-night-label]" : "[data-theme-day-label]",
         );
         incoming?.style.setProperty("opacity", "0");
@@ -87,6 +114,20 @@ import Icon from "./Icon.astro";
         setTheme(light);
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
+        if (curtain) {
+          curtainOut = curtain.animate(
+            [
+              { transform: "translate3d(0, 0, 0)", opacity: 1 },
+              { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
+            ],
+            {
+              duration: reduce ? 190 : 260,
+              easing: "cubic-bezier(0.76, 0, 0.24, 1)",
+              fill: "both",
+            },
+          );
+        }
+
         const enterFrames = reduce
           ? [{ opacity: 0 }, { opacity: 1 }]
           : [
@@ -96,16 +137,26 @@ import Icon from "./Icon.astro";
               },
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
             ];
-        const enterAnimation = incoming?.animate(enterFrames, {
+        enterAnimation = incoming?.animate(enterFrames, {
           duration: reduce ? 120 : 210,
           easing: "cubic-bezier(0.16, 1, 0.3, 1)",
           fill: "both",
         });
-        await enterAnimation?.finished.catch(() => {});
+        await Promise.all([
+          curtainOut?.finished.catch(() => {}),
+          enterAnimation?.finished.catch(() => {}),
+        ]);
+      } finally {
+        exitAnimation?.cancel();
         enterAnimation?.cancel();
+        curtainIn?.cancel();
+        curtainOut?.cancel();
         incoming?.style.removeProperty("opacity");
         incoming?.style.removeProperty("transform");
-      } finally {
+        if (curtain) {
+          curtain.style.removeProperty("--curtain-background");
+          curtain.style.removeProperty("--curtain-accent");
+        }
         button.removeAttribute("aria-busy");
         themeTransitioning = false;
       }
@@ -128,3 +179,28 @@ import Icon from "./Icon.astro";
 
   init();
 </script>
+
+<style>
+  .theme-curtain {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    overflow: hidden;
+    pointer-events: none;
+    background: var(--curtain-background, #0a0a0c);
+    opacity: 0.001;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    contain: strict;
+    will-change: transform;
+  }
+
+  .theme-curtain-edge {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 2px;
+    background: var(--curtain-accent, #f37f2c);
+    opacity: 0.82;
+  }
+</style>
