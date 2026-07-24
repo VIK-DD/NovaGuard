@@ -1,10 +1,10 @@
 <div
   data-reveal
-  class="hero-visual relative mx-auto h-[360px] w-full max-w-md overflow-visible select-none sm:h-[430px]"
-  aria-label="NovaGuard dashboard and Discord message preview"
+  class="hero-visual relative mx-auto h-[398px] w-full max-w-lg overflow-visible select-none sm:h-[470px]"
+  aria-label="NovaGuard dashboard and Discord welcome message preview"
 >
   <div
-    class="hero-window hero-window-dashboard hero-float-a absolute top-4 left-3 w-[84%] rounded-[14px] border bg-card p-3.5 sm:top-5 sm:left-4 sm:w-[286px] sm:p-4"
+    class="hero-window hero-window-dashboard hero-float-a absolute top-3 left-0 w-[91%] rounded-[14px] border bg-card p-3.5 sm:top-4 sm:left-1 sm:w-[350px] sm:p-4"
   >
     <div class="hero-window-bar flex items-center justify-between border-b pb-2.5">
       <span class="flex items-center gap-1.5" aria-hidden="true">
@@ -14,26 +14,46 @@
       </span>
       <span class="hero-window-url min-w-0 truncate pl-2 font-mono text-[9px] tracking-[0.02em]">novaguard.fun/dashboard</span>
     </div>
-    <div class="mt-3 space-y-2.5">
-      <div>
-        <p class="hero-window-label text-[9px] tracking-[0.14em] uppercase">Welcome channel</p>
-        <div class="hero-window-field mt-1.5 flex items-center justify-between rounded-[7px] border px-2.5 py-2 text-[11px]">
-          <span># welcome</span>
-          <span class="hero-window-chevron" aria-hidden="true">&#9662;</span>
+    <div class="mt-3.5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="hero-window-label text-[9px] tracking-[0.14em] uppercase">Server setup</p>
+          <p class="mt-1 text-[13px] font-semibold">NovaGuard Support</p>
+        </div>
+        <span class="hero-window-live inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-medium">
+          <span class="h-1.5 w-1.5 rounded-full"></span>
+          Live
+        </span>
+      </div>
+      <div class="mt-3 space-y-2.5">
+        <div>
+          <p class="hero-window-label text-[9px] tracking-[0.14em] uppercase">Welcome channel</p>
+          <div class="hero-window-field mt-1.5 flex items-center justify-between rounded-[7px] border px-2.5 py-2 text-[11px]">
+            <span># welcome</span>
+            <span class="hero-window-chevron" aria-hidden="true">&#9662;</span>
+          </div>
+        </div>
+        <div class="hero-window-field flex items-center justify-between rounded-[7px] border px-2.5 py-2">
+          <span class="text-[11px]">Block invites</span>
+          <span class="hero-window-switch relative h-[18px] w-[32px] rounded-full bg-primary">
+            <span class="absolute top-[2px] right-[2px] h-[14px] w-[14px] rounded-full"></span>
+          </span>
         </div>
       </div>
-      <div class="hero-window-field flex items-center justify-between rounded-[7px] border px-2.5 py-2">
-        <span class="text-[11px]">Block invites</span>
-        <span class="hero-window-switch relative h-[18px] w-[32px] rounded-full bg-primary">
-          <span class="absolute top-[2px] right-[2px] h-[14px] w-[14px] rounded-full"></span>
-        </span>
+      <div class="hero-window-summary mt-3 flex items-center justify-between border-t pt-2.5 text-[9px]">
+        <span class="inline-flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-primary"></span>Automod active</span>
+        <span>2 rules enabled</span>
       </div>
     </div>
   </div>
 
   <div
-    class="hero-window hero-window-discord hero-float-b absolute right-3 bottom-4 w-[90%] rounded-[14px] border p-3.5 sm:right-4 sm:bottom-7 sm:w-[298px] sm:p-4"
+    class="hero-window hero-window-discord hero-float-b absolute right-0 bottom-2 w-[94%] rounded-[14px] border p-3.5 sm:right-1 sm:bottom-5 sm:w-[360px] sm:p-4"
   >
+    <div class="hero-discord-context mb-3 flex items-center justify-between border-b pb-2.5 text-[9px]">
+      <span class="inline-flex items-center gap-1.5"><span class="hero-discord-channel font-medium"># welcome</span><span class="hero-discord-muted">/</span> New member event</span>
+      <span class="hero-discord-muted">just now</span>
+    </div>
     <div class="flex items-center gap-2.5">
       <div class="hero-discord-avatar grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary font-display text-xs font-bold text-primary-ink">
         N
@@ -54,6 +74,10 @@
         You're member <span class="font-medium">#248</span>. Check
         <span class="text-primary"> #rules</span> to get started.
       </p>
+    </div>
+    <div class="hero-discord-footer mt-3 flex items-center justify-between text-[9px]">
+      <span>Welcome automation</span>
+      <span class="inline-flex items-center gap-1.5"><span class="hero-discord-check grid h-3.5 w-3.5 place-items-center rounded-full">&#10003;</span>Delivered</span>
     </div>
   </div>
 </div>
@@ -77,6 +101,17 @@
     border-color: hsl(var(--border));
   }
 
+  .hero-window-live {
+    border-color: hsl(145 34% 44% / 0.32);
+    background: hsl(145 34% 44% / 0.08);
+    color: hsl(145 34% 34%);
+  }
+
+  .hero-window-live > span {
+    background: hsl(145 44% 42%);
+    box-shadow: 0 0 0 3px hsl(145 44% 42% / 0.1);
+  }
+
   .hero-window-url,
   .hero-window-label,
   .hero-window-chevron {
@@ -94,6 +129,11 @@
     box-shadow: 0 1px 2px hsl(20 20% 2% / 0.28);
   }
 
+  .hero-window-summary {
+    border-color: hsl(var(--border));
+    color: hsl(var(--faint-foreground));
+  }
+
   .hero-window-discord {
     border-color: hsl(220 7% 23%);
     background: hsl(220 7% 10%);
@@ -105,15 +145,30 @@
   }
 
   .hero-discord-time { color: hsl(0 0% 100% / 0.46); }
+  .hero-discord-context,
+  .hero-discord-footer { border-color: hsl(220 7% 23%); }
+  .hero-discord-context,
+  .hero-discord-footer { color: hsl(0 0% 100% / 0.58); }
+  .hero-discord-channel { color: hsl(0 0% 100% / 0.84); }
+  .hero-discord-muted { color: hsl(0 0% 100% / 0.38); }
   .hero-discord-message { background: hsl(0 0% 100% / 0.055); }
   .hero-discord-copy { color: hsl(0 0% 100% / 0.6); }
   .hero-discord-copy .font-medium { color: hsl(0 0% 100% / 0.84); }
+  .hero-discord-check {
+    background: hsl(145 44% 42% / 0.2);
+    color: hsl(145 70% 68%);
+    font-size: 8px;
+  }
 
   :root[data-theme="dark"] .hero-window-dashboard {
     box-shadow:
       0 28px 52px hsl(20 20% 2% / 0.34),
       0 2px 8px hsl(20 20% 2% / 0.2),
       0 1px 0 hsl(0 0% 100% / 0.08) inset;
+  }
+
+  :root[data-theme="dark"] .hero-window-live {
+    color: hsl(145 58% 68%);
   }
 
   @media (prefers-reduced-motion: reduce) {
