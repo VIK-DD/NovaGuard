@@ -112,6 +112,7 @@ CHANNEL_KEYS = (
     "welcome_channel",
     "goodbye_channel",
     "log_channel",
+    "voice_report_channel",
     "update_channel",
     "github_event_channel",
     "error_log_channel",

@@ -1,7 +1,7 @@
 # NovaGuard — Setup
 
 Modern, fully slash-command Discord bot (v3.0.0 "Nova").
-Colorful embeds, interactive buttons & menus, automatic update changelogs, GitHub intelligence, XP levels and more.
+Colorful embeds, interactive buttons & menus, automatic update changelogs, GitHub intelligence, XP levels, voice session reports and more.
 
 ## 1. Configure the bot
 
@@ -28,7 +28,7 @@ Channel setup is now easiest from Discord:
 
 - Run `/setup` for the friendly setup wizard with dropdown menus
 - Pick what you want to configure, then choose the channel from Discord
-- Or run `/setup` inside a channel and click the quick buttons: Updates, GitHub, Admin Errors, Server Logs, Welcome, Goodbye
+- Or run `/setup` inside a channel and click the quick buttons: Updates, GitHub, Admin Errors, Server Logs, Voice Reports, Welcome, Goodbye
 - Settings are saved in SQLite at `data/novaguard.sqlite3`
 
 Advanced config commands:
@@ -119,6 +119,10 @@ backups/          automatic/manual backup archives — auto-created
 ### 🏆 Levels
 `/rank` `/leaderboard` (+ slower automatic chat XP, private DM level-up cards with progress bars)
 Admin: `/levels backfill preview` estimates historical XP, `/levels backfill run confirm:true` rebuilds the current XP totals after a backup.
+
+### 🎙️ Voice Reports
+`/voice set` chooses the report channel, `/voice status` shows the setup and `/voice off` disables it.
+When the last human leaves a voice room, NovaGuard posts one colored report after sessions lasting at least one hour. It includes the start/end times, total duration, unique participants, peak concurrent members and each member's accumulated time across rejoins.
 
 ### 👋 Welcome
 `/welcome set` `/welcome off` `/welcome test` (+ auto join/leave embeds, auto-role)

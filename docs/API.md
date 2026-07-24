@@ -99,7 +99,7 @@ Auth + Manage Server. Current settings plus the pickers the UI needs.
   "guild": { "id": "…", "name": "…", "icon": "…|null", "member_count": 42 },
   "settings": {
     "welcome_channel": "…|null", "goodbye_channel": "…|null",
-    "log_channel": "…|null", "update_channel": "…|null",
+    "log_channel": "…|null", "voice_report_channel": "…|null", "update_channel": "…|null",
     "github_event_channel": "…|null", "error_log_channel": "…|null",
     "autorole": "…|null", "ticket_staff_role": "…|null",
     "automod": { "invites": true, "spam": true, "badwords": ["…"] }

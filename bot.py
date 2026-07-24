@@ -31,6 +31,7 @@ COGS = (
     "fun",
     "moderation",
     "levels",
+    "voice",
     "welcome",
     "logs",
     "roles",

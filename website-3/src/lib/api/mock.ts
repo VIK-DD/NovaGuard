@@ -67,6 +67,7 @@ type Settings = {
   welcome_channel: string | null;
   goodbye_channel: string | null;
   log_channel: string | null;
+  voice_report_channel: string | null;
   update_channel: string | null;
   github_event_channel: string | null;
   error_log_channel: string | null;
@@ -80,6 +81,7 @@ const settingsByGuild: Record<string, Settings> = {
     welcome_channel: "c1",
     goodbye_channel: null,
     log_channel: "c7",
+    voice_report_channel: null,
     update_channel: "c3",
     github_event_channel: "c9",
     error_log_channel: "c10",
@@ -91,6 +93,7 @@ const settingsByGuild: Record<string, Settings> = {
     welcome_channel: "c4",
     goodbye_channel: null,
     log_channel: "c7",
+    voice_report_channel: null,
     update_channel: null,
     github_event_channel: "c9",
     error_log_channel: null,
@@ -102,6 +105,7 @@ const settingsByGuild: Record<string, Settings> = {
     welcome_channel: null,
     goodbye_channel: null,
     log_channel: null,
+    voice_report_channel: null,
     update_channel: null,
     github_event_channel: null,
     error_log_channel: null,

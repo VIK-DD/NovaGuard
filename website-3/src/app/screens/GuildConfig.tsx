@@ -20,6 +20,7 @@ const CHANNEL_FIELDS: ReadonlyArray<
     | "welcome_channel"
     | "goodbye_channel"
     | "log_channel"
+    | "voice_report_channel"
     | "update_channel"
     | "github_event_channel"
     | "error_log_channel"
@@ -28,6 +29,7 @@ const CHANNEL_FIELDS: ReadonlyArray<
   ["welcome_channel", "Welcome channel"],
   ["goodbye_channel", "Goodbye channel"],
   ["log_channel", "Log channel"],
+  ["voice_report_channel", "Voice reports"],
   ["update_channel", "Update channel"],
   ["github_event_channel", "GitHub events"],
   ["error_log_channel", "Error log"],

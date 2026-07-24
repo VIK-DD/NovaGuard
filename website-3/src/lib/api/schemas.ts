@@ -44,6 +44,7 @@ export const GuildSettingsSchema = z.object({
   welcome_channel: z.string().nullable(),
   goodbye_channel: z.string().nullable(),
   log_channel: z.string().nullable(),
+  voice_report_channel: z.string().nullable(),
   update_channel: z.string().nullable(),
   github_event_channel: z.string().nullable(),
   error_log_channel: z.string().nullable(),
@@ -97,6 +98,7 @@ export type SettingsPatch = Partial<{
   welcome_channel: string | null;
   goodbye_channel: string | null;
   log_channel: string | null;
+  voice_report_channel: string | null;
   update_channel: string | null;
   github_event_channel: string | null;
   error_log_channel: string | null;

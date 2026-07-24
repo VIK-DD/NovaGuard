@@ -249,7 +249,9 @@ async def main():
             await check(
                 "config GET with session (v1)",
                 r.status == 200 and data["guild"]["id"] == str(TEST_GUILD_ID)
-                and len(data["channels"]) == 2 and "automod" in data["settings"],
+                and len(data["channels"]) == 2
+                and "automod" in data["settings"]
+                and "voice_report_channel" in data["settings"],
             )
         async with http.get(f"{LEGACY}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
             await check("config GET legacy alias", r.status == 200)

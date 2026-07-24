@@ -62,6 +62,7 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 - Slash-native moderation with `/purge`, `/kick`, `/ban`, `/timeout`, `/warn`.
 - Welcome/goodbye cards, auto-role support and server log channels.
 - Tickets, giveaways and self-role panels with persistent views where it matters.
+- Voice session reports with start/end times, peak attendance and accumulated member time across rejoins.
 
 #### Setup that feels modern
 - `/setup` opens a real setup wizard with select menus, channel picker and quick buttons.
@@ -226,6 +227,7 @@ The bot stores server config in `data/novaguard.sqlite3`, while keeping optional
 | Category | Highlights |
 | --- | --- |
 | Setup | `/setup`, `/config view`, `/config export`, `/config backup`, `/config reset` |
+| Voice reports | `/voice set`, `/voice status`, `/voice off` |
 | System | `/ping`, `/uptime`, `/status`, `/botinfo`, `/doctor`, `/help`, `/latest`, `/updates`, `/forceupdate` |
 | Developer | `/github`, `/repo`, `/dev`, `/health`, `/commits`, `/release`, `/ghwatch` |
 | Utility | `/userinfo`, `/serverinfo`, `/avatar`, `/roleinfo`, `/poll`, `/remind`, `/reminders`, `/timestamp`, `/choose`, `/color` |

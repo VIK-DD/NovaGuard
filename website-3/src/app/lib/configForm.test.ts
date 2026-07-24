@@ -11,6 +11,7 @@ const base: GuildSettings = {
   welcome_channel: "100",
   goodbye_channel: null,
   log_channel: "200",
+  voice_report_channel: null,
   update_channel: null,
   github_event_channel: null,
   error_log_channel: null,

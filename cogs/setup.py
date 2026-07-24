@@ -19,6 +19,7 @@ CHANNEL_KEYS = {
     "github_event_channel": ("🐙 GitHub Feed", "Push, PR, issue and release activity"),
     "error_log_channel": ("🚨 Admin Errors", "Serious bot error digest embeds"),
     "log_channel": ("📋 Server Logs", "Deleted/edited messages, joins/leaves, bans"),
+    "voice_report_channel": ("🎙️ Voice Reports", "Completed voice session attendance and duration reports"),
     "welcome_channel": ("👋 Welcome", "New member welcome cards"),
     "goodbye_channel": ("📤 Goodbye", "Leave messages"),
 }
@@ -87,7 +88,7 @@ def build_setup_embed(guild):
     embed.add_field(name="Core Channels", value="\n\n".join(core_lines), inline=False)
 
     community_lines = []
-    for key in ("welcome_channel", "goodbye_channel"):
+    for key in ("welcome_channel", "goodbye_channel", "voice_report_channel"):
         label, description = CHANNEL_KEYS[key]
         community_lines.append(f"{label}: {mention_channel(guild, settings.get(key))}\n`{description}`")
     autorole = settings.get("autorole")
