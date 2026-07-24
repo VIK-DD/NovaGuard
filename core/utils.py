@@ -95,6 +95,23 @@ async def send_embed(destination, embed, view=None, **kwargs):
     return await destination.send(embed=embed, **kwargs)
 
 
+async def defer_interaction(interaction, *, ephemeral=False, thinking=False):
+    """Defer an interaction unless it has already been acknowledged."""
+    if interaction.response.is_done():
+        return False
+
+    try:
+        await interaction.response.defer(ephemeral=ephemeral, thinking=thinking)
+        return True
+    except discord.InteractionResponded:
+        return False
+    except discord.NotFound as error:
+        if getattr(error, "code", None) == 10062:
+            print("Interaction acknowledgement skipped: Discord expired the interaction token.")
+            return False
+        raise
+
+
 async def respond(interaction, embed=None, view=None, ephemeral=False, content=None):
     """Reply to an interaction whether or not it was already deferred."""
     extra = {"view": view} if view is not None else {}

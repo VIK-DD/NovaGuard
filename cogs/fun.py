@@ -12,7 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.theme import Palette, brand_footer, make_embed, progress_bar
-from core.utils import respond, truncate
+from core.utils import defer_interaction, respond, truncate
 
 POSITIVE_ANSWERS = [
     "It is certain.",
@@ -249,7 +249,7 @@ class Fun(commands.Cog):
     )
     @app_commands.checks.cooldown(1, 10.0)
     async def trivia(self, interaction: discord.Interaction, difficulty: app_commands.Choice[str] | None = None):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
 
         params = {"amount": 1, "type": "multiple"}
         if difficulty:

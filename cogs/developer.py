@@ -17,6 +17,7 @@ from core.theme import Palette, brand_footer, make_embed, pick_embed_color
 from core.updates import safe_send_embed
 from core.utils import (
     build_link_view,
+    defer_interaction,
     first_line,
     format_github_time,
     humanize_number,
@@ -686,7 +687,7 @@ class Developer(commands.Cog):
         if not target_username:
             return await send_config_error(interaction, "GITHUB_USERNAME")
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         user, repos = await asyncio.gather(
             github_api.fetch_user(target_username),
             github_api.fetch_user_repos(target_username),
@@ -706,7 +707,7 @@ class Developer(commands.Cog):
         if not target_repo:
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         repo_data, languages, open_prs, open_issues, workflow_run, release = await asyncio.gather(
             github_api.fetch_repo(target_repo),
             github_api.fetch_repo_languages(target_repo),
@@ -732,7 +733,7 @@ class Developer(commands.Cog):
         if not target_repo:
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         user, repos, repo_data, commits, workflow_run, release, open_prs, open_issues = await asyncio.gather(
             github_api.fetch_user(github_config.username),
             github_api.fetch_user_repos(github_config.username),
@@ -771,7 +772,7 @@ class Developer(commands.Cog):
         if not target_repo:
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         repo_data, commits, workflow_run, release, open_prs, open_issues = await asyncio.gather(
             github_api.fetch_repo(target_repo),
             github_api.fetch_repo_commits(target_repo, per_page=8),
@@ -815,7 +816,7 @@ class Developer(commands.Cog):
         if not target_repo:
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         commits = await github_api.fetch_repo_commits(target_repo, per_page=count)
         if not commits:
             embed = make_embed("🔍 Not found", "No commits found for that repository.", color=Palette.DANGER)
@@ -847,7 +848,7 @@ class Developer(commands.Cog):
         if not target_repo:
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         release_data = await github_api.fetch_latest_release(target_repo)
         if not release_data:
             embed = make_embed("📦 No release yet", f"`{target_repo}` has no published release.", color=Palette.WARNING)

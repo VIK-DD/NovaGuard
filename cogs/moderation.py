@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import parse_duration, respond, truncate
+from core.utils import defer_interaction, parse_duration, respond, truncate
 
 
 def can_act_on(actor: discord.Member, target: discord.Member) -> bool:
@@ -65,7 +65,7 @@ class Moderation(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         deleted = await channel.purge(limit=amount, check=lambda m: user is None or m.author.id == user.id)
 
         target_note = f" from {user.mention}" if user else ""

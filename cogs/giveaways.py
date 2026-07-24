@@ -11,7 +11,7 @@ from discord.ext import commands, tasks
 
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import parse_duration, respond
+from core.utils import defer_interaction, parse_duration, respond
 
 
 def load_giveaways():
@@ -261,7 +261,7 @@ class Giveaways(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         await self.finish_giveaway(entry, entries)
         embed = make_embed("🏁 Giveaway ended", f"**{entry['prize']}** was drawn early.", color=Palette.SUCCESS)
         brand_footer(embed)

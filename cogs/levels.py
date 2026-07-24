@@ -14,7 +14,7 @@ from discord.ext import commands, tasks
 from core.backups import create_backup
 from core.database import load_levels_data, save_levels_data
 from core.theme import Palette, brand_footer, make_embed, progress_bar
-from core.utils import humanize_number, respond
+from core.utils import defer_interaction, humanize_number, respond
 
 XP_COOLDOWN_SECONDS = 120
 XP_FLUSH_SECONDS = 30
@@ -348,7 +348,7 @@ class Levels(commands.Cog):
         xp_per_message: app_commands.Range[int, 1, 10] = BACKFILL_DEFAULT_XP_PER_MESSAGE,
         cap_per_user: app_commands.Range[int, 500, 100000] = BACKFILL_DEFAULT_CAP_PER_USER,
     ):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await defer_interaction(interaction, ephemeral=True, thinking=True)
         _, message_counts, xp_by_user, stats, after, before = await self.calculate_backfill(
             interaction.guild,
             days=days,
@@ -385,7 +385,7 @@ class Levels(commands.Cog):
         xp_per_message: app_commands.Range[int, 1, 10] = BACKFILL_DEFAULT_XP_PER_MESSAGE,
         cap_per_user: app_commands.Range[int, 500, 100000] = BACKFILL_DEFAULT_CAP_PER_USER,
     ):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await defer_interaction(interaction, ephemeral=True, thinking=True)
         if not confirm:
             embed = make_embed(
                 "Confirmation needed",

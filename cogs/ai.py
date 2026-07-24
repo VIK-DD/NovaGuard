@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from core.config import github_config
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import respond, truncate
+from core.utils import defer_interaction, respond, truncate
 
 # Cost guards: cap input size, plus a global sliding-window + daily ceiling so a
 # flood of users (or one abuser) cannot run up the Anthropic bill. Per-user
@@ -106,7 +106,7 @@ class AI(commands.Cog):
             brand_footer(embed, "AI system")
             return await respond(interaction, embed, ephemeral=True)
 
-        await interaction.response.defer()
+        await defer_interaction(interaction)
 
         try:
             response = await self.client.messages.create(

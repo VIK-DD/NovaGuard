@@ -11,7 +11,7 @@ from core.backups import create_backup
 from core.config import github_config
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
-from core.utils import respond
+from core.utils import defer_interaction, respond
 
 
 CHANNEL_KEYS = {
@@ -290,19 +290,19 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()
     async def setup_command(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         await respond(interaction, build_setup_embed(interaction.guild), view=SetupView(), ephemeral=True)
 
     @config.command(name="view", description="View the saved NovaGuard configuration")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def config_view(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         await respond(interaction, build_config_embed(interaction.guild), ephemeral=True)
 
     @config.command(name="export", description="Export this server's NovaGuard config as JSON")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def config_export(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         embed = make_embed(
             "📦 Config export ready",
             "This file contains server setup settings only. It does not include bot tokens or API keys.",
@@ -314,7 +314,7 @@ class Setup(commands.Cog):
     @config.command(name="backup", description="Create a manual backup archive now")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def config_backup(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         backup = await self.bot.loop.run_in_executor(None, create_backup, "manual")
         embed = make_embed(
             "🧳 Backup created",
@@ -328,7 +328,7 @@ class Setup(commands.Cog):
     @app_commands.describe(confirm="Set to true to confirm the reset")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def config_reset(self, interaction: discord.Interaction, confirm: bool = False):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         if not confirm:
             embed = make_embed(
                 "⚠️ Reset confirmation needed",

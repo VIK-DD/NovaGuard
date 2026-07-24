@@ -39,7 +39,7 @@ from core.maintenance import (
 )
 from core.storage import DATA_DIR, get_guild_settings
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import build_link_view, format_timedelta, respond, truncate
+from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
 
 LAG_MONITOR_SECONDS = 5
 BACKUP_INTERVAL_HOURS = 6
@@ -555,7 +555,7 @@ class System(commands.Cog):
     async def ping(self, interaction: discord.Interaction):
         gateway_ms = round(self.bot.latency * 1000)
         started = time.perf_counter()
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         rest_ms = round((time.perf_counter() - started) * 1000)
 
         if gateway_ms < 150:
@@ -578,7 +578,7 @@ class System(commands.Cog):
 
     @app_commands.command(name="uptime", description="How long the bot has been online")
     async def uptime(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         delta = datetime.now(UTC) - self.bot.launched_at
         embed = make_embed(
             "⏱️ Uptime",
@@ -590,7 +590,7 @@ class System(commands.Cog):
 
     @app_commands.command(name="botinfo", description="Version, build, runtime and live stats")
     async def botinfo(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         history = updates.load_update_state().get("history", [])
         total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
         command_count = len(list(self.bot.tree.walk_commands()))
@@ -636,7 +636,7 @@ class System(commands.Cog):
 
     @app_commands.command(name="status", description="Public bot status: uptime, latency and project links")
     async def status(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         gateway_ms = round(self.bot.latency * 1000)
         uptime = datetime.now(UTC) - self.bot.launched_at
         lag = self.loop_lag_snapshot()
@@ -695,7 +695,7 @@ class System(commands.Cog):
     @app_commands.guild_only()
     async def doctor(self, interaction: discord.Interaction):
         started = time.perf_counter()
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         ack_ms = round((time.perf_counter() - started) * 1000)
 
         gateway_ms = round(self.bot.latency * 1000)
@@ -845,7 +845,7 @@ class System(commands.Cog):
 
     @app_commands.command(name="help", description="Interactive command hub — browse every category")
     async def help_command(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         embed = build_help_home_embed(self.bot)
         await respond(interaction, embed, view=HelpView(self.bot))
 
@@ -864,7 +864,7 @@ class System(commands.Cog):
         action: app_commands.Choice[str],
         message: str | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         if not await self.ensure_maintenance_manager(interaction):
             return
 
@@ -921,7 +921,7 @@ class System(commands.Cog):
 
     @app_commands.command(name="latest", description="The latest automatic bot changelog")
     async def latest(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         update_state = updates.load_update_state()
         latest_update = update_state.get("latest")
         if not latest_update:
@@ -937,7 +937,7 @@ class System(commands.Cog):
 
     @app_commands.command(name="updates", description="Browse the full bot release timeline")
     async def updates_command(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await defer_interaction(interaction)
         update_state = updates.load_update_state()
         update_history = updates.normalize_update_history(update_state.get("history", []))
         if not update_history:
@@ -953,7 +953,7 @@ class System(commands.Cog):
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def forceupdate(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         update_entry = await asyncio.to_thread(updates.build_preview_update_entry)
 
         await respond(
@@ -972,7 +972,7 @@ class System(commands.Cog):
     ])
     @app_commands.guild_only()
     async def resync(self, interaction: discord.Interaction, scope: str = "server"):
-        await interaction.response.defer(ephemeral=True)
+        await defer_interaction(interaction, ephemeral=True)
         if not await user_can_bypass_maintenance(self.bot, interaction.user):
             embed = make_embed(
                 "🔒 Owner Only",
