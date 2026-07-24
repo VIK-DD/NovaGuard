@@ -31,7 +31,7 @@
   const link = document.querySelector("[data-heartbeat]");
   const text = document.querySelector("[data-heartbeat-text]");
   const loadHeartbeat = async () => {
-    if (!link || !text) return;
+    if (!link || !text || window.location.pathname.startsWith("/status")) return;
 
     try {
       const getLiveStats = window.__ngGetLiveStats;

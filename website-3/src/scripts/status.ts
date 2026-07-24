@@ -26,6 +26,8 @@ type StatusSnapshot = {
 
 let stopRuntime: (() => void) | null = null;
 
+type StatusSnapshotGetter = (refresh?: boolean) => Promise<unknown>;
+
 const el = (sel: string) => document.querySelector<HTMLElement>(sel);
 const set = (key: string, value: string) => {
   const node = el(`[data-f="${key}"]`);
@@ -118,6 +120,20 @@ const stampChecked = (prefix = "Last checked") => {
   node.textContent = `${prefix} ${time} · refreshes every 30 s`;
 };
 
+const getStatusSnapshot = async (refresh = false) => {
+  const sharedGetter = (window as Window & { __ngGetStatusSnapshot?: StatusSnapshotGetter })
+    .__ngGetStatusSnapshot;
+  if (sharedGetter) return sharedGetter(refresh);
+
+  return fetch("/api/status-snapshot", {
+    headers: { Accept: "application/json" },
+    signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(4000) : undefined,
+  }).then((response) => {
+    if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
+    return response.json();
+  });
+};
+
 function init() {
   stopRuntime?.();
   stopRuntime = null;
@@ -129,7 +145,6 @@ function init() {
   let fetchedAt = 0;
   let pollTimer = 0;
   let uptimeTimer = 0;
-  let controller: AbortController | null = null;
   let hasSnapshot = false;
 
   const cachedSnapshot = readCachedSnapshot();
@@ -143,17 +158,9 @@ function init() {
   const poll = async () => {
     if (stopped || document.hidden) return;
     let refreshFailed = false;
-    controller?.abort();
-    controller = new AbortController();
-    const timeout = window.setTimeout(() => controller?.abort(), 5000);
 
     try {
-      const response = await fetch("/api/status-snapshot", {
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
-      const snapshot: unknown = await response.json();
+      const snapshot: unknown = await getStatusSnapshot(true);
       if (!isSnapshot(snapshot)) throw new Error("Status response was malformed.");
       if (stopped) return;
       uptimeBase = applySnapshot(snapshot);
@@ -183,7 +190,6 @@ function init() {
       }
       fetchedAt = 0;
     } finally {
-      window.clearTimeout(timeout);
       if (!stopped) stampChecked(refreshFailed ? "Refresh attempted" : "Last checked");
     }
   };
@@ -216,7 +222,6 @@ function init() {
 
   stopRuntime = () => {
     stopped = true;
-    controller?.abort();
     window.clearTimeout(pollTimer);
     window.clearInterval(uptimeTimer);
     document.removeEventListener("visibilitychange", onVisibilityChange);
