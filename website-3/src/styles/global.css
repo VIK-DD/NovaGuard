@@ -176,11 +176,11 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 }
 #app select:hover { border-color: hsl(var(--border-strong)); }
 
-/* Let the browser skip layout/paint work for long sections until they are
-   close to the viewport. The intrinsic size prevents scroll jumps. */
+/* These pages are small enough to paint up front. Deferring section paint made
+   the first scroll into each section compete with the scrolling frame. */
 [data-perf-section] {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 420px;
+  content-visibility: visible;
+  contain-intrinsic-size: none;
 }
 
 @media (max-width: 640px) {
@@ -189,11 +189,6 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
     opacity: 1;
     transform: none;
     transition: none;
-  }
-
-  [data-perf-section] {
-    content-visibility: visible;
-    contain-intrinsic-size: auto;
   }
 
   #app main {

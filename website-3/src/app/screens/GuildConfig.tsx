@@ -45,16 +45,16 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
         aria-checked={props.checked}
         aria-label={props.label}
         onClick={() => props.onChange(!props.checked)}
-        className="ng-touch-target grid h-11 w-12 shrink-0 place-items-center rounded-[8px]"
+        className="ng-touch-target grid h-11 w-12 shrink-0 appearance-none place-items-center rounded-[8px] p-0"
       >
         <span
           aria-hidden="true"
-          className={`relative block h-6 w-11 rounded-full border transition-[background-color,border-color] duration-150 ${
+          className={`relative block h-6 w-11 shrink-0 rounded-full border p-[2px] transition-[background-color,border-color] duration-150 ${
             props.checked ? "border-primary bg-primary" : "border-line-strong bg-card"
           }`}
         >
           <span
-            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.22)] transition-transform duration-150 will-change-transform ${
+            className={`block h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.22)] transition-transform duration-150 ease-out ${
               props.checked ? "translate-x-5" : "translate-x-0"
             }`}
           />
