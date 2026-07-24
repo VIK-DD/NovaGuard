@@ -14,7 +14,7 @@ import Icon from "./Icon.astro";
       type="button"
       data-theme-toggle
       aria-label="Switch to light mode"
-      class="ng-pressable flex min-h-11 w-28 items-center justify-end gap-1.5 transition-colors hover:text-ink"
+      class="ng-pressable flex min-h-11 w-28 cursor-pointer items-center justify-end gap-1.5 transition-colors hover:text-ink"
     >
       <span data-theme-day-label class="flex shrink-0 items-center gap-1.5">
         <Icon name="sun" size={13} /> Day edition
@@ -40,6 +40,12 @@ import Icon from "./Icon.astro";
     const KEY = "ng-theme";
     const root = document.documentElement;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const device = navigator as Navigator & { deviceMemory?: number };
+    const lowPower =
+      !reduce &&
+      ((device.hardwareConcurrency > 0 && device.hardwareConcurrency <= 4) ||
+        (device.deviceMemory !== undefined && device.deviceMemory <= 4));
+    const simpleMotion = reduce || lowPower;
     const curtain = document.querySelector<HTMLElement>("[data-theme-curtain]");
     // Symmetric ease-in-out: the wipe accelerates and settles gently so it
     // reads as one deliberate sweep rather than snapping into place.
@@ -91,7 +97,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(0, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 260 : 620,
+              duration: reduce ? 260 : lowPower ? 680 : 620,
               easing: wipeEasing,
               fill: "both",
             },
@@ -101,7 +107,7 @@ import Icon from "./Icon.astro";
         const outgoing = button.querySelector<HTMLElement>(
           light ? "[data-theme-day-label]" : "[data-theme-night-label]",
         );
-        const exitFrames = reduce
+        const exitFrames = simpleMotion
           ? [{ opacity: 1 }, { opacity: 0 }]
           : [
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
@@ -111,7 +117,7 @@ import Icon from "./Icon.astro";
               },
             ];
         exitAnimation = outgoing?.animate(exitFrames, {
-          duration: reduce ? 130 : 250,
+          duration: reduce ? 130 : lowPower ? 180 : 250,
           easing: "cubic-bezier(0.4, 0, 0.6, 1)",
           fill: "forwards",
         });
@@ -124,7 +130,7 @@ import Icon from "./Icon.astro";
           light ? "[data-theme-night-label]" : "[data-theme-day-label]",
         );
         incoming?.style.setProperty("opacity", "0");
-        if (!reduce) {
+        if (!simpleMotion) {
           incoming?.style.setProperty(
             "transform",
             "translate3d(0, 4px, 0) scale(0.94) rotate(3deg)",
@@ -140,14 +146,14 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 280 : 700,
+              duration: reduce ? 280 : lowPower ? 760 : 700,
               easing: wipeEasing,
               fill: "both",
             },
           );
         }
 
-        const enterFrames = reduce
+        const enterFrames = simpleMotion
           ? [{ opacity: 0 }, { opacity: 1 }]
           : [
               {
@@ -157,7 +163,7 @@ import Icon from "./Icon.astro";
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
             ];
         enterAnimation = incoming?.animate(enterFrames, {
-          duration: reduce ? 190 : 440,
+          duration: reduce ? 190 : lowPower ? 300 : 440,
           easing: "cubic-bezier(0.16, 1, 0.3, 1)",
           fill: "both",
         });
