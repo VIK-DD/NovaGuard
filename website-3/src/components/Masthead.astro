@@ -42,6 +42,7 @@ import Icon from "./Icon.astro";
     const KEY = "ng-theme";
     const root = document.documentElement;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let themeTransitioning = false;
 
     const setTheme = (light: boolean) => {
       root.dataset.theme = light ? "light" : "dark";
@@ -51,14 +52,14 @@ import Icon from "./Icon.astro";
         ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
     };
 
-    // Night ↔ day as a circular wipe that sweeps the new theme out from the
-    // toggle. Uses the View Transitions API; older browsers / reduced-motion
-    // fall back to an instant swap.
+    // Night ↔ day is an explicit action, so it keeps a short transition even
+    // when macOS has Reduce Motion enabled. Automatic motion remains disabled.
     document.querySelectorAll<HTMLElement>("[data-theme-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        if (themeTransitioning) return;
         const light = root.dataset.theme !== "light";
         const doc = document as VTDocument;
-        if (reduce || typeof doc.startViewTransition !== "function") {
+        if (typeof doc.startViewTransition !== "function") {
           setTheme(light);
           return;
         }
@@ -69,24 +70,36 @@ import Icon from "./Icon.astro";
           Math.max(x, window.innerWidth - x),
           Math.max(y, window.innerHeight - y),
         );
+        themeTransitioning = true;
         root.classList.add("theme-wipe");
-        const transition = doc.startViewTransition(() => setTheme(light));
-        transition.ready.then(() => {
-          root.animate(
-            {
-              clipPath: [
-                `circle(0px at ${x}px ${y}px)`,
-                `circle(${end}px at ${x}px ${y}px)`,
-              ],
-            },
-            {
-              duration: 480,
-              easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-              pseudoElement: "::view-transition-new(root)",
-            },
-          );
-        });
-        transition.finished.finally(() => root.classList.remove("theme-wipe"));
+        try {
+          const transition = doc.startViewTransition(() => setTheme(light));
+          transition.ready
+            .then(() =>
+              root.animate(
+                {
+                  clipPath: [
+                    `circle(0px at ${x}px ${y}px)`,
+                    `circle(${end}px at ${x}px ${y}px)`,
+                  ],
+                },
+                {
+                  duration: reduce ? 180 : 360,
+                  easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+                  pseudoElement: "::view-transition-new(root)",
+                },
+              ),
+            )
+            .catch(() => {});
+          transition.finished.finally(() => {
+            root.classList.remove("theme-wipe");
+            themeTransitioning = false;
+          });
+        } catch {
+          root.classList.remove("theme-wipe");
+          themeTransitioning = false;
+          setTheme(light);
+        }
       });
     });
   }

@@ -238,9 +238,15 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 /* The public hero is static HTML. Its rotated cards deliberately overhang a
    few pixels, so paint containment would visibly clip their corners. */
 .hero-visual { contain: layout; }
-@media (hover: hover) and (pointer: fine) {
-  .hero-float-a { animation: ng-hero-drift-a 7s ease-in-out 1s infinite; }
-  .hero-float-b { animation: ng-hero-drift-b 6s ease-in-out 0.7s infinite; }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .hero-float-a {
+    will-change: transform;
+    animation: ng-hero-drift-a 7s ease-in-out 1s infinite;
+  }
+  .hero-float-b {
+    will-change: transform;
+    animation: ng-hero-drift-b 6s ease-in-out 0.7s infinite;
+  }
 }
 @keyframes ng-hero-drift-a {
   0%, 100% { transform: rotate(-6deg) translate3d(0, 0, 0); }
@@ -292,8 +298,12 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   [data-reveal], [data-reveal-item], [data-hero-item] { opacity: 1 !important; transform: none !important; }
+  .hero-float-a, .hero-float-b, .ng-boot-mark, .ng-boot-bar::after {
+    animation: none !important;
+  }
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
 }
