@@ -129,14 +129,11 @@ canvas {
   background-clip: content-box;
 }
 
-/* One-shot page reveals. JavaScript only adds a class; CSS performs the
-   compositor-friendly opacity/transform transition without scroll work. */
+/* Public content renders complete before JavaScript. This protects desktop
+   visitors from a blank page when an enhancement script is delayed or blocked. */
 [data-reveal], [data-reveal-item], [data-hero-item] {
-  opacity: 0;
-  transform: translate3d(0, 12px, 0);
-  transition:
-    opacity 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 1;
+  transform: none;
 }
 [data-reveal].is-revealed,
 [data-hero-item].is-revealed,
@@ -207,8 +204,7 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 }
 
 @media (max-width: 640px) {
-  /* A phone is an interaction-first surface. Don't defer visible content or
-     spend compositing work on decorative entrance motion while scrolling. */
+  /* A phone is an interaction-first surface. Avoid decorative work while scrolling. */
   [data-reveal], [data-reveal-item], [data-hero-item] {
     opacity: 1;
     transform: none;

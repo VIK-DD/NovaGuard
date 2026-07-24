@@ -11,7 +11,7 @@ const links = [
 
 <Masthead />
 <header data-nav class="sticky top-0 z-30 border-b border-line bg-background">
-  <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
+  <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6 sm:py-3">
     <a href="/" class="flex items-center gap-2.5" aria-label="NovaGuard home">
       <img src="/favicon.png" alt="" width="32" height="32" class="h-8 w-8" />
       <span class="font-display text-base font-semibold tracking-tight sm:text-lg">NovaGuard</span>
@@ -21,7 +21,7 @@ const links = [
         links.map((l) => (
           <a
             href={l.href}
-            class="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:inline-flex sm:h-10 sm:items-center"
+            class="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:inline-flex sm:h-9 sm:items-center sm:text-[13px]"
           >
             {l.label}
           </a>
@@ -30,7 +30,7 @@ const links = [
       <a
         href="/dashboard"
         data-invite
-        class="ng-pressable inline-flex h-11 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3 py-1.5 text-[13px] font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:h-10 sm:px-3.5 sm:text-sm"
+        class="ng-pressable inline-flex h-11 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3 py-1.5 text-[13px] font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:h-9 sm:px-3.5"
       >
         Add to Discord
       </a>
