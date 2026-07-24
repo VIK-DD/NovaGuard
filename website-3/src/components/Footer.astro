@@ -28,19 +28,17 @@
   </div>
 </footer>
 <script>
-  import { getLiveStats } from "../lib/api/liveStats";
-
   const link = document.querySelector<HTMLElement>("[data-heartbeat]");
   const text = document.querySelector<HTMLElement>("[data-heartbeat-text]");
-  const loadHeartbeat = () => {
+  const loadHeartbeat = async () => {
     if (!link || !text) return;
 
-    getLiveStats()
-      .then((s) => {
-        text.textContent = `Bot online · v${s.version} · ${s.guilds} servers`;
-        link.hidden = false;
-      })
-      .catch(() => {});
+    try {
+      const { getLiveStats } = await import("../lib/api/liveStats");
+      const s = await getLiveStats();
+      text.textContent = `Bot online · v${s.version} · ${s.guilds} servers`;
+      link.hidden = false;
+    } catch {}
   };
 
   const footer = document.querySelector<HTMLElement>("[data-site-footer]");
@@ -51,7 +49,7 @@
         observer.disconnect();
         loadHeartbeat();
       },
-      { rootMargin: "240px 0px" },
+      { rootMargin: "120px 0px" },
     );
     observer.observe(footer);
   } else {

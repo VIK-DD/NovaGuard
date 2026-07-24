@@ -48,6 +48,7 @@ const setQuickStats = (stats: {
   setDot(stats.ready ? OK_GREEN : "hsl(var(--primary))");
   set("status", stats.ready ? "Operational" : "Starting");
   set("version", `v${stats.version} · ${stats.codename}`);
+  set("uptime", fmtUptime(stats.uptime_seconds));
   set("guilds", fmt(stats.guilds));
   set("members", fmt(stats.members));
   set("commands", fmt(stats.commands));
