@@ -92,6 +92,8 @@ function isPublicPath(pathname) {
   return (
     pathname === "/" ||
     pathname === "/index.html" ||
+    pathname === "/home" ||
+    pathname.startsWith("/home/") ||
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname.startsWith("/coming-soon/") ||

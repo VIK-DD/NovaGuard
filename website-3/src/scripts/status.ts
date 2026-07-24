@@ -32,6 +32,29 @@ const setDot = (color: string) => {
   if (dot) dot.style.backgroundColor = color;
 };
 
+const setQuickStats = (stats: {
+  version: string;
+  codename: string;
+  guilds: number;
+  members: number;
+  commands: number;
+  uptime_seconds: number;
+  ready: boolean;
+}) => {
+  setHeadline(
+    stats.ready ? "NovaGuard is answering." : "NovaGuard is starting.",
+    stats.ready ? "Live checks are still arriving." : "The bot is connecting to Discord.",
+  );
+  setDot(stats.ready ? OK_GREEN : "hsl(var(--primary))");
+  set("status", stats.ready ? "Operational" : "Starting");
+  set("version", `v${stats.version} · ${stats.codename}`);
+  set("guilds", fmt(stats.guilds));
+  set("members", fmt(stats.members));
+  set("commands", fmt(stats.commands));
+  set("database", "Checking…");
+  set("gateway", "Checking…");
+};
+
 const stampChecked = () => {
   const node = el("[data-status-checked]");
   if (!node) return;
@@ -67,17 +90,33 @@ function init() {
 
   const poll = async () => {
     if (stopped || document.hidden) return;
+    let statsReceived = false;
+    let statsReady = false;
     controller?.abort();
     controller = new AbortController();
     const timeout = window.setTimeout(() => controller?.abort(), 5000);
 
     try {
       const opts = { signal: controller.signal, cache: "no-store" as RequestCache };
-      const [health, stats] = await Promise.all([
-        fetch(`${base}/api/v1/health`, opts).then((r) => r.json()),
-        fetch(`${base}/api/v1/stats`, opts).then((r) => r.json()),
-      ]);
+      const statsRequest = fetch(`${base}/api/v1/stats`, opts).then((r) => r.json());
+      const healthRequest = fetch(`${base}/api/v1/health`, opts)
+        .then((r) => r.json())
+        .then(
+          (value) => ({ value }),
+          (error) => ({ error }),
+        );
+      const stats = await statsRequest;
 
+      if (stopped) return;
+      setQuickStats(stats);
+      statsReceived = true;
+      statsReady = stats.ready;
+      uptimeBase = stats.uptime_seconds;
+      fetchedAt = Date.now();
+
+      const healthResult = await healthRequest;
+      if ("error" in healthResult) throw healthResult.error;
+      const health = healthResult.value;
       if (stopped) return;
       const allGood = health.ok && health.db_ok && stats.ready;
       setHeadline(
@@ -94,10 +133,19 @@ function init() {
       set("commands", fmt(stats.commands));
       set("database", health.db_ok ? "Healthy" : "Degraded");
       set("gateway", health.bot_ready ? "Connected" : "Connecting…");
-      uptimeBase = stats.uptime_seconds;
-      fetchedAt = Date.now();
     } catch (error) {
       if (stopped || (error instanceof DOMException && error.name === "AbortError")) return;
+      if (statsReceived) {
+        setHeadline(
+          statsReady ? "NovaGuard is answering." : "NovaGuard is starting.",
+          "Live bot data arrived, but the detailed health check is unavailable right now.",
+        );
+        setDot("hsl(var(--primary))");
+        set("status", "Unverified");
+        set("database", "Unknown");
+        set("gateway", "Unknown");
+        return;
+      }
       setHeadline(
         "The bot is resting.",
         "NovaGuard is unreachable right now — most likely an update or planned maintenance.",

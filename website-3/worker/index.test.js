@@ -14,7 +14,7 @@ function loginRequest() {
   return new Request("https://novaguard.fun/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ password: env.AUTH_PASSWORD, next: "/home/" }),
+    body: new URLSearchParams({ password: env.AUTH_PASSWORD, next: "/dashboard/" }),
   });
 }
 
@@ -23,6 +23,13 @@ afterEach(() => {
 });
 
 describe("password session", () => {
+  it("keeps the public landing page available without a session", async () => {
+    const response = await worker.fetch(new Request("https://novaguard.fun/home/"), env);
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("/home/");
+  });
+
   it("sets a two-hour cookie", async () => {
     const response = await worker.fetch(loginRequest(), env);
 
@@ -38,20 +45,20 @@ describe("password session", () => {
     const cookie = login.headers.get("Set-Cookie").split(";", 1)[0];
 
     const active = await worker.fetch(
-      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      new Request("https://novaguard.fun/dashboard/", { headers: { Cookie: cookie } }),
       env,
     );
     expect(active.status).toBe(200);
-    await expect(active.text()).resolves.toBe("/home/");
+    await expect(active.text()).resolves.toBe("/dashboard/");
 
     vi.advanceTimersByTime((2 * 60 * 60 + 1) * 1000);
     const expired = await worker.fetch(
-      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      new Request("https://novaguard.fun/dashboard/", { headers: { Cookie: cookie } }),
       env,
     );
 
     expect(expired.status).toBe(302);
-    expect(expired.headers.get("Location")).toContain("/login/?next=%2Fhome%2F");
+    expect(expired.headers.get("Location")).toContain("/login/?next=%2Fdashboard%2F");
   });
 
   it("serves maintenance over private routes when enabled", async () => {
@@ -84,7 +91,7 @@ describe("password session", () => {
     const login = await worker.fetch(loginRequest(), env);
     const cookie = login.headers.get("Set-Cookie").split(";", 1)[0];
     const page = await worker.fetch(
-      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      new Request("https://novaguard.fun/dashboard/", { headers: { Cookie: cookie } }),
       env,
     );
     expect(page.headers.get("Cache-Control")).toBeNull();
