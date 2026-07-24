@@ -130,6 +130,12 @@ canvas {
 /* Kill the blue tap-flash on mobile; native selects feel clickable. */
 a, button, [role="switch"] { -webkit-tap-highlight-color: transparent; }
 select { cursor: pointer; }
+/* Interactive controls show the hand cursor on hover — a clear "clickable"
+   affordance on pointer devices. Disabled controls read as not-allowed. */
+button:not(:disabled), label[for], summary, [role="switch"], [role="button"] {
+  cursor: pointer;
+}
+button:disabled, [role="switch"][aria-disabled="true"] { cursor: not-allowed; }
 select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 
 /* Controls opt into an ergonomic hit area instead of making every nested
