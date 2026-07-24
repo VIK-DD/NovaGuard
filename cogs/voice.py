@@ -12,7 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.storage import get_guild_settings, load_data, save_data, update_guild_settings
-from core.theme import Palette, brand_footer, make_embed
+from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import respond
 
 
@@ -20,6 +20,7 @@ VOICE_REPORT_CHANNEL_KEY = "voice_report_channel"
 MIN_SESSION_SECONDS = 60 * 60
 MAX_ACTIVITY_FIELDS = 3
 MAX_FIELD_LENGTH = 1000
+ACTIVITY_BAR_SLOTS = 12
 
 
 def now_utc():
@@ -109,6 +110,22 @@ def session_duration(session: dict, ended_at: datetime) -> float:
     return max(0, (ended_at - started_at).total_seconds())
 
 
+def participant_seconds(session: dict) -> float:
+    """Return the combined time spent by everyone in the completed session."""
+    return sum(float(record.get("total_seconds", 0)) for record in session.get("members", {}).values())
+
+
+def session_activity(session: dict, ended_at: datetime) -> tuple[int, float]:
+    """Measure how consistently the room was occupied, relative to its peak."""
+    duration = session_duration(session, ended_at)
+    peak_members = max(int(session.get("peak_members", 0)), 1)
+    if duration <= 0:
+        return 0, 0
+    average_concurrent = participant_seconds(session) / duration
+    percent = min(round(average_concurrent / peak_members * 100), 100)
+    return percent, average_concurrent
+
+
 def participant_lines(session: dict) -> list[str]:
     rows = []
     for member_id, record in session.get("members", {}).items():
@@ -154,29 +171,52 @@ def split_lines(lines: list[str], limit: int = MAX_FIELD_LENGTH) -> list[str]:
 def build_report_embed(session: dict, channel: discord.abc.GuildChannel, ended_at: datetime):
     started_at = parse_time(session.get("started_at")) or ended_at
     duration = session_duration(session, ended_at)
+    combined_time = participant_seconds(session)
+    activity_percent, average_concurrent = session_activity(session, ended_at)
     lines = participant_lines(session)
     chunks = split_lines(lines)
     shown_chunks = chunks[:MAX_ACTIVITY_FIELDS]
     overflow = len(chunks) > MAX_ACTIVITY_FIELDS
+    guild = getattr(channel, "guild", None)
+    guild_icon = getattr(getattr(guild, "icon", None), "url", None)
+    guild_banner = getattr(getattr(guild, "banner", None), "url", None)
 
     embed = make_embed(
         "Voice session complete",
-        f"{channel.mention} - the room is now empty.",
+        f"{channel.mention} is now empty. Here is the session recap.",
         color=Palette.TEAL,
         timestamp=False,
     )
     embed.timestamp = ended_at
+    if guild:
+        embed.set_author(
+            name=f"{guild.name} • Voice activity",
+            icon_url=guild_icon,
+        )
+    if guild_icon:
+        embed.set_thumbnail(url=guild_icon)
+    if guild_banner:
+        embed.set_image(url=guild_banner)
     embed.add_field(
         name="Session window",
         value=(
-            f"Started: {discord.utils.format_dt(started_at, 'F')}\n"
-            f"Ended: {discord.utils.format_dt(ended_at, 'F')}"
+            f"Started {discord.utils.format_dt(started_at, 'F')}\n"
+            f"Ended {discord.utils.format_dt(ended_at, 'F')}"
         ),
         inline=False,
     )
-    embed.add_field(name="Session duration", value=f"`{human_duration(duration)}`", inline=True)
-    embed.add_field(name="Unique participants", value=f"`{len(session.get('members', {}))}`", inline=True)
-    embed.add_field(name="Peak concurrent", value=f"`{session.get('peak_members', 0)}`", inline=True)
+    embed.add_field(name="Duration", value=f"`{human_duration(duration)}`", inline=True)
+    embed.add_field(name="People", value=f"`{len(session.get('members', {}))}` unique", inline=True)
+    embed.add_field(name="Peak", value=f"`{session.get('peak_members', 0)}` in voice", inline=True)
+    embed.add_field(
+        name="Room activity",
+        value=(
+            f"{progress_bar(activity_percent, 100, slots=ACTIVITY_BAR_SLOTS)} `{activity_percent}%`\n"
+            f"`{human_duration(combined_time)}` combined time • "
+            f"`{average_concurrent:.1f}` average people in voice"
+        ),
+        inline=False,
+    )
     for index, chunk in enumerate(shown_chunks, 1):
         name = "Member activity" if index == 1 else "Member activity (continued)"
         embed.add_field(name=name, value=chunk, inline=False)
@@ -187,7 +227,7 @@ def build_report_embed(session: dict, channel: discord.abc.GuildChannel, ended_a
             value="The complete participant list is attached because it does not fit safely in one embed.",
             inline=False,
         )
-    brand_footer(embed, "Voice session report")
+    brand_footer(embed, "Voice session report • activity is based on time spent in the room")
     return embed, overflow
 
 

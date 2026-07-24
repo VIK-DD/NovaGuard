@@ -11,11 +11,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cogs.voice import (
     MIN_SESSION_SECONDS,
     active_member_ids,
+    build_report_embed,
     human_duration,
     new_session,
     participant_lines,
     record_member_join,
     record_member_leave,
+    session_activity,
     session_duration,
     split_lines,
 )
@@ -51,6 +53,32 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertEqual(human_duration(90_061), "1d 1h 1m 1s")
         lines = ["x" * 600, "y" * 600, "z" * 600]
         self.assertEqual([len(chunk) for chunk in split_lines(lines, limit=1000)], [600, 600, 600])
+
+    def test_report_includes_server_identity_and_activity_bar(self):
+        record_member_join(self.session, 1, "Victor", self.started_at)
+        record_member_join(self.session, 2, "Mira", self.started_at + timedelta(minutes=30))
+        record_member_leave(self.session, 2, self.started_at + timedelta(hours=1))
+        ended_at = self.started_at + timedelta(hours=2)
+        record_member_leave(self.session, 1, ended_at)
+
+        guild = type(
+            "Guild",
+            (),
+            {
+                "name": "NovaGuard Support",
+                "icon": type("Asset", (), {"url": "https://example.com/icon.png"})(),
+                "banner": type("Asset", (), {"url": "https://example.com/banner.png"})(),
+            },
+        )()
+        channel = type("VoiceChannel", (), {"mention": "#lounge", "guild": guild})()
+        embed, overflow = build_report_embed(self.session, channel, ended_at)
+
+        self.assertFalse(overflow)
+        self.assertEqual(embed.author.name, "NovaGuard Support • Voice activity")
+        self.assertEqual(str(embed.thumbnail.url), "https://example.com/icon.png")
+        self.assertEqual(str(embed.image.url), "https://example.com/banner.png")
+        self.assertIn("Room activity", [field.name for field in embed.fields])
+        self.assertEqual(session_activity(self.session, ended_at), (62, 1.25))
 
 
 if __name__ == "__main__":
