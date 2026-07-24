@@ -10,7 +10,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 import AuthGate from "./components/AuthGate";
 import Shell from "./components/Shell";
-import { auditQuery } from "./queries";
 
 const GuildPicker = lazy(() => import("./screens/GuildPicker"));
 const GuildConfig = lazy(() => import("./screens/GuildConfig"));
@@ -29,7 +28,9 @@ function GuildLayout() {
   const queryClient = useQueryClient();
   const tab = "inline-flex min-h-11 items-center border-b-2 px-1 text-sm transition-colors";
   const warmAudit = () => {
-    void queryClient.prefetchQuery(auditQuery(guildId));
+    void import("./queries/audit").then(({ auditQuery }) =>
+      queryClient.prefetchQuery(auditQuery(guildId)),
+    );
   };
   return (
     <>

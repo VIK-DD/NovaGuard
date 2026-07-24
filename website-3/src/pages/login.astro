@@ -34,13 +34,13 @@ import Base from "../layouts/Base.astro";
             autocomplete="current-password"
             required
             placeholder="Enter password"
-            class="w-full rounded-[8px] border border-line bg-card py-3 pr-11 pl-10 text-sm outline-none transition-colors focus:border-primary"
+            class="min-h-12 w-full rounded-[8px] border border-line bg-card py-3 pr-12 pl-10 text-sm outline-none transition-colors focus:border-primary"
           />
           <button
             type="button"
             id="toggle-pw"
             aria-label="Show password"
-            class="absolute top-1/2 right-2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-[6px] text-ink-faint transition-colors hover:text-ink"
+            class="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-[6px] text-ink-faint transition-colors hover:text-ink"
           >
             <svg id="eye" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
             <svg id="eye-off" class="hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
@@ -50,7 +50,7 @@ import Base from "../layouts/Base.astro";
         <button
           type="submit"
           id="submit"
-          class="mt-5 flex w-full items-center justify-center gap-2 rounded-[8px] bg-primary py-3 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90"
+          class="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-primary py-3 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90"
         >
           <span id="submit-label">Continue</span>
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -75,8 +75,6 @@ import Base from "../layouts/Base.astro";
     err?.classList.remove("hidden");
     pw?.setAttribute("aria-invalid", "true");
     (pw as HTMLInputElement | null)?.focus();
-  } else {
-    (document.getElementById("password") as HTMLInputElement | null)?.focus();
   }
 
   const toggle = document.getElementById("toggle-pw");

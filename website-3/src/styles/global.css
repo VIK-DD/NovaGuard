@@ -156,6 +156,26 @@ a, button, [role="switch"] { -webkit-tap-highlight-color: transparent; }
 select { cursor: pointer; }
 select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 
+/* Controls opt into an ergonomic hit area instead of making every nested
+   dashboard button oversized. Small utility buttons keep their visual rhythm. */
+.ng-touch-target {
+  min-inline-size: 44px;
+  min-block-size: 44px;
+}
+.ng-icon-button {
+  position: relative;
+  display: grid;
+  inline-size: 2rem;
+  block-size: 2rem;
+  place-items: center;
+}
+.ng-icon-button::before {
+  position: absolute;
+  inset: -6px;
+  content: "";
+}
+.ng-icon-button > * { position: relative; }
+
 /* Dashboard selects: swap the OS-native arrow for a crafted chevron so all
    pickers read as one designed system instead of raw form controls. */
 #app select {
@@ -195,8 +215,7 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   }
 
   #app input,
-  #app select,
-  #app button {
+  #app select {
     min-height: 44px;
   }
 
@@ -205,19 +224,9 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   }
 }
 
-/* Dashboard route content eases in on mount and on navigation. */
-@keyframes ng-enter {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
-#app main { animation: ng-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-/* Save bar rises from the bottom edge when changes appear. */
-@keyframes ng-rise {
-  from { opacity: 0; transform: translateY(100%); }
-  to { opacity: 1; transform: none; }
-}
-[data-savebar] { animation: ng-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* Route changes should feel immediate. The old page-entry animation ran for
+   every dashboard navigation and could read as lag on lower-powered devices. */
+#app main { animation: none; }
 
 /* The public hero is static HTML. Drift is enabled only for precise-pointer
    desktops, so phones never spend a frame budget on decorative animation. */

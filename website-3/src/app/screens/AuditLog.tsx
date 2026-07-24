@@ -1,5 +1,5 @@
 import { useParams } from "@tanstack/react-router";
-import { useAudit } from "../queries";
+import { useAudit } from "../queries/audit";
 
 const dateFmt = new Intl.DateTimeFormat("en", {
   month: "short",
@@ -30,7 +30,7 @@ export default function AuditLog() {
       {audit.isError && (
         <p className="mt-6 border-t border-line pt-4 text-sm text-ink-muted">
           Could not load the audit log.{" "}
-          <button onClick={() => void audit.refetch()} className="underline hover:text-ink">
+          <button onClick={() => void audit.refetch()} className="ng-touch-target inline-flex items-center underline hover:text-ink">
             Try again
           </button>
         </p>

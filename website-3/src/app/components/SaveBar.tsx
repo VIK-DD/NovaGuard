@@ -23,7 +23,7 @@ export default function SaveBar({ visible, saving, error, onSave, onDiscard }: P
             type="button"
             onClick={onDiscard}
             disabled={saving}
-            className="text-sm text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
+            className="ng-touch-target inline-flex items-center text-sm text-ink-muted transition-colors hover:text-ink disabled:opacity-50"
           >
             Discard
           </button>
@@ -31,7 +31,7 @@ export default function SaveBar({ visible, saving, error, onSave, onDiscard }: P
             type="button"
             onClick={onSave}
             disabled={saving || !visible}
-            className="bg-primary rounded-full px-5 py-2 text-sm text-primary-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="ng-touch-target inline-flex items-center bg-primary rounded-full px-5 py-2 text-sm text-primary-ink transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}
           </button>

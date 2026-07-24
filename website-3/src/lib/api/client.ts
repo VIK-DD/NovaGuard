@@ -1,6 +1,9 @@
 // Typed fetch wrapper for the NovaGuard bot API (docs/API.md).
 // Errors always surface as ApiError with the contract's stable `code`.
-import type { ZodType } from "zod";
+
+export interface ResponseParser<T> {
+  parse(value: unknown): T;
+}
 
 export const API_BASE: string = import.meta.env.PUBLIC_API_BASE ?? "";
 
@@ -37,7 +40,7 @@ export function inviteUrl(): string {
 
 export async function apiFetch<T>(
   path: string,
-  schema: ZodType<T>,
+  schema: ResponseParser<T>,
   init?: RequestInit,
 ): Promise<T> {
   let res: Response;

@@ -31,7 +31,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           </p>
           <button
             onClick={() => window.location.assign(loginUrl())}
-            className="bg-primary mt-8 rounded-full px-6 py-3 text-primary-ink transition-opacity hover:opacity-90"
+            className="ng-touch-target bg-primary mt-8 inline-flex items-center rounded-full px-6 py-3 text-primary-ink transition-opacity hover:opacity-90"
           >
             Continue with Discord
           </button>
@@ -41,7 +41,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                 sessionStorage.setItem("ng_mock_session", "on");
                 void me.refetch();
               }}
-              className="mt-4 text-xs text-ink-faint underline underline-offset-4 transition-colors hover:text-ink"
+              className="ng-touch-target mt-4 inline-flex items-center text-xs text-ink-faint underline underline-offset-4 transition-colors hover:text-ink"
             >
               Preview with demo data (dev)
             </button>
@@ -59,7 +59,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         </p>
         <button
           onClick={() => void me.refetch()}
-          className="mt-8 rounded-full border border-line px-6 py-3 transition-colors hover:border-ink"
+          className="ng-touch-target mt-8 inline-flex items-center rounded-full border border-line px-6 py-3 transition-colors hover:border-ink"
         >
           Retry
         </button>

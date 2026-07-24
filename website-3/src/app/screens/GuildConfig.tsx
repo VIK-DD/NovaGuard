@@ -12,7 +12,7 @@ import ChannelSelect from "../components/ChannelSelect";
 import RoleSelect from "../components/RoleSelect";
 import SaveBar from "../components/SaveBar";
 import { diffSettings, isDirty, mapValidationDetails } from "../lib/configForm";
-import { useGuildConfig } from "../queries";
+import { useGuildConfig } from "../queries/guilds";
 
 const CHANNEL_FIELDS: ReadonlyArray<
   [keyof Pick<
@@ -45,15 +45,20 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
         aria-checked={props.checked}
         aria-label={props.label}
         onClick={() => props.onChange(!props.checked)}
-        className={`relative h-6 w-11 rounded-full transition-colors ${
-          props.checked ? "bg-primary" : "bg-line"
-        }`}
+        className="ng-touch-target grid h-11 w-12 shrink-0 place-items-center rounded-[8px]"
       >
         <span
-          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-            props.checked ? "translate-x-5" : "translate-x-0"
+          aria-hidden="true"
+          className={`relative block h-6 w-11 rounded-full border transition-[background-color,border-color] duration-150 ${
+            props.checked ? "border-primary bg-primary" : "border-line-strong bg-card"
           }`}
-        />
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.22)] transition-transform duration-150 will-change-transform ${
+              props.checked ? "translate-x-5" : "translate-x-0"
+            }`}
+          />
+        </span>
       </button>
     </div>
   );
@@ -118,7 +123,7 @@ export default function GuildConfig() {
         </h1>
         <button
           onClick={() => void config.refetch()}
-          className="mt-6 rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-ink"
+          className="ng-touch-target mt-6 inline-flex items-center rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-ink"
         >
           Retry
         </button>

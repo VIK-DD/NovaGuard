@@ -41,7 +41,7 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
         <button
           type="button"
           onClick={add}
-          className="shrink-0 rounded-md border border-line px-4 py-2 text-sm transition-colors hover:border-ink sm:py-0"
+          className="ng-touch-target flex shrink-0 items-center justify-center rounded-md border border-line px-4 py-2 text-sm transition-colors hover:border-ink sm:py-0"
         >
           Add
         </button>
@@ -52,16 +52,16 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
           {value.map((word) => (
             <li
               key={word}
-              className="flex max-w-full items-center gap-1.5 rounded-md border border-line bg-card px-2 py-0.5 text-sm"
+              className="flex max-w-full items-center gap-1.5 rounded-md border border-line bg-card px-2 py-1 text-sm"
             >
               <code className="min-w-0 break-all">{word}</code>
               <button
                 type="button"
                 aria-label={`Remove ${word}`}
                 onClick={() => onChange(value.filter((w) => w !== word))}
-                className="text-ink-muted transition-colors hover:text-ink"
+                className="ng-icon-button -my-1 text-ink-muted transition-colors hover:text-ink"
               >
-                ×
+                <span aria-hidden="true">×</span>
               </button>
             </li>
           ))}

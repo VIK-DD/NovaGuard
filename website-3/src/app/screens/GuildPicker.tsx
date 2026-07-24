@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { inviteUrl } from "../../lib/api/client";
 import type { Guild } from "../../lib/api/schemas";
-import { guildConfigQuery, useGuilds } from "../queries";
+import { guildConfigQuery, useGuilds } from "../queries/guilds";
 
 function GuildIcon({ guild, muted = false }: { guild: Guild; muted?: boolean }) {
   if (guild.icon) {

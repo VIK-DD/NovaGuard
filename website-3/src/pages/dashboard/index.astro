@@ -4,7 +4,7 @@ import Masthead from "../../components/Masthead.astro";
 import App from "../../app/App";
 ---
 
-<Base title="Dashboard — NovaGuard" description="Configure NovaGuard from your browser.">
+<Base title="Dashboard — NovaGuard" description="Configure NovaGuard from your browser." preconnectApi>
   <Masthead />
   <div id="app">
     <App client:only="react">
