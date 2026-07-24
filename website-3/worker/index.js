@@ -1,5 +1,6 @@
 const SESSION_COOKIE = "ng_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
+const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
 const encoder = new TextEncoder();
 
@@ -111,6 +112,9 @@ function isMaintenanceEnabled(env) {
 }
 
 function assetCacheControl(pathname) {
+  if (pathname === "/home" || pathname.startsWith("/home/")) {
+    return "public, max-age=60, stale-while-revalidate=300";
+  }
   if (
     pathname.startsWith("/_astro/") ||
     pathname.startsWith("/assets/") ||
@@ -123,6 +127,58 @@ function assetCacheControl(pathname) {
     return "public, max-age=86400, stale-while-revalidate=604800";
   }
   return null;
+}
+
+async function handleStatusSnapshot(request, env, ctx) {
+  if (request.method !== "GET") {
+    return Response.json(
+      { error: "Method not allowed", code: "method_not_allowed" },
+      { status: 405, headers: { Allow: "GET" } },
+    );
+  }
+
+  const url = new URL(request.url);
+  const cacheKey = new Request(`${url.origin}/api/status-snapshot`);
+  const edgeCache = globalThis.caches?.default;
+  const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
+  if (cached) return cached;
+
+  const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
+  const upstreamOptions = {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(3000),
+  };
+
+  try {
+    const [statsResponse, healthResponse] = await Promise.all([
+      fetch(`${apiBase}/stats`, upstreamOptions),
+      fetch(`${apiBase}/health`, upstreamOptions),
+    ]);
+    if (!statsResponse.ok || (healthResponse.status >= 500 && healthResponse.status !== 503)) {
+      throw new Error(`Status upstream failed: ${statsResponse.status}/${healthResponse.status}`);
+    }
+
+    const [stats, health] = await Promise.all([statsResponse.json(), healthResponse.json()]);
+    const response = Response.json(
+      { stats, health, fetched_at: Date.now() },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=5, stale-while-revalidate=25",
+          "X-Content-Type-Options": "nosniff",
+        },
+      },
+    );
+
+    if (edgeCache && ctx?.waitUntil) {
+      ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
+    }
+    return response;
+  } catch {
+    return Response.json(
+      { error: "Status snapshot unavailable", code: "status_unavailable" },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 }
 
 async function serveAsset(request, env) {
@@ -182,9 +238,10 @@ function handleLogout(request) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
     if (url.pathname === "/api/auth/login") return handleLogin(request, env);
     if (url.pathname === "/api/auth/logout") return handleLogout(request);
     if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);

@@ -1,12 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/outfit";
 @import "@fontsource-variable/hanken-grotesk";
-@import "@fontsource-variable/geist-mono";
-
-/* `dark:` utilities apply when <html data-theme="dark"> (dark is the default).
-   The `*` must live INSIDE each :where() branch so the utility element is the
-   descendant of the themed root — `&:where(…) *` (outside) never matches. */
-@custom-variant dark (&:where(:root:not([data-theme="light"]) *, [data-theme="dark"] *));
 
 /* ── NovaGuard design system — "signal flare in the dark". Warm neutral
    near-black, warm off-white text, one accent: a lit-ember amber (Nova).
@@ -47,25 +41,6 @@
   --good: 142 45% 32%;
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    color-scheme: light;
-    --background: 40 32% 98%;
-    --bg-subtle: 38 28% 95%;
-    --card: 0 0% 100%;
-    --card-hover: 38 30% 97%;
-    --border: 35 15% 88%;
-    --border-strong: 35 14% 78%;
-    --foreground: 20 15% 9%;
-    --muted-foreground: 25 8% 38%;
-    --faint-foreground: 25 8% 54%;
-    --primary: 26 90% 45%;
-    --primary-foreground: 0 0% 100%;
-    --primary-soft: 30 90% 94%;
-    --good: 142 45% 32%;
-  }
-}
-
 @theme inline {
   --color-background: hsl(var(--background));
   --color-bg-subtle: hsl(var(--bg-subtle));
@@ -82,7 +57,7 @@
   --color-good: hsl(var(--good));
   --font-display: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Hanken Grotesk Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --radius-card: var(--radius);
 }
 
@@ -115,6 +90,11 @@ canvas {
   background: hsl(var(--primary) / 0.9);
   color: hsl(var(--primary-foreground));
 }
+
+[data-theme-night-label] { display: none; }
+:root[data-theme="light"] [data-theme-day-label] { display: none; }
+:root[data-theme="light"] [data-theme-night-label] { display: flex; }
+[data-theme-toggle] { will-change: transform, opacity; }
 
 /* Premium thin scrollbars */
 * {
@@ -256,16 +236,6 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   0%, 100% { transform: rotate(2deg) translate3d(0, 0, 0); }
   50% { transform: rotate(2deg) translate3d(0, -9px, 0); }
 }
-
-/* ── Theme wipe (night ↔ day): a circular clip reveal driven from the toggle,
-   scoped to .theme-wipe so it never touches the page-navigation transition. ── */
-:root.theme-wipe::view-transition-old(root),
-:root.theme-wipe::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-:root.theme-wipe::view-transition-new(root) { z-index: 1; }
-:root.theme-wipe::view-transition-old(root) { z-index: 0; }
 
 /* ── Dashboard boot screen: branded placeholder shown until React mounts. ── */
 .ng-boot-mark { animation: ng-boot-pulse 1.8s ease-in-out infinite; }

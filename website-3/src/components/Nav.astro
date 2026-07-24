@@ -13,7 +13,13 @@ const links = [
 <header data-nav class="sticky top-0 z-30 border-b border-line bg-background">
   <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6 sm:py-3">
     <a href="/" class="flex items-center gap-2.5" aria-label="NovaGuard home">
-      <img src="/favicon.png" alt="" width="32" height="32" class="h-8 w-8" />
+      <img
+        src="/assets/novaguard-icon-96.png"
+        alt=""
+        width="32"
+        height="32"
+        class="h-8 w-8"
+      />
       <span class="font-display text-base font-semibold tracking-tight sm:text-lg">NovaGuard</span>
     </a>
     <div class="flex items-center gap-2 sm:gap-6">
@@ -114,6 +120,21 @@ const links = [
     drawer?.querySelectorAll("a").forEach((a) =>
       a.addEventListener("click", () => setOpen(false)),
     );
+
+    let statusWarmed = false;
+    const warmStatus = () => {
+      if (statusWarmed || window.location.pathname.startsWith("/status")) return;
+      statusWarmed = true;
+      window.__ngGetStatusSnapshot?.().catch(() => {
+        statusWarmed = false;
+      });
+    };
+
+    document.querySelectorAll<HTMLAnchorElement>('a[href="/status"]').forEach((link) => {
+      link.addEventListener("pointerenter", warmStatus, { once: true, passive: true });
+      link.addEventListener("focus", warmStatus, { once: true });
+      link.addEventListener("pointerdown", warmStatus, { once: true, passive: true });
+    });
   }
 
   document.addEventListener("keydown", (e) => {

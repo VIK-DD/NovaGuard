@@ -13,21 +13,16 @@ import Icon from "./Icon.astro";
       aria-label="Toggle dark mode"
       class="ng-pressable flex min-h-11 items-center gap-1.5 transition-colors hover:text-ink"
     >
-      <span class="hidden items-center gap-1.5 dark:flex">
+      <span data-theme-day-label class="flex items-center gap-1.5">
         <Icon name="sun" size={13} /> Day edition
       </span>
-      <span class="flex items-center gap-1.5 dark:hidden">
+      <span data-theme-night-label class="hidden items-center gap-1.5">
         <Icon name="moon" size={13} /> Night edition
       </span>
     </button>
   </div>
 </div>
 <script>
-  type ViewTransition = { ready: Promise<void>; finished: Promise<void> };
-  type VTDocument = Document & {
-    startViewTransition?: (cb: () => void) => ViewTransition;
-  };
-
   function init() {
     const dateEl = document.querySelector("[data-masthead-date]");
     if (dateEl) {
@@ -52,54 +47,33 @@ import Icon from "./Icon.astro";
         ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
     };
 
-    // Night ↔ day is an explicit action, so it keeps a short transition even
-    // when macOS has Reduce Motion enabled. Automatic motion remains disabled.
+    const transitionTheme = async (light: boolean, button: HTMLElement) => {
+      themeTransitioning = true;
+      try {
+        const feedback = button.animate(
+          [
+            { opacity: 0.72, transform: "scale(0.97)" },
+            { opacity: 1, transform: "scale(1)" },
+          ],
+          {
+            duration: reduce ? 140 : 180,
+            easing: "cubic-bezier(0.2, 0, 0, 1)",
+          },
+        );
+        await feedback.finished;
+        setTheme(light);
+      } finally {
+        themeTransitioning = false;
+      }
+    };
+
+    // Keep the feedback on the source control. Full-page transitions expose the
+    // theme repaint as dropped frames on high-density MacBook displays.
     document.querySelectorAll<HTMLElement>("[data-theme-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (themeTransitioning) return;
         const light = root.dataset.theme !== "light";
-        const doc = document as VTDocument;
-        if (typeof doc.startViewTransition !== "function") {
-          setTheme(light);
-          return;
-        }
-        const r = btn.getBoundingClientRect();
-        const x = r.left + r.width / 2;
-        const y = r.top + r.height / 2;
-        const end = Math.hypot(
-          Math.max(x, window.innerWidth - x),
-          Math.max(y, window.innerHeight - y),
-        );
-        themeTransitioning = true;
-        root.classList.add("theme-wipe");
-        try {
-          const transition = doc.startViewTransition(() => setTheme(light));
-          transition.ready
-            .then(() =>
-              root.animate(
-                {
-                  clipPath: [
-                    `circle(0px at ${x}px ${y}px)`,
-                    `circle(${end}px at ${x}px ${y}px)`,
-                  ],
-                },
-                {
-                  duration: reduce ? 180 : 360,
-                  easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-                  pseudoElement: "::view-transition-new(root)",
-                },
-              ),
-            )
-            .catch(() => {});
-          transition.finished.finally(() => {
-            root.classList.remove("theme-wipe");
-            themeTransitioning = false;
-          });
-        } catch {
-          root.classList.remove("theme-wipe");
-          themeTransitioning = false;
-          setTheme(light);
-        }
+        void transitionTheme(light, btn);
       });
     });
   }

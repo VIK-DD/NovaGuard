@@ -20,6 +20,7 @@ function loginRequest() {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("password session", () => {
@@ -27,7 +28,43 @@ describe("password session", () => {
     const response = await worker.fetch(new Request("https://novaguard.fun/home/"), env);
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=60, stale-while-revalidate=300",
+    );
     await expect(response.text()).resolves.toBe("/home/");
+  });
+
+  it("combines public bot status into one short-lived snapshot", async () => {
+    const upstream = vi.fn(async (request) => {
+      const pathname = new URL(typeof request === "string" ? request : request.url).pathname;
+      if (pathname.endsWith("/stats")) {
+        return Response.json({
+          version: "3.0.0",
+          codename: "Nova",
+          guilds: 5,
+          members: 132,
+          commands: 90,
+          uptime_seconds: 120,
+          ready: true,
+        });
+      }
+      return Response.json({ ok: true, bot_ready: true, db_ok: true });
+    });
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/status-snapshot"),
+      { ...env, STATUS_API_BASE: "https://api.example.test/api/v1" },
+    );
+    const snapshot = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=5, stale-while-revalidate=25",
+    );
+    expect(snapshot.stats.uptime_seconds).toBe(120);
+    expect(snapshot.health.db_ok).toBe(true);
+    expect(upstream).toHaveBeenCalledTimes(2);
   });
 
   it("sets a two-hour cookie", async () => {

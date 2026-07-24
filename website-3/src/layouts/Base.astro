@@ -1,5 +1,7 @@
 ---
 import "../styles/global.css";
+import hankenLatin from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2";
+import outfitLatin from "@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2";
 interface Props {
   title: string;
   description?: string;
@@ -34,8 +36,10 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/favicon.png" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="icon" type="image/png" href="/assets/novaguard-icon-96.png" />
+    <link rel="apple-touch-icon" href="/assets/novaguard-icon-96.png" />
+    <link rel="preload" href={hankenLatin} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={outfitLatin} as="font" type="font/woff2" crossorigin />
     {preconnectApi && apiOrigin && <link rel="preconnect" href={apiOrigin} crossorigin />}
     <script is:inline>
       // Dark-first: apply the stored/preferred theme before first paint (no flash).
@@ -50,6 +54,41 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
           .querySelector('meta[name="theme-color"]')
           ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
       })();
+    </script>
+    <script is:inline>
+      // Public stats and the status page share one small, edge-cached snapshot.
+      // The promise also prevents duplicate requests from StatsStrip and Footer.
+      window.__ngGetStatusSnapshot = () => {
+        if (!window.__ngStatusRequest) {
+          const options = {
+            headers: { Accept: "application/json" },
+            keepalive: true,
+          };
+          if (typeof AbortSignal.timeout === "function") {
+            options.signal = AbortSignal.timeout(4000);
+          }
+          window.__ngStatusRequest = fetch("/api/status-snapshot", options)
+            .then((response) => {
+              if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
+              return response.json();
+            })
+            .then((snapshot) => {
+              if (Number.isFinite(snapshot?.fetched_at) && snapshot?.stats && snapshot?.health) {
+                try {
+                  sessionStorage.setItem("ng-status-snapshot-v1", JSON.stringify(snapshot));
+                } catch {}
+              }
+              return snapshot;
+            })
+            .catch((error) => {
+              window.__ngStatusRequest = null;
+              throw error;
+            });
+        }
+        return window.__ngStatusRequest;
+      };
+      window.__ngGetLiveStats = () =>
+        window.__ngGetStatusSnapshot().then((snapshot) => snapshot.stats);
     </script>
     {
       mockEnabled && (

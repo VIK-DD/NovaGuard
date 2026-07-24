@@ -1,5 +1,28 @@
-const base = (import.meta.env.PUBLIC_API_BASE || "").replace(/\/+$/, "");
 const OK_GREEN = "#3d8a57";
+const STATUS_CACHE_KEY = "ng-status-snapshot-v1";
+const STATUS_CACHE_TTL_MS = 60_000;
+
+type StatusStats = {
+  version: string;
+  codename: string;
+  guilds: number;
+  members: number;
+  commands: number;
+  uptime_seconds: number;
+  ready: boolean;
+};
+
+type StatusHealth = {
+  ok: boolean;
+  bot_ready: boolean;
+  db_ok: boolean;
+};
+
+type StatusSnapshot = {
+  stats: StatusStats;
+  health: StatusHealth;
+  fetched_at: number;
+};
 
 let stopRuntime: (() => void) | null = null;
 
@@ -32,31 +55,58 @@ const setDot = (color: string) => {
   if (dot) dot.style.backgroundColor = color;
 };
 
-const setQuickStats = (stats: {
-  version: string;
-  codename: string;
-  guilds: number;
-  members: number;
-  commands: number;
-  uptime_seconds: number;
-  ready: boolean;
-}) => {
+const applySnapshot = (snapshot: StatusSnapshot) => {
+  const { stats, health } = snapshot;
+  const allGood = health.ok && health.db_ok && stats.ready;
+  const uptime = stats.uptime_seconds + Math.max(0, (Date.now() - snapshot.fetched_at) / 1000);
+
   setHeadline(
-    stats.ready ? "NovaGuard is answering." : "NovaGuard is starting.",
-    stats.ready ? "Live checks are still arriving." : "The bot is connecting to Discord.",
+    allGood ? "All systems operational." : "Running with a limp.",
+    allGood
+      ? "NovaGuard is awake and answering."
+      : "The bot is up, but something needs attention.",
   );
-  setDot(stats.ready ? OK_GREEN : "hsl(var(--primary))");
-  set("status", stats.ready ? "Operational" : "Starting");
+  setDot(allGood ? OK_GREEN : "hsl(var(--primary))");
+  set("status", allGood ? "Operational" : "Degraded");
   set("version", `v${stats.version} · ${stats.codename}`);
-  set("uptime", fmtUptime(stats.uptime_seconds));
+  set("uptime", fmtUptime(uptime));
   set("guilds", fmt(stats.guilds));
   set("members", fmt(stats.members));
   set("commands", fmt(stats.commands));
-  set("database", "Checking…");
-  set("gateway", "Checking…");
+  set("database", health.db_ok ? "Healthy" : "Degraded");
+  set("gateway", health.bot_ready ? "Connected" : "Connecting…");
+  return uptime;
 };
 
-const stampChecked = () => {
+const isSnapshot = (value: unknown): value is StatusSnapshot => {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Partial<StatusSnapshot>;
+  return (
+    Number.isFinite(snapshot.fetched_at) &&
+    !!snapshot.stats &&
+    Number.isFinite(snapshot.stats.uptime_seconds) &&
+    !!snapshot.health
+  );
+};
+
+const readCachedSnapshot = () => {
+  try {
+    const snapshot: unknown = JSON.parse(sessionStorage.getItem(STATUS_CACHE_KEY) || "null");
+    if (!isSnapshot(snapshot)) return null;
+    const age = Date.now() - snapshot.fetched_at;
+    return age >= -5_000 && age <= STATUS_CACHE_TTL_MS ? snapshot : null;
+  } catch {
+    return null;
+  }
+};
+
+const cacheSnapshot = (snapshot: StatusSnapshot) => {
+  try {
+    sessionStorage.setItem(STATUS_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {}
+};
+
+const stampChecked = (prefix = "Last checked") => {
   const node = el("[data-status-checked]");
   if (!node) return;
   const time = new Intl.DateTimeFormat("en", {
@@ -65,7 +115,7 @@ const stampChecked = () => {
     second: "2-digit",
     hour12: false,
   }).format(new Date());
-  node.textContent = `Last checked ${time} · refreshes every 30 s`;
+  node.textContent = `${prefix} ${time} · refreshes every 30 s`;
 };
 
 function init() {
@@ -74,77 +124,52 @@ function init() {
 
   if (!document.querySelector("[data-status-page]")) return;
 
-  if (!base) {
-    setHeadline("Status is not connected.", "Set PUBLIC_API_BASE before building the website.");
-    setDot("hsl(var(--primary))");
-    set("status", "Not configured");
-    stampChecked();
-    return;
-  }
-
   let stopped = false;
   let uptimeBase = 0;
   let fetchedAt = 0;
   let pollTimer = 0;
   let uptimeTimer = 0;
   let controller: AbortController | null = null;
+  let hasSnapshot = false;
+
+  const cachedSnapshot = readCachedSnapshot();
+  if (cachedSnapshot) {
+    uptimeBase = applySnapshot(cachedSnapshot);
+    fetchedAt = Date.now();
+    hasSnapshot = true;
+    stampChecked("Refreshing live data · cached at");
+  }
 
   const poll = async () => {
     if (stopped || document.hidden) return;
-    let statsReceived = false;
-    let statsReady = false;
+    let refreshFailed = false;
     controller?.abort();
     controller = new AbortController();
     const timeout = window.setTimeout(() => controller?.abort(), 5000);
 
     try {
-      const opts = { signal: controller.signal, cache: "no-store" as RequestCache };
-      const statsRequest = fetch(`${base}/api/v1/stats`, opts).then((r) => r.json());
-      const healthRequest = fetch(`${base}/api/v1/health`, opts)
-        .then((r) => r.json())
-        .then(
-          (value) => ({ value }),
-          (error) => ({ error }),
-        );
-      const stats = await statsRequest;
-
+      const response = await fetch("/api/status-snapshot", {
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
+      const snapshot: unknown = await response.json();
+      if (!isSnapshot(snapshot)) throw new Error("Status response was malformed.");
       if (stopped) return;
-      setQuickStats(stats);
-      statsReceived = true;
-      statsReady = stats.ready;
-      uptimeBase = stats.uptime_seconds;
+      uptimeBase = applySnapshot(snapshot);
       fetchedAt = Date.now();
-
-      const healthResult = await healthRequest;
-      if ("error" in healthResult) throw healthResult.error;
-      const health = healthResult.value;
-      if (stopped) return;
-      const allGood = health.ok && health.db_ok && stats.ready;
-      setHeadline(
-        allGood ? "All systems operational." : "Running with a limp.",
-        allGood
-          ? "NovaGuard is awake and answering."
-          : "The bot is up, but something needs attention.",
-      );
-      setDot(allGood ? OK_GREEN : "var(--accent)");
-      set("status", allGood ? "Operational" : "Degraded");
-      set("version", `v${stats.version} · ${stats.codename}`);
-      set("guilds", fmt(stats.guilds));
-      set("members", fmt(stats.members));
-      set("commands", fmt(stats.commands));
-      set("database", health.db_ok ? "Healthy" : "Degraded");
-      set("gateway", health.bot_ready ? "Connected" : "Connecting…");
+      hasSnapshot = true;
+      cacheSnapshot(snapshot);
     } catch (error) {
       if (stopped || (error instanceof DOMException && error.name === "AbortError")) return;
-      if (statsReceived) {
+      refreshFailed = true;
+      if (hasSnapshot) {
         setHeadline(
-          statsReady ? "NovaGuard is answering." : "NovaGuard is starting.",
-          "Live bot data arrived, but the detailed health check is unavailable right now.",
+          "Recent status is still available.",
+          "The live refresh is reconnecting in the background.",
         );
         setDot("hsl(var(--primary))");
         set("status", "Unverified");
-        set("database", "Unknown");
-        set("gateway", "Unknown");
         return;
       }
       setHeadline(
@@ -159,7 +184,7 @@ function init() {
       fetchedAt = 0;
     } finally {
       window.clearTimeout(timeout);
-      if (!stopped) stampChecked();
+      if (!stopped) stampChecked(refreshFailed ? "Refresh attempted" : "Last checked");
     }
   };
 

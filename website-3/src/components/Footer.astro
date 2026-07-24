@@ -27,21 +27,22 @@
     </nav>
   </div>
 </footer>
-<script>
-  const link = document.querySelector<HTMLElement>("[data-heartbeat]");
-  const text = document.querySelector<HTMLElement>("[data-heartbeat-text]");
+<script is:inline>
+  const link = document.querySelector("[data-heartbeat]");
+  const text = document.querySelector("[data-heartbeat-text]");
   const loadHeartbeat = async () => {
     if (!link || !text) return;
 
     try {
-      const { getLiveStats } = await import("../lib/api/liveStats");
+      const getLiveStats = window.__ngGetLiveStats;
+      if (typeof getLiveStats !== "function") return;
       const s = await getLiveStats();
       text.textContent = `Bot online · v${s.version} · ${s.guilds} servers`;
       link.hidden = false;
     } catch {}
   };
 
-  const footer = document.querySelector<HTMLElement>("[data-site-footer]");
+  const footer = document.querySelector("[data-site-footer]");
   if (footer && "IntersectionObserver" in window) {
     const observer = new IntersectionObserver(
       (entries) => {

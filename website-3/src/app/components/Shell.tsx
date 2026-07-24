@@ -13,7 +13,13 @@ export default function Shell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-4 sm:gap-6">
             <a href="/" className="flex items-center gap-2.5" aria-label="NovaGuard home">
-              <img src="/favicon.png" alt="" width="28" height="28" className="h-7 w-7" />
+              <img
+                src="/assets/novaguard-icon-96.png"
+                alt=""
+                width="28"
+                height="28"
+                className="h-7 w-7"
+              />
               <span className="font-display whitespace-nowrap text-base font-semibold tracking-tight sm:text-lg">NovaGuard</span>
             </a>
             <Link

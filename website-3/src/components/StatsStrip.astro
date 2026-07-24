@@ -37,12 +37,12 @@
     Live numbers appear when the bot is online.
   </p>
 </section>
-<script>
+<script is:inline>
   function init() {
-    const dl = document.querySelector<HTMLElement>("[data-stats]");
-    const fb = document.querySelector<HTMLElement>("[data-stats-fallback]");
-    const fmt = (n: number) => new Intl.NumberFormat("en").format(Math.round(n));
-    const dur = (s: number) =>
+    const dl = document.querySelector("[data-stats]");
+    const fb = document.querySelector("[data-stats-fallback]");
+    const fmt = (n) => new Intl.NumberFormat("en").format(Math.round(n));
+    const dur = (s) =>
       s >= 86400
         ? `${Math.floor(s / 86400)}d`
         : s >= 3600
@@ -53,11 +53,10 @@
       if (!dl || !fb) return;
 
       try {
-        // Keep this non-critical bundle off the first paint. The section itself
-        // is already visible and useful with its small fallback message.
-        const { getLiveStats } = await import("../lib/api/liveStats");
+        const getLiveStats = window.__ngGetLiveStats;
+        if (typeof getLiveStats !== "function") return;
         const s = await getLiveStats();
-        const target = (k: string) => dl.querySelector(`[data-stat="${k}"]`);
+        const target = (k) => dl.querySelector(`[data-stat="${k}"]`);
         const gEl = target("guilds");
         const mEl = target("members");
         const cEl = target("commands");
@@ -71,7 +70,7 @@
       } catch {}
     };
 
-    const section = document.querySelector<HTMLElement>("[data-stats-section]");
+    const section = document.querySelector("[data-stats-section]");
     if (section && "IntersectionObserver" in window) {
       const observer = new IntersectionObserver(
         (entries) => {
