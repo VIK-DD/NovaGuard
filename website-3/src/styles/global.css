@@ -228,9 +228,9 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
    every dashboard navigation and could read as lag on lower-powered devices. */
 #app main { animation: none; }
 
-/* The public hero is static HTML. Drift is enabled only for precise-pointer
-   desktops, so phones never spend a frame budget on decorative animation. */
-.hero-visual { contain: layout paint; }
+/* The public hero is static HTML. Its rotated cards deliberately overhang a
+   few pixels, so paint containment would visibly clip their corners. */
+.hero-visual { contain: layout; }
 @media (hover: hover) and (pointer: fine) {
   .hero-float-a { animation: ng-hero-drift-a 7s ease-in-out 1s infinite; }
   .hero-float-b { animation: ng-hero-drift-b 6s ease-in-out 0.7s infinite; }
