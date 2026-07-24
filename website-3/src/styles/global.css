@@ -176,6 +176,17 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 }
 .ng-icon-button > * { position: relative; }
 
+/* Primary actions need instant acknowledgement. This is deliberately scoped to
+   command buttons instead of every link, so normal reading/navigation stays still. */
+.ng-pressable {
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ng-pressable:active { transform: scale(0.98); }
+}
+
 /* Dashboard selects: swap the OS-native arrow for a crafted chevron so all
    pickers read as one designed system instead of raw form controls. */
 #app select {

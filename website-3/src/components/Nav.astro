@@ -21,7 +21,7 @@ const links = [
         links.map((l) => (
           <a
             href={l.href}
-            class="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:inline"
+            class="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:inline-flex sm:h-10 sm:items-center"
           >
             {l.label}
           </a>
@@ -30,7 +30,7 @@ const links = [
       <a
         href="/dashboard"
         data-invite
-        class="inline-flex min-h-11 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3 py-1.5 text-[13px] font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:px-4 sm:text-sm"
+        class="ng-pressable inline-flex h-11 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3 py-1.5 text-[13px] font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:h-10 sm:px-3.5 sm:text-sm"
       >
         Add to Discord
       </a>
@@ -40,7 +40,7 @@ const links = [
         aria-label="Open menu"
         aria-expanded="false"
         aria-controls="nav-mobile"
-        class="grid h-11 w-11 place-items-center rounded-[6px] border border-line text-ink transition-colors hover:border-line-strong sm:hidden"
+        class="ng-pressable grid h-11 w-11 place-items-center rounded-[6px] border border-line text-ink transition-colors hover:border-line-strong sm:hidden"
       >
         <span class="icon-menu"><Icon name="menu" size={18} /></span>
         <span class="icon-close hidden"><Icon name="x" size={18} /></span>
@@ -55,7 +55,7 @@ const links = [
         <a
           href="/dashboard"
           data-invite
-          class="mb-1 flex min-h-11 items-center rounded-[6px] bg-primary px-3 text-sm font-medium text-primary-ink"
+          class="ng-pressable mb-1 hidden min-h-11 items-center rounded-[6px] bg-primary px-3 text-sm font-medium text-primary-ink max-[359px]:flex"
         >
           Add to Discord
         </a>
