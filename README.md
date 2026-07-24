@@ -227,7 +227,7 @@ The bot stores server config in `data/novaguard.sqlite3`, while keeping optional
 | Category | Highlights |
 | --- | --- |
 | Setup | `/setup`, `/config view`, `/config export`, `/config backup`, `/config reset` |
-| Voice reports | `/voice set`, `/voice status`, `/voice off` |
+| Voice reports | `/voice set`, `/voice status`, `/voice test`, `/voice off` |
 | System | `/ping`, `/uptime`, `/status`, `/botinfo`, `/doctor`, `/help`, `/latest`, `/updates`, `/forceupdate` |
 | Developer | `/github`, `/repo`, `/dev`, `/health`, `/commits`, `/release`, `/ghwatch` |
 | Utility | `/userinfo`, `/serverinfo`, `/avatar`, `/roleinfo`, `/poll`, `/remind`, `/reminders`, `/timestamp`, `/choose`, `/color` |

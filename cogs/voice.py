@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import io
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import discord
 from discord import app_commands
@@ -428,6 +428,54 @@ class VoiceReports(commands.Cog):
         embed = make_embed("Voice report status", description, color=color)
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
+
+    @voice.command(name="test", description="Send a preview voice session report to the configured channel")
+    async def voice_test(self, interaction: discord.Interaction):
+        report_channel = await self._report_channel(interaction.guild)
+        if report_channel is None:
+            embed = make_embed(
+                "Voice reports are not configured",
+                "Choose a channel first with `/voice set`.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        ended_at = now_utc()
+        started_at = ended_at - timedelta(hours=1, minutes=27, seconds=18)
+        session = new_session(0, "Voice report preview", started_at)
+        record_member_join(session, interaction.user.id, interaction.user.display_name, started_at)
+        record_member_leave(session, interaction.user.id, ended_at)
+
+        class PreviewVoiceChannel:
+            id = 0
+            name = "Voice report preview"
+            mention = "Voice report preview"
+
+        embed, _ = build_report_embed(session, PreviewVoiceChannel(), ended_at)
+        embed.title = "Voice session preview"
+        try:
+            await asyncio.wait_for(
+                report_channel.send(content=f"Test requested by {interaction.user.mention}", embed=embed),
+                timeout=8,
+            )
+        except (discord.HTTPException, asyncio.TimeoutError) as error:
+            print(f"Voice session test report skipped for #{report_channel.id}: {error!r}")
+            failure = make_embed(
+                "Could not send the test report",
+                "Check that I can view the channel, send messages and embed links there.",
+                color=Palette.DANGER,
+            )
+            brand_footer(failure, "Voice session reports")
+            return await respond(interaction, failure, ephemeral=True)
+
+        confirmation = make_embed(
+            "Test report sent",
+            f"A preview was posted in {report_channel.mention}. It does not affect voice tracking.",
+            color=Palette.SUCCESS,
+        )
+        brand_footer(confirmation, "Voice session reports")
+        await respond(interaction, confirmation, ephemeral=True)
 
 
 async def setup(bot):

@@ -121,7 +121,7 @@ backups/          automatic/manual backup archives — auto-created
 Admin: `/levels backfill preview` estimates historical XP, `/levels backfill run confirm:true` rebuilds the current XP totals after a backup.
 
 ### 🎙️ Voice Reports
-`/voice set` chooses the report channel, `/voice status` shows the setup and `/voice off` disables it.
+`/voice set` chooses the report channel, `/voice status` shows the setup, `/voice test` posts a safe preview and `/voice off` disables it.
 When the last human leaves a voice room, NovaGuard posts one colored report after sessions lasting at least one hour. It includes the start/end times, total duration, unique participants, peak concurrent members and each member's accumulated time across rejoins.
 
 ### 👋 Welcome
