@@ -91,7 +91,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(0, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 220 : 460,
+              duration: reduce ? 260 : 620,
               easing: wipeEasing,
               fill: "both",
             },
@@ -111,7 +111,7 @@ import Icon from "./Icon.astro";
               },
             ];
         exitAnimation = outgoing?.animate(exitFrames, {
-          duration: reduce ? 110 : 200,
+          duration: reduce ? 130 : 250,
           easing: "cubic-bezier(0.4, 0, 0.6, 1)",
           fill: "forwards",
         });
@@ -131,7 +131,7 @@ import Icon from "./Icon.astro";
           );
         }
         setTheme(light);
-        await paintDwell(reduce ? 0 : 90);
+        await paintDwell(reduce ? 0 : 120);
 
         if (curtain) {
           curtainOut = curtain.animate(
@@ -140,7 +140,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 240 : 520,
+              duration: reduce ? 280 : 700,
               easing: wipeEasing,
               fill: "both",
             },
@@ -157,7 +157,7 @@ import Icon from "./Icon.astro";
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
             ];
         enterAnimation = incoming?.animate(enterFrames, {
-          duration: reduce ? 160 : 340,
+          duration: reduce ? 190 : 440,
           easing: "cubic-bezier(0.16, 1, 0.3, 1)",
           fill: "both",
         });
