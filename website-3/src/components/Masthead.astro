@@ -10,13 +10,13 @@ import Icon from "./Icon.astro";
     <button
       type="button"
       data-theme-toggle
-      aria-label="Toggle dark mode"
-      class="ng-pressable flex min-h-11 items-center gap-1.5 transition-colors hover:text-ink"
+      aria-label="Switch to light mode"
+      class="ng-pressable flex min-h-11 w-28 items-center justify-end gap-1.5 transition-colors hover:text-ink"
     >
-      <span data-theme-day-label class="flex items-center gap-1.5">
+      <span data-theme-day-label class="flex shrink-0 items-center gap-1.5">
         <Icon name="sun" size={13} /> Day edition
       </span>
-      <span data-theme-night-label class="hidden items-center gap-1.5">
+      <span data-theme-night-label class="hidden shrink-0 items-center gap-1.5">
         <Icon name="moon" size={13} /> Night edition
       </span>
     </button>
@@ -45,24 +45,68 @@ import Icon from "./Icon.astro";
       document
         .querySelector('meta[name="theme-color"]')
         ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
+      document.querySelectorAll<HTMLElement>("[data-theme-toggle]").forEach((button) => {
+        button.setAttribute("aria-label", light ? "Switch to dark mode" : "Switch to light mode");
+      });
     };
 
     const transitionTheme = async (light: boolean, button: HTMLElement) => {
       themeTransitioning = true;
+      button.setAttribute("aria-busy", "true");
       try {
-        const feedback = button.animate(
-          [
-            { opacity: 0.72, transform: "scale(0.97)" },
-            { opacity: 1, transform: "scale(1)" },
-          ],
-          {
-            duration: reduce ? 140 : 180,
-            easing: "cubic-bezier(0.2, 0, 0, 1)",
-          },
+        const outgoing = button.querySelector<HTMLElement>(
+          light ? "[data-theme-day-label]" : "[data-theme-night-label]",
         );
-        await feedback.finished;
+        const exitFrames = reduce
+          ? [{ opacity: 1 }, { opacity: 0 }]
+          : [
+              { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
+              {
+                opacity: 0,
+                transform: "translate3d(0, -5px, 0) scale(0.94) rotate(-5deg)",
+              },
+            ];
+        const exitAnimation = outgoing?.animate(exitFrames, {
+          duration: reduce ? 90 : 120,
+          easing: "cubic-bezier(0.4, 0, 1, 1)",
+          fill: "forwards",
+        });
+        await exitAnimation?.finished.catch(() => {});
+        exitAnimation?.cancel();
+
+        const incoming = button.querySelector<HTMLElement>(
+          light ? "[data-theme-night-label]" : "[data-theme-day-label]",
+        );
+        incoming?.style.setProperty("opacity", "0");
+        if (!reduce) {
+          incoming?.style.setProperty(
+            "transform",
+            "translate3d(0, 6px, 0) scale(0.92) rotate(6deg)",
+          );
+        }
         setTheme(light);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+        const enterFrames = reduce
+          ? [{ opacity: 0 }, { opacity: 1 }]
+          : [
+              {
+                opacity: 0,
+                transform: "translate3d(0, 6px, 0) scale(0.92) rotate(6deg)",
+              },
+              { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
+            ];
+        const enterAnimation = incoming?.animate(enterFrames, {
+          duration: reduce ? 120 : 210,
+          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+          fill: "both",
+        });
+        await enterAnimation?.finished.catch(() => {});
+        enterAnimation?.cancel();
+        incoming?.style.removeProperty("opacity");
+        incoming?.style.removeProperty("transform");
       } finally {
+        button.removeAttribute("aria-busy");
         themeTransitioning = false;
       }
     };
@@ -70,6 +114,10 @@ import Icon from "./Icon.astro";
     // Keep the feedback on the source control. Full-page transitions expose the
     // theme repaint as dropped frames on high-density MacBook displays.
     document.querySelectorAll<HTMLElement>("[data-theme-toggle]").forEach((btn) => {
+      btn.setAttribute(
+        "aria-label",
+        root.dataset.theme === "light" ? "Switch to dark mode" : "Switch to light mode",
+      );
       btn.addEventListener("click", () => {
         if (themeTransitioning) return;
         const light = root.dataset.theme !== "light";
