@@ -192,6 +192,7 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 [data-perf-section] {
   content-visibility: visible;
   contain-intrinsic-size: none;
+  contain: layout paint;
 }
 
 @media (max-width: 640px) {
@@ -222,9 +223,9 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 #app main { animation: none; }
 
 /* Keep the hero mockups axis-aligned so their text and hairline borders remain
-   pixel-sharp. A small hover lift gives desktop visitors feedback without a
-   perpetual transform layer that can soften rasterized text. */
-.hero-visual { contain: layout; }
+   pixel-sharp. Paint containment keeps their shadows from expanding scroll
+   repaints across the rest of the document. */
+.hero-visual { contain: layout paint; }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .hero-float-a,
   .hero-float-b {
