@@ -41,6 +41,7 @@ import Icon from "./Icon.astro";
     const root = document.documentElement;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const curtain = document.querySelector<HTMLElement>("[data-theme-curtain]");
+    const wipeEasing = "cubic-bezier(0.65, 0, 0.35, 1)";
     let themeTransitioning = false;
 
     const setTheme = (light: boolean) => {
@@ -72,8 +73,8 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(0, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 180 : 250,
-              easing: "cubic-bezier(0.76, 0, 0.24, 1)",
+              duration: reduce ? 180 : 310,
+              easing: wipeEasing,
               fill: "both",
             },
           );
@@ -92,7 +93,7 @@ import Icon from "./Icon.astro";
               },
             ];
         exitAnimation = outgoing?.animate(exitFrames, {
-          duration: reduce ? 90 : 120,
+          duration: reduce ? 90 : 150,
           easing: "cubic-bezier(0.4, 0, 1, 1)",
           fill: "forwards",
         });
@@ -121,8 +122,8 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 190 : 260,
-              easing: "cubic-bezier(0.76, 0, 0.24, 1)",
+              duration: reduce ? 190 : 350,
+              easing: wipeEasing,
               fill: "both",
             },
           );
@@ -138,7 +139,7 @@ import Icon from "./Icon.astro";
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
             ];
         enterAnimation = incoming?.animate(enterFrames, {
-          duration: reduce ? 120 : 210,
+          duration: reduce ? 120 : 250,
           easing: "cubic-bezier(0.16, 1, 0.3, 1)",
           fill: "both",
         });
