@@ -65,6 +65,9 @@ import Icon from "./Icon.astro";
       let curtainOut: Animation | undefined;
       try {
         if (curtain) {
+          // Promote to its own layer only for the duration of the wipe, then
+          // release it in the finally block — no permanent full-screen layer.
+          curtain.style.setProperty("will-change", "transform");
           curtain.style.setProperty("--curtain-background", light ? "#fbfbfe" : "#0a0a0c");
           curtain.style.setProperty("--curtain-accent", light ? "#d4660c" : "#f37f2c");
           curtainIn = curtain.animate(
@@ -157,6 +160,7 @@ import Icon from "./Icon.astro";
         if (curtain) {
           curtain.style.removeProperty("--curtain-background");
           curtain.style.removeProperty("--curtain-accent");
+          curtain.style.removeProperty("will-change");
         }
         button.removeAttribute("aria-busy");
         themeTransitioning = false;
@@ -193,7 +197,6 @@ import Icon from "./Icon.astro";
     transform: translate3d(101%, 0, 0);
     backface-visibility: hidden;
     contain: strict;
-    will-change: transform;
   }
 
   .theme-curtain-edge {

@@ -94,7 +94,6 @@ canvas {
 [data-theme-night-label] { display: none; }
 :root[data-theme="light"] [data-theme-day-label] { display: none; }
 :root[data-theme="light"] [data-theme-night-label] { display: flex; }
-[data-theme-toggle] { will-change: transform, opacity; }
 
 /* Premium thin scrollbars */
 * {
