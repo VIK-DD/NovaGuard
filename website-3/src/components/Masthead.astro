@@ -41,7 +41,9 @@ import Icon from "./Icon.astro";
     const root = document.documentElement;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const curtain = document.querySelector<HTMLElement>("[data-theme-curtain]");
-    const wipeEasing = "cubic-bezier(0.65, 0, 0.35, 1)";
+    // Symmetric ease-in-out: the wipe accelerates and settles gently so it
+    // reads as one deliberate sweep rather than snapping into place.
+    const wipeEasing = "cubic-bezier(0.4, 0, 0.2, 1)";
     let themeTransitioning = false;
 
     const setTheme = (light: boolean) => {
@@ -55,9 +57,22 @@ import Icon from "./Icon.astro";
       });
     };
 
+    // Resolve once the browser has committed a fresh paint. Two frames guarantee
+    // the style recalc is on screen; the extra dwell gives low-powered GPUs room
+    // to finish the full-page theme repaint while the curtain still hides it, so
+    // the reveal is never a half-painted flash. Zero cost under reduced-motion.
+    const paintDwell = (ms: number) =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => (ms > 0 ? setTimeout(resolve, ms) : resolve())),
+        ),
+      );
+
     const transitionTheme = async (light: boolean, button: HTMLElement) => {
       themeTransitioning = true;
       button.setAttribute("aria-busy", "true");
+      // Keep the pointer/hand cursor visible across the whole sweep (global.css).
+      root.setAttribute("data-theme-switching", "");
       let incoming: HTMLElement | null = null;
       let exitAnimation: Animation | undefined;
       let enterAnimation: Animation | undefined;
@@ -76,7 +91,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(0, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 180 : 310,
+              duration: reduce ? 220 : 460,
               easing: wipeEasing,
               fill: "both",
             },
@@ -92,12 +107,12 @@ import Icon from "./Icon.astro";
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
               {
                 opacity: 0,
-                transform: "translate3d(0, -5px, 0) scale(0.94) rotate(-5deg)",
+                transform: "translate3d(0, -4px, 0) scale(0.96) rotate(-3deg)",
               },
             ];
         exitAnimation = outgoing?.animate(exitFrames, {
-          duration: reduce ? 90 : 150,
-          easing: "cubic-bezier(0.4, 0, 1, 1)",
+          duration: reduce ? 110 : 200,
+          easing: "cubic-bezier(0.4, 0, 0.6, 1)",
           fill: "forwards",
         });
         await Promise.all([
@@ -112,11 +127,11 @@ import Icon from "./Icon.astro";
         if (!reduce) {
           incoming?.style.setProperty(
             "transform",
-            "translate3d(0, 6px, 0) scale(0.92) rotate(6deg)",
+            "translate3d(0, 4px, 0) scale(0.94) rotate(3deg)",
           );
         }
         setTheme(light);
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await paintDwell(reduce ? 0 : 90);
 
         if (curtain) {
           curtainOut = curtain.animate(
@@ -125,7 +140,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 190 : 350,
+              duration: reduce ? 240 : 520,
               easing: wipeEasing,
               fill: "both",
             },
@@ -137,12 +152,12 @@ import Icon from "./Icon.astro";
           : [
               {
                 opacity: 0,
-                transform: "translate3d(0, 6px, 0) scale(0.92) rotate(6deg)",
+                transform: "translate3d(0, 4px, 0) scale(0.94) rotate(3deg)",
               },
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
             ];
         enterAnimation = incoming?.animate(enterFrames, {
-          duration: reduce ? 120 : 250,
+          duration: reduce ? 160 : 340,
           easing: "cubic-bezier(0.16, 1, 0.3, 1)",
           fill: "both",
         });
@@ -163,6 +178,7 @@ import Icon from "./Icon.astro";
           curtain.style.removeProperty("will-change");
         }
         button.removeAttribute("aria-busy");
+        root.removeAttribute("data-theme-switching");
         themeTransitioning = false;
       }
     };

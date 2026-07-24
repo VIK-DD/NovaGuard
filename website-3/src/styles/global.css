@@ -136,6 +136,9 @@ button:not(:disabled), label[for], summary, [role="switch"], [role="button"] {
   cursor: pointer;
 }
 button:disabled, [role="switch"][aria-disabled="true"] { cursor: not-allowed; }
+/* While the theme wipe is running, keep the hand cursor across the whole sweep
+   (`cursor` inherits, so this cascades under the full-screen curtain overlay). */
+:root[data-theme-switching] { cursor: pointer; }
 select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 
 /* Controls opt into an ergonomic hit area instead of making every nested
