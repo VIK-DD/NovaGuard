@@ -74,21 +74,29 @@
       } catch {}
     };
 
+    const scheduleStats = () => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(() => void loadStats(), { timeout: 900 });
+      } else {
+        window.setTimeout(() => void loadStats(), 0);
+      }
+    };
+
     const section = document.querySelector("[data-stats-section]");
     if (section && "IntersectionObserver" in window) {
       const observer = new IntersectionObserver(
         (entries) => {
           if (!entries[0]?.isIntersecting) return;
           observer.disconnect();
-          loadStats();
+          scheduleStats();
         },
-        { rootMargin: "600px 0px" },
+        { rootMargin: "200px 0px" },
       );
       observer.observe(section);
       return;
     }
 
-    loadStats();
+    scheduleStats();
   }
 
   init();

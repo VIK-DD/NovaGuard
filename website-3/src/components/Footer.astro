@@ -43,17 +43,24 @@
   };
 
   const footer = document.querySelector("[data-site-footer]");
+  const scheduleHeartbeat = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(() => void loadHeartbeat(), { timeout: 1200 });
+    } else {
+      window.setTimeout(() => void loadHeartbeat(), 0);
+    }
+  };
   if (footer && "IntersectionObserver" in window) {
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting) return;
         observer.disconnect();
-        loadHeartbeat();
+        scheduleHeartbeat();
       },
-      { rootMargin: "600px 0px" },
+      { rootMargin: "200px 0px" },
     );
     observer.observe(footer);
   } else {
-    loadHeartbeat();
+    scheduleHeartbeat();
   }
 </script>
