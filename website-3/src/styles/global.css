@@ -221,26 +221,17 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
    every dashboard navigation and could read as lag on lower-powered devices. */
 #app main { animation: none; }
 
-/* The public hero is static HTML. Its rotated cards deliberately overhang a
-   few pixels, so paint containment would visibly clip their corners. */
+/* Keep the hero mockups axis-aligned so their text and hairline borders remain
+   pixel-sharp. A small hover lift gives desktop visitors feedback without a
+   perpetual transform layer that can soften rasterized text. */
 .hero-visual { contain: layout; }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .hero-float-a {
-    will-change: transform;
-    animation: ng-hero-drift-a 7s ease-in-out 1s infinite;
-  }
+  .hero-float-a,
   .hero-float-b {
-    will-change: transform;
-    animation: ng-hero-drift-b 6s ease-in-out 0.7s infinite;
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-}
-@keyframes ng-hero-drift-a {
-  0%, 100% { transform: rotate(-6deg) translate3d(0, 0, 0); }
-  50% { transform: rotate(-6deg) translate3d(0, -7px, 0); }
-}
-@keyframes ng-hero-drift-b {
-  0%, 100% { transform: rotate(2deg) translate3d(0, 0, 0); }
-  50% { transform: rotate(2deg) translate3d(0, -9px, 0); }
+  .hero-float-a:hover { transform: translate3d(0, -4px, 0); }
+  .hero-float-b:hover { transform: translate3d(0, -4px, 0); }
 }
 
 /* ── Dashboard boot screen: branded placeholder shown until React mounts. ── */

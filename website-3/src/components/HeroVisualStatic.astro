@@ -4,7 +4,7 @@
   aria-label="NovaGuard dashboard and Discord message preview"
 >
   <div
-    class="hero-window hero-window-dashboard hero-float-a absolute top-4 left-3 w-[84%] -rotate-6 rounded-[14px] border bg-card p-3.5 sm:top-5 sm:left-4 sm:w-[286px] sm:p-4"
+    class="hero-window hero-window-dashboard hero-float-a absolute top-4 left-3 w-[84%] rounded-[14px] border bg-card p-3.5 sm:top-5 sm:left-4 sm:w-[286px] sm:p-4"
   >
     <div class="hero-window-bar flex items-center justify-between border-b pb-2.5">
       <span class="flex items-center gap-1.5" aria-hidden="true">
@@ -32,7 +32,7 @@
   </div>
 
   <div
-    class="hero-window hero-window-discord hero-float-b absolute right-3 bottom-4 w-[90%] rotate-2 rounded-[14px] border p-3.5 sm:right-4 sm:bottom-7 sm:w-[298px] sm:p-4"
+    class="hero-window hero-window-discord hero-float-b absolute right-3 bottom-4 w-[90%] rounded-[14px] border p-3.5 sm:right-4 sm:bottom-7 sm:w-[298px] sm:p-4"
   >
     <div class="flex items-center gap-2.5">
       <div class="hero-discord-avatar grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary font-display text-xs font-bold text-primary-ink">
@@ -61,7 +61,8 @@
 <style>
   .hero-window {
     -webkit-font-smoothing: antialiased;
-    backface-visibility: hidden;
+    font-synthesis: none;
+    text-rendering: geometricPrecision;
     box-shadow:
       0 24px 48px hsl(20 20% 2% / 0.1),
       0 2px 5px hsl(20 20% 2% / 0.06),
