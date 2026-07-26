@@ -71,8 +71,10 @@ html {
      full kerning/ligature path for every text run, which costs layout time on
      low-powered phones and PCs while changing nothing visible in Latin UI copy.
      Browsers already apply standard kerning under the default `auto`. */
+  /* No `scroll-behavior: smooth`: the site has no in-page anchors to animate,
+     so its only effect was to hijack keyboard and space-bar scrolling into a
+     slow tween that reads as lag. Wheel and trackpad stay native either way. */
   -webkit-font-smoothing: antialiased;
-  scroll-behavior: smooth;
 }
 
 body {
@@ -198,6 +200,13 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   contain: layout paint;
 }
 
+/* Tried and rejected: gating `content-visibility: auto` on `[data-low-power]`
+   so weak devices skip off-screen sections. Measured on /home it inflated the
+   document from 2401px to 2852px, because unrendered sections fall back to
+   their intrinsic-size estimate — the scrollbar then resizes as you scroll,
+   which is worse jank than the paint it saves. The page is short enough that
+   eager painting wins on every device. */
+
 @media (max-width: 640px) {
   /* A phone is an interaction-first surface. Avoid decorative work while scrolling. */
   [data-reveal], [data-reveal-item], [data-hero-item] {
@@ -267,7 +276,6 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
   [data-reveal], [data-reveal-item], [data-hero-item] { opacity: 1 !important; transform: none !important; }
   .hero-float-a, .hero-float-b, .ng-boot-mark, .ng-boot-bar::after {
     animation: none !important;

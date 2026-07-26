@@ -53,6 +53,15 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
         document
           .querySelector('meta[name="theme-color"]')
           ?.setAttribute("content", light ? "#fbfbfe" : "#0a0a0c");
+
+        // One shared read of the device budget, taken before first paint so CSS
+        // can gate on it (see `[data-low-power]` in global.css) and the theme
+        // wipe can pick its timings without repeating the heuristic.
+        const cores = navigator.hardwareConcurrency;
+        const memory = navigator.deviceMemory;
+        if ((cores > 0 && cores <= 4) || (memory !== undefined && memory <= 4)) {
+          root.dataset.lowPower = "";
+        }
       })();
     </script>
     <script is:inline>

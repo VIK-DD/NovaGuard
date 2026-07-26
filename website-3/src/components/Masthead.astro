@@ -40,16 +40,15 @@ import Icon from "./Icon.astro";
     const KEY = "ng-theme";
     const root = document.documentElement;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const device = navigator as Navigator & { deviceMemory?: number };
-    const lowPower =
-      !reduce &&
-      ((device.hardwareConcurrency > 0 && device.hardwareConcurrency <= 4) ||
-        (device.deviceMemory !== undefined && device.deviceMemory <= 4));
+    // Base.astro takes one reading of the device budget before first paint;
+    // reuse that flag rather than repeating the heuristic here.
+    const lowPower = !reduce && root.hasAttribute("data-low-power");
     const simpleMotion = reduce || lowPower;
     const curtain = document.querySelector<HTMLElement>("[data-theme-curtain]");
-    // Symmetric ease-in-out: the wipe accelerates and settles gently so it
-    // reads as one deliberate sweep rather than snapping into place.
-    const wipeEasing = "cubic-bezier(0.4, 0, 0.2, 1)";
+    // Weighted towards deceleration: the sweep leaves briskly and spends most
+    // of its time gliding to a stop. Over a long wipe that reads smoother than
+    // a symmetric curve, which appears to hang at mid-screen.
+    const wipeEasing = "cubic-bezier(0.4, 0, 0.15, 1)";
     let themeTransitioning = false;
 
     const setTheme = (light: boolean) => {
@@ -97,7 +96,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(0, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 260 : lowPower ? 680 : 620,
+              duration: reduce ? 260 : lowPower ? 820 : 760,
               easing: wipeEasing,
               fill: "both",
             },
@@ -117,7 +116,7 @@ import Icon from "./Icon.astro";
               },
             ];
         exitAnimation = outgoing?.animate(exitFrames, {
-          duration: reduce ? 130 : lowPower ? 180 : 250,
+          duration: reduce ? 130 : lowPower ? 200 : 280,
           easing: "cubic-bezier(0.4, 0, 0.6, 1)",
           fill: "forwards",
         });
@@ -137,7 +136,7 @@ import Icon from "./Icon.astro";
           );
         }
         setTheme(light);
-        await paintDwell(reduce ? 0 : 120);
+        await paintDwell(reduce ? 0 : 140);
 
         if (curtain) {
           curtainOut = curtain.animate(
@@ -146,7 +145,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 280 : lowPower ? 760 : 700,
+              duration: reduce ? 280 : lowPower ? 920 : 860,
               easing: wipeEasing,
               fill: "both",
             },
@@ -163,7 +162,7 @@ import Icon from "./Icon.astro";
               { opacity: 1, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
             ];
         enterAnimation = incoming?.animate(enterFrames, {
-          duration: reduce ? 190 : lowPower ? 300 : 440,
+          duration: reduce ? 190 : lowPower ? 340 : 500,
           easing: "cubic-bezier(0.16, 1, 0.3, 1)",
           fill: "both",
         });
