@@ -1,0 +1,86 @@
+import { describe, expect, it } from "vitest";
+import {
+  RELEASES_PER_PAGE,
+  dedupeByCreatedAt,
+  diffSplit,
+  formatReleaseDate,
+  newerThan,
+  sortNewestFirst,
+  type Release,
+} from "./updates";
+
+const older: Release = { build: 1, created_at: "2026-06-28T10:00:00+00:00", changes: ["First"] };
+const newer: Release = { build: 2, created_at: "2026-07-01T10:00:00+00:00", changes: ["Second"] };
+const newest: Release = { build: 3, created_at: "2026-07-20T10:00:00+00:00", changes: ["Third"] };
+
+describe("sortNewestFirst", () => {
+  it("puts the most recent release first", () => {
+    expect(sortNewestFirst([older, newest, newer]).map((r) => r.build)).toEqual([3, 2, 1]);
+  });
+
+  it("does not mutate its input", () => {
+    const input = [older, newest];
+    sortNewestFirst(input);
+    expect(input.map((r) => r.build)).toEqual([1, 3]);
+  });
+});
+
+describe("dedupeByCreatedAt", () => {
+  it("keeps the first entry for a repeated timestamp", () => {
+    const duplicate: Release = { build: 99, created_at: older.created_at, changes: ["Dup"] };
+    const result = dedupeByCreatedAt([older, duplicate, newer]);
+    expect(result.map((r) => r.build)).toEqual([1, 2]);
+  });
+});
+
+describe("newerThan", () => {
+  it("keeps only entries newer than the cutoff", () => {
+    expect(newerThan([newest, newer, older], newer.created_at).map((r) => r.build)).toEqual([3]);
+  });
+
+  it("returns nothing when every entry is at or below the cutoff", () => {
+    expect(newerThan([older, newer], newest.created_at)).toEqual([]);
+  });
+
+  it("returns nothing for an unparsable cutoff", () => {
+    expect(newerThan([newest], "not-a-date")).toEqual([]);
+  });
+
+  it("returns its results newest first", () => {
+    expect(newerThan([newer, newest], older.created_at).map((r) => r.build)).toEqual([3, 2]);
+  });
+});
+
+describe("diffSplit", () => {
+  it("splits the bar proportionally", () => {
+    expect(diffSplit({ build: 1, created_at: "x", added_lines: 75, removed_lines: 25 })).toEqual({
+      added: 75,
+      removed: 25,
+      addedPercent: 75,
+    });
+  });
+
+  it("reports zero width when a release has no diff stats", () => {
+    expect(diffSplit({ build: 1, created_at: "x" })).toEqual({
+      added: 0,
+      removed: 0,
+      addedPercent: 0,
+    });
+  });
+});
+
+describe("formatReleaseDate", () => {
+  it("renders a readable date", () => {
+    expect(formatReleaseDate("2026-07-24T01:28:56+00:00")).toBe("24 July 2026");
+  });
+
+  it("passes through an unparsable value", () => {
+    expect(formatReleaseDate("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("page size", () => {
+  it("is six", () => {
+    expect(RELEASES_PER_PAGE).toBe(6);
+  });
+});
