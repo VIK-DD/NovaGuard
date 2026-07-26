@@ -94,7 +94,10 @@ check("plain bullet untouched", parse_bullets("• Internal engine improvements"
 
 entry = parse_deploy_embed(FULL_EMBED, "2026-07-24T01:28:56+00:00", 99)
 check("full embed parsed", entry is not None)
-check("build read from embed not fallback", entry["build"] == 16)
+# The embed says `#16`, but the engine's counter restarted whenever its state was
+# reset, so those numbers repeat across the archive. Chronological position is the
+# only monotonic identifier, so it always wins.
+check("chronological position wins over the embed's own number", entry["build"] == 99)
 check("version read", entry["version"] == "3.0.0")
 check("codename read", entry["codename"] == "Nova")
 check(

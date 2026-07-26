@@ -41,7 +41,6 @@ STAT_PATTERNS = {
 LEADING_EMOJI = re.compile(
     r"^(?:[\U0001F000-\U0001FAFF☀-➿⬀-⯿️‍]+\s*)+"
 )
-BUILD_PATTERN = re.compile(r"#(\d+)")
 VERSION_PATTERN = re.compile(r"v(\d+\.\d+\.\d+)")
 CODENAME_PATTERN = re.compile(r'"([^"]+)"')
 
@@ -89,9 +88,11 @@ def parse_deploy_embed(embed, created_at, fallback_build):
                 if match:
                     entry[stat_key] = int(match.group(1))
         elif key == "build":
-            build_match = BUILD_PATTERN.search(value)
-            if build_match:
-                entry["build"] = int(build_match.group(1))
+            # The embed's own `#n` is deliberately ignored. The engine's counter
+            # restarted every time .update_state.json was reset, so those numbers
+            # repeat across the archive — #5 appears five times, #6 four times —
+            # and a timeline that runs 1..6 then back to 1 reads as broken. The
+            # caller's chronological position is the only monotonic identifier.
             version_match = VERSION_PATTERN.search(value)
             if version_match:
                 entry["version"] = version_match.group(1)

@@ -116,4 +116,14 @@ def merged_update_feed(limit=DEFAULT_LIMIT, archive=None, history=None, latest=N
         feed.append(normalized)
 
     feed.sort(key=lambda entry: _timestamp(entry.get("created_at")) or 0, reverse=True)
+
+    # Number every release by its chronological position, oldest = 1. The engine's
+    # own counter restarted whenever its state file was reset, so its numbers
+    # repeat and would run backwards against the archive. Renumbering here keeps a
+    # single monotonic sequence across both sources, matching the positions the
+    # archive file already carries, so the statically rendered page and the live
+    # tail agree. It happens before the limit is applied, so `?limit=` never
+    # changes the number a release is known by.
+    total = len(feed)
+    feed = [dict(entry, build=total - index) for index, entry in enumerate(feed)]
     return feed[:limit]

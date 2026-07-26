@@ -51,7 +51,10 @@ tailed = merged_update_feed(
     limit=50, archive=ARCHIVE, history=[near_duplicate, tail], latest=None
 )
 check("engine entry at or below the archive cutoff dropped", len(tailed) == 3)
-check("only the tail beyond the archive is admitted", tailed[0]["build"] == 4)
+check("only the tail beyond the archive is admitted", tailed[0]["changes"] == ["Tail"])
+# Renumbered by chronological position, so the newest of three is #3 — not the 4
+# the engine happened to call it.
+check("newest of three is numbered 3", tailed[0]["build"] == 3)
 check(
     "no near-duplicate of an archived release survives",
     sum(1 for e in tailed if e.get("changes") == ["Second"] or e.get("highlights") == ["Second"])
@@ -86,7 +89,10 @@ with_latest = merged_update_feed(
     history=[],
     latest={"build": 9, "created_at": "2026-07-25T10:00:00+00:00", "summary": ["Latest"]},
 )
-check("latest included when history is empty", [entry["build"] for entry in with_latest] == [9])
+check("latest included when history is empty", len(with_latest) == 1)
+check("latest carries its content", with_latest[0]["changes"] == ["Latest"])
+# The engine called it #9; as the only release in the feed it is #1.
+check("a lone release is numbered 1", with_latest[0]["build"] == 1)
 
 check("entry without created_at rejected", normalize_engine_entry({"summary": ["x"]}) is None)
 check(
