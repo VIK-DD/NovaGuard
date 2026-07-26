@@ -163,7 +163,7 @@ async function handleStatusSnapshot(request, env, ctx) {
       { stats, health, fetched_at: Date.now() },
       {
         headers: {
-          "Cache-Control": "public, max-age=5, stale-while-revalidate=25",
+          "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
           "X-Content-Type-Options": "nosniff",
         },
       },

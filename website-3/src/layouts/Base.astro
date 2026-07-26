@@ -58,7 +58,8 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
     <script is:inline>
       // Public stats and the status page share one small, edge-cached snapshot.
       // The promise also prevents duplicate requests from StatsStrip and Footer.
-      window.__ngGetStatusSnapshot = () => {
+      window.__ngGetStatusSnapshot = (refresh = false) => {
+        if (refresh) window.__ngStatusRequest = null;
         if (!window.__ngStatusRequest) {
           const options = {
             headers: { Accept: "application/json" },

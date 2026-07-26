@@ -60,7 +60,7 @@ describe("password session", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe(
-      "public, max-age=5, stale-while-revalidate=25",
+      "public, max-age=30, stale-while-revalidate=120",
     );
     expect(snapshot.stats.uptime_seconds).toBe(120);
     expect(snapshot.health.db_ok).toBe(true);

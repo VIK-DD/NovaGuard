@@ -1,7 +1,11 @@
 ---
 ---
 
-<section data-perf-section data-stats-section class="mx-auto max-w-6xl px-5 sm:px-6">
+<section
+  data-perf-section
+  data-stats-section
+  class="mx-auto min-h-[160px] max-w-6xl px-5 sm:min-h-[110px] sm:px-6"
+>
   <dl
     data-stats
     data-reveal-group
@@ -70,21 +74,29 @@
       } catch {}
     };
 
+    const scheduleStats = () => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(() => void loadStats(), { timeout: 900 });
+      } else {
+        window.setTimeout(() => void loadStats(), 0);
+      }
+    };
+
     const section = document.querySelector("[data-stats-section]");
     if (section && "IntersectionObserver" in window) {
       const observer = new IntersectionObserver(
         (entries) => {
           if (!entries[0]?.isIntersecting) return;
           observer.disconnect();
-          loadStats();
+          scheduleStats();
         },
-        { rootMargin: "120px 0px" },
+        { rootMargin: "200px 0px" },
       );
       observer.observe(section);
       return;
     }
 
-    loadStats();
+    scheduleStats();
   }
 
   init();
