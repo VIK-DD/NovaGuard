@@ -1,0 +1,427 @@
+[
+  {
+    "build": 1,
+    "created_at": "2026-06-28T01:16:00.295000+00:00",
+    "highlights": [
+      "Added commands: `!github`, `!ping`",
+      "Refreshed rotating streaming statuses"
+    ]
+  },
+  {
+    "build": 2,
+    "created_at": "2026-06-28T01:18:04.741000+00:00",
+    "highlights": [
+      "Refreshed rotating streaming statuses"
+    ]
+  },
+  {
+    "build": 3,
+    "created_at": "2026-06-28T14:26:45.402000+00:00",
+    "highlights": [
+      "Initial tracked release for this bot"
+    ]
+  },
+  {
+    "build": 4,
+    "created_at": "2026-06-28T15:00:06.061000+00:00",
+    "highlights": [
+      "Added commands: `!forceupdate`, `!updates`",
+      "Updated command behavior: `!latest`",
+      "Updated project files: `SETUP.md`"
+    ]
+  },
+  {
+    "build": 5,
+    "created_at": "2026-06-30T15:22:23.989000+00:00",
+    "highlights": [
+      "General internal improvements and cleanup"
+    ]
+  },
+  {
+    "build": 6,
+    "created_at": "2026-06-30T15:25:57.975000+00:00",
+    "highlights": [
+      "General internal improvements and cleanup"
+    ]
+  },
+  {
+    "build": 1,
+    "created_at": "2026-07-03T15:28:51.578000+00:00",
+    "added_lines": 5055,
+    "removed_lines": 0,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "Initial tracked release for v3.0.0 \"Nova\"",
+      "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/badword add`, `/badword list`, `/badword remove`, `/balance`, `/ban`, `/botinfo`, `/buy`, `/choose`, `/coinflip`, `/color`, `/commits` +52 more",
+      "Streaming status rotation is active",
+      "GitHub system is connected to `VIK-DD/ProjectHub`"
+    ]
+  },
+  {
+    "build": 1,
+    "created_at": "2026-07-03T16:42:41.106000+00:00",
+    "added_lines": 5055,
+    "removed_lines": 0,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "Initial tracked release for v3.0.0 \"Nova\"",
+      "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/badword add`, `/badword list`, `/badword remove`, `/balance`, `/ban`, `/botinfo`, `/buy`, `/choose`, `/coinflip`, `/color`, `/commits` +52 more",
+      "Streaming status rotation is active",
+      "GitHub system is connected to `VIK-DD/ProjectHub`"
+    ]
+  },
+  {
+    "build": 2,
+    "created_at": "2026-07-03T17:17:25.681000+00:00",
+    "added_lines": 25,
+    "removed_lines": 7,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "Updated command behavior: `/botinfo`"
+    ]
+  },
+  {
+    "build": 3,
+    "created_at": "2026-07-03T17:21:52.676000+00:00",
+    "added_lines": 20,
+    "removed_lines": 11,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "Internal engine improvements: `cogs/developer.py`, `core/github_api.py`"
+    ]
+  },
+  {
+    "build": 4,
+    "created_at": "2026-07-03T17:33:41.273000+00:00",
+    "added_lines": 29,
+    "removed_lines": 5,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "Updated command behavior: `/forceupdate`, `/help`, `/latest`, `/updates`, `/uptime`"
+    ]
+  },
+  {
+    "build": 5,
+    "created_at": "2026-07-03T21:12:27.523000+00:00",
+    "added_lines": 568,
+    "removed_lines": 56,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "Added commands: `/doctor`, `/status`",
+      "Updated command behavior: `/forceupdate`",
+      "Updated project files: `SETUP.md`"
+    ]
+  },
+  {
+    "build": 5,
+    "created_at": "2026-07-05T01:26:28.678000+00:00",
+    "added_lines": 6692,
+    "removed_lines": 1500,
+    "changed_files": 29,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🗄️ SQLite now powers server config, XP levels and economy wallets",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "📜 Update embeds now produce cleaner professional release notes"
+    ],
+    "changes": [
+      "Added commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/balance`, `/ban` +56 more",
+      "Updated command behavior: `/dev`, `/forceupdate`, `/ghwatch`, `/github`, `/health`, `/latest`, `/ping`, `/repo`, `/updates`",
+      "Refreshed rotating streaming statuses",
+      "Updated project files: `SETUP.md`"
+    ]
+  },
+  {
+    "build": 6,
+    "created_at": "2026-07-06T00:38:12.071000+00:00",
+    "added_lines": 280,
+    "removed_lines": 99,
+    "changed_files": 9,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "📜 Update embeds now produce cleaner professional release notes",
+      "🐙 GitHub/update feeds now respect per-server setup channels"
+    ],
+    "changes": [
+      "Updated command behavior: `/giveaway end`, `/giveaway reroll`, `/giveaway start`, `/remind`, `/reminders`"
+    ]
+  },
+  {
+    "build": 7,
+    "created_at": "2026-07-06T01:07:58.494000+00:00",
+    "added_lines": 432,
+    "removed_lines": 75,
+    "changed_files": 4,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "📜 Update embeds now produce cleaner professional release notes",
+      "🐙 GitHub/update feeds now respect per-server setup channels"
+    ],
+    "changes": [
+      "🛠️ Added global maintenance mode with DND presence and graceful command blocking",
+      "Added commands: `/maintenance`",
+      "Updated command behavior: `/doctor`, `/status`"
+    ]
+  },
+  {
+    "build": 5,
+    "created_at": "2026-07-08T15:12:00.935000+00:00",
+    "added_lines": 7262,
+    "removed_lines": 1495,
+    "changed_files": 31,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🗄️ SQLite now powers server config, XP levels and economy wallets",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "📜 Update embeds now produce cleaner professional release notes"
+    ],
+    "changes": [
+      "🛠️ Added global maintenance mode with DND presence and graceful command blocking",
+      "Added commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/balance`, `/ban` +57 more",
+      "Updated command behavior: `/dev`, `/forceupdate`, `/ghwatch`, `/github`, `/health`, `/latest`, `/ping`, `/repo`, `/updates`",
+      "Refreshed rotating streaming statuses",
+      "Updated project files: `.env.example`, `SETUP.md`"
+    ]
+  },
+  {
+    "build": 6,
+    "created_at": "2026-07-10T01:32:58.887000+00:00",
+    "added_lines": 80,
+    "removed_lines": 37,
+    "changed_files": 4,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "🐙 GitHub/update feeds now respect per-server setup channels"
+    ],
+    "changes": [
+      "Updated command behavior: `/slots`"
+    ]
+  },
+  {
+    "build": 7,
+    "created_at": "2026-07-10T01:51:10.721000+00:00",
+    "added_lines": 62,
+    "removed_lines": 10,
+    "changed_files": 1,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "changes": [
+      "Internal engine improvements: `core/github_api.py`"
+    ]
+  },
+  {
+    "build": 8,
+    "created_at": "2026-07-10T02:11:53.869000+00:00",
+    "added_lines": 54,
+    "removed_lines": 8,
+    "changed_files": 1,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🐙 GitHub/update feeds now respect per-server setup channels"
+    ],
+    "changes": [
+      "Internal engine improvements: `cogs/developer.py`"
+    ]
+  },
+  {
+    "build": 5,
+    "created_at": "2026-07-18T18:40:13.502000+00:00",
+    "added_lines": 8547,
+    "removed_lines": 1496,
+    "changed_files": 32,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🗄️ SQLite now powers server config, XP levels and economy wallets",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "📜 Update embeds now produce cleaner professional release notes"
+    ],
+    "changes": [
+      "🛠️ Added global maintenance mode with DND presence and graceful command blocking",
+      "Added commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/balance`, `/ban` +57 more",
+      "Updated command behavior: `/dev`, `/forceupdate`, `/ghwatch`, `/github`, `/health`, `/latest`, `/ping`, `/repo`, `/updates`",
+      "Refreshed rotating streaming statuses",
+      "Updated project files: `.env.example`, `SETUP.md`"
+    ]
+  },
+  {
+    "build": 6,
+    "created_at": "2026-07-20T01:09:07.070000+00:00",
+    "added_lines": 55,
+    "removed_lines": 10,
+    "changed_files": 3,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts"
+    ],
+    "changes": [
+      "Added commands: `/resync`"
+    ]
+  },
+  {
+    "build": 9,
+    "created_at": "2026-07-20T01:30:35.410000+00:00",
+    "added_lines": 1086,
+    "removed_lines": 12,
+    "changed_files": 4,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts"
+    ],
+    "changes": [
+      "Added commands: `/resync`"
+    ]
+  },
+  {
+    "build": 10,
+    "created_at": "2026-07-20T13:37:26.774000+00:00",
+    "added_lines": 141,
+    "removed_lines": 23,
+    "changed_files": 10,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🗄️ SQLite now powers server config, XP levels and economy wallets",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "📜 Update embeds now produce cleaner professional release notes",
+      "🐙 GitHub/update feeds now respect per-server setup channels"
+    ],
+    "changes": [
+      "Updated command behavior: `/ask`",
+      "Updated project files: `.env.example`"
+    ]
+  },
+  {
+    "build": 11,
+    "created_at": "2026-07-23T01:15:44.591000+00:00",
+    "added_lines": 61,
+    "removed_lines": 11,
+    "changed_files": 1,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🏆 Levels and economy migrate safely from JSON into SQLite"
+    ],
+    "changes": [
+      "Updated command behavior: `/rank`"
+    ]
+  },
+  {
+    "build": 12,
+    "created_at": "2026-07-23T01:32:40.644000+00:00",
+    "added_lines": 300,
+    "removed_lines": 1,
+    "changed_files": 1,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🏆 Levels and economy migrate safely from JSON into SQLite"
+    ],
+    "changes": [
+      "Added commands: `/levels backfill preview`, `/levels backfill run`"
+    ]
+  },
+  {
+    "build": 13,
+    "created_at": "2026-07-23T01:38:23.533000+00:00",
+    "added_lines": 30,
+    "removed_lines": 6,
+    "changed_files": 1,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts"
+    ],
+    "changes": [
+      "Updated command behavior: `/resync`"
+    ]
+  },
+  {
+    "build": 14,
+    "created_at": "2026-07-24T01:16:54.765000+00:00",
+    "added_lines": 707,
+    "removed_lines": 140,
+    "changed_files": 13,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "🏆 Levels and economy migrate safely from JSON into SQLite"
+    ],
+    "changes": [
+      "Added commands: `/voice off`, `/voice set`, `/voice status`, `/voice test`",
+      "Updated command behavior: `/doctor`, `/giveaway start`, `/levels backfill preview`, `/levels backfill run`, `/poll`, `/rank`, `/rolepanel`",
+      "Updated project files: `.env.example`, `SETUP.md`"
+    ]
+  },
+  {
+    "build": 15,
+    "created_at": "2026-07-24T01:22:28.988000+00:00",
+    "added_lines": 53,
+    "removed_lines": 35,
+    "changed_files": 9,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "highlights": [
+      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "🧳 Automatic backups added with manual `/config backup` support",
+      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
+      "🏆 Levels and economy migrate safely from JSON into SQLite",
+      "🐙 GitHub/update feeds now respect per-server setup channels"
+    ],
+    "changes": [
+      "Updated command behavior: `/ask`, `/botinfo`, `/commits`, `/config backup`, `/config export`, `/config reset`, `/config view`, `/dev`, `/doctor`, `/forceupdate`, `/github`, `/giveaway end` +16 more"
+    ]
+  },
+  {
+    "build": 16,
+    "created_at": "2026-07-24T01:28:56.158000+00:00",
+    "added_lines": 48,
+    "removed_lines": 8,
+    "changed_files": 1,
+    "version": "3.0.0",
+    "codename": "Nova",
+    "changes": [
+      "Internal engine improvements: `cogs/voice.py`"
+    ]
+  }
+]

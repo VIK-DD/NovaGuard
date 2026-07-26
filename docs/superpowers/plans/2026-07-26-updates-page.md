@@ -4,7 +4,7 @@
 
 **Goal:** Ship a paginated public `/updates` page seeded from the 29 "Bot Update Deployed" posts in Discord, which then stays current on its own through a new public bot endpoint proxied by the Worker.
 
-**Architecture:** A one-time script parses the Discord archive into `data/updates_archive.json`. A new `core/update_feed.py` merges that frozen archive with the changelog engine's live history and serves it from `GET /api/v1/updates` — `core/updates.py` is never touched. The Worker proxies and edge-caches that at `/api/updates-feed`. The site commits its own copy of the archive and renders paginated static routes, then a small script on page one prepends anything newer.
+**Architecture:** A one-time script parses the Discord archive into `core/updates_archive.json`. A new `core/update_feed.py` merges that frozen archive with the changelog engine's live history and serves it from `GET /api/v1/updates` — `core/updates.py` is never touched. The Worker proxies and edge-caches that at `/api/updates-feed`. The site commits its own copy of the archive and renders paginated static routes, then a small script on page one prepends anything newer.
 
 **Tech Stack:** Python 3.11 + aiohttp (bot), Astro 5 + Tailwind 4 (site), Cloudflare Workers (edge), vitest (JS tests), plain-script asserts (Python tests).
 
@@ -19,6 +19,8 @@
 - Pages must render complete HTML with JavaScript disabled.
 - Bot tests are plain scripts run with `python tests/<file>.py`; there is no pytest in this repo.
 - Bot API base for the Worker comes from `env.STATUS_API_BASE`, falling back to `DEFAULT_STATUS_API_BASE`.
+- **All work happens in the worktree** `/Users/breabinvictor/Desktop/pythonbot/.claude/worktrees/mhc-movie-discovery-ui-797715` on branch `claude/website-audit-optimization-03e65e`. The main checkout is on `main` and must not be implemented against. Where a step shows the repo root, read it as the worktree root.
+- The archive builder needs `TOKEN` and `UPDATE_CHANNEL_ID`. `.env` exists only in the main checkout, so export the two values into the environment before running the script; never echo them.
 
 ## File Structure
 
@@ -29,7 +31,7 @@
 - Create `tests/test_update_feed.py` — merge, dedupe, limit tests.
 - Modify `core/webserver.py` — one handler + one route row.
 - Modify `docs/API.md` — document the endpoint.
-- Generated: `data/updates_archive.json`.
+- Generated: `core/updates_archive.json`.
 
 **Website (`website-3/`)**
 - Create `src/data/updates.ts` — `Release` type, `RELEASES_PER_PAGE`, sort/dedupe/merge/diff helpers. No rendering.
@@ -187,7 +189,7 @@ Create an empty `scripts/__init__.py`, then create `scripts/backfill_updates.py`
 """Build the frozen updates archive from the Discord #updates channel.
 
 Run once. Reads every "Bot Update Deployed" embed, parses it into the feed entry
-shape, and writes data/updates_archive.json oldest-first. Restart notices and
+shape, and writes core/updates_archive.json oldest-first. Restart notices and
 timeline recaps are ignored. Read-only against Discord; never prints the token.
 """
 
@@ -200,7 +202,9 @@ import urllib.request
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-ARCHIVE_PATH = BASE_DIR / "data" / "updates_archive.json"
+# `data/` is gitignored — it holds the live SQLite database — so the archive lives
+# beside the module that reads it and ships with an ordinary pull.
+ARCHIVE_PATH = BASE_DIR / "core" / "updates_archive.json"
 DISCORD_API = "https://discord.com/api/v10"
 # Discord's edge answers 403 to the default urllib agent before the API sees the
 # token, so identify the client the way its docs require.
@@ -371,7 +375,7 @@ Expected: PASS — final line `24/24 passed`
 - [ ] **Step 5: Generate the archive**
 
 Run: `cd /Users/breabinvictor/Desktop/pythonbot && python scripts/backfill_updates.py`
-Expected: `wrote 29 releases to data/updates_archive.json`
+Expected: `wrote 29 releases to core/updates_archive.json`
 
 If the count is not 29, stop and report it rather than adjusting the parser to force the number.
 
@@ -381,7 +385,7 @@ Run:
 ```bash
 cd /Users/breabinvictor/Desktop/pythonbot && python -c "
 import json
-entries = json.load(open('data/updates_archive.json'))
+entries = json.load(open('core/updates_archive.json'))
 print('entries:', len(entries))
 print('builds ascending:', [e['build'] for e in entries] == sorted(e['build'] for e in entries))
 print('all have created_at:', all(e.get('created_at') for e in entries))
@@ -394,7 +398,7 @@ Expected: `entries: 29`, then `True` on the other three lines.
 
 ```bash
 cd /Users/breabinvictor/Desktop/pythonbot
-git add scripts/__init__.py scripts/backfill_updates.py tests/test_backfill_updates.py data/updates_archive.json
+git add scripts/__init__.py scripts/backfill_updates.py tests/test_backfill_updates.py core/updates_archive.json
 git commit -m "feat(updates): build the frozen release archive from Discord"
 ```
 
@@ -415,7 +419,7 @@ git commit -m "feat(updates): build the frozen release archive from Discord"
 
 ```bash
 cd /Users/breabinvictor/Desktop/pythonbot
-cp data/updates_archive.json .claude/worktrees/mhc-movie-discovery-ui-797715/website-3/src/data/updates-archive.json
+cp core/updates_archive.json .claude/worktrees/mhc-movie-discovery-ui-797715/website-3/src/data/updates-archive.json
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -1003,7 +1007,7 @@ from datetime import datetime
 from .config import BASE_DIR
 from .storage import load_json_file
 
-ARCHIVE_FILE = BASE_DIR / "data" / "updates_archive.json"
+ARCHIVE_FILE = BASE_DIR / "core" / "updates_archive.json"
 STAT_KEYS = ("added_lines", "removed_lines", "changed_files")
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
