@@ -1,27 +1,24 @@
 ---
 ---
 
-<section data-perf-section class="mx-auto max-w-6xl px-5 py-14 sm:px-6 sm:py-20">
-  <div data-reveal class="grid items-center gap-8 sm:grid-cols-[1fr_auto]">
-    <h2 class="font-display text-3xl leading-tight font-semibold text-balance sm:text-4xl">
+<!-- The closing moment of the page. It is deliberately centred where every
+     other section is left-aligned: the reading column ends here, so the last
+     thing on the page reads as an invitation rather than another row of copy.
+     The mono eyebrow keeps it inside the same structural language as the
+     "What it does" section instead of arriving as a stray centred block. -->
+<section data-perf-section class="mx-auto max-w-6xl px-5 py-20 sm:px-6 sm:py-28">
+  <div data-reveal class="mx-auto flex max-w-2xl flex-col items-center text-center">
+    <p class="font-mono text-xs tracking-[0.14em] text-primary uppercase">Get started</p>
+    <h2 class="mt-4 font-display text-3xl leading-tight font-semibold text-balance sm:text-4xl">
       Give your community its <span class="text-primary">guardian</span>.
     </h2>
-    <div class="flex flex-col items-stretch gap-2 sm:relative sm:items-end">
-      <a
-        href="/dashboard"
-        data-invite
-        class="ng-pressable flex min-h-11 items-center justify-center rounded-[6px] bg-primary px-6 py-3 font-medium text-primary-ink transition-colors hover:bg-primary/90"
-      >
-        Add to Discord
-      </a>
-      <!-- From `sm` up the caption hangs below the button instead of sitting in
-           the flex flow, so the column is exactly as tall as the button and the
-           grid's `items-center` lines the button up with the heading. -->
-      <p
-        class="text-xs text-ink-faint sm:absolute sm:top-full sm:right-0 sm:mt-2 sm:whitespace-nowrap"
-      >
-        Free · Open source · Yours to host
-      </p>
-    </div>
+    <a
+      href="/dashboard"
+      data-invite
+      class="ng-pressable mt-8 flex min-h-11 w-full items-center justify-center rounded-[6px] bg-primary px-8 py-3.5 font-medium text-primary-ink transition-colors hover:bg-primary/90 sm:w-auto"
+    >
+      Add to Discord
+    </a>
+    <p class="mt-3 text-xs text-ink-faint">Free · Open source · Yours to host</p>
   </div>
 </section>
