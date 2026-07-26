@@ -49,6 +49,30 @@ Reads `#updates` over the Discord REST API, keeps messages whose embed title
 matches "Bot Update Deployed", and parses each into the history entry shape.
 Writes `data/updates_archive.json`, sorted oldest-first.
 
+The embeds are already structured, so parsing reads real fields rather than
+guessing at prose. A representative post:
+
+```
+title:  "🚀 Bot Update Deployed"
+field   "🧭 Command & Project Changes" -> "• Internal engine improvements: `cogs/voice.py`"
+field   "📊 Code Stats"                -> "```diff\n+ 48 lines added\n- 8 lines removed\n~ 1 tracked files changed\n```"
+field   "🏗️ Build"                     -> "`#16` • v3.0.0 \"Nova\""
+```
+
+- The emoji live in **field names only**; bullet text is already plain, prefixed
+  with `• `. Dropping the emoji therefore needs no text rewriting — the parser
+  simply does not carry field names through.
+- Field names drift across the archive and both spellings must be accepted:
+  `✨ Release Highlights` (15) / `✨ What Changed` (6) / `What Changed` (6),
+  `🧭 Command & Project Changes` (17), `📊 Code Stats` (23) / `Code Stats` (6),
+  `🏗️ Build` (23).
+- The Build field yields the release's own `#16` marker plus version and
+  codename (`v3.0.0 "Nova"`), so build numbers are read, not invented.
+- Code Stats yields `added_lines`, `removed_lines` and `changed_files` from the
+  diff block.
+- Bullets are grouped by which field they came from, giving each release up to
+  two typed groups: highlights and changes.
+
 - Requests must send a `User-Agent` header; Discord's edge answers 403 to the
   default urllib agent before the API ever sees the token.
 - Parsing is best-effort per message: fields that cannot be read (for example a
@@ -69,11 +93,16 @@ without a sync problem. Regenerating it is a deliberate act, not a routine one.
 Public, unauthenticated, same tier as `/stats`.
 
 ```json
-{ "updates": [ { "build": 29, "created_at": "2026-07-24T01:28:56Z",
-                 "summary": ["..."], "added_lines": 55, "removed_lines": 10,
-                 "changed_files": 3 } ],
+{ "updates": [ { "build": 16, "version": "3.0.0", "codename": "Nova",
+                 "created_at": "2026-07-24T01:28:56Z",
+                 "highlights": ["..."], "changes": ["..."],
+                 "added_lines": 48, "removed_lines": 8, "changed_files": 1 } ],
   "count": 29 }
 ```
+
+`version` and `codename` are optional — older posts predate the Build field, and
+entries coming straight from the live engine carry no codename. `highlights` and
+`changes` are each optional but at least one is always present.
 
 - Source: `data/updates_archive.json` merged with the engine's live `history`
   and `latest`, deduplicated by `created_at`, sorted newest-first.
@@ -102,19 +131,37 @@ Layout, in the existing editorial language rather than a card grid:
 - Mono eyebrow and display heading, matching the other sections.
 - One row per release, separated by hairline rules — a rule inside a list carries
   meaning, which is why these stay while the decorative page rules were removed.
-- Build number as a mono marker on the left. Unlike the arbitrary `01 / 02` of a
-  feature list, this is a real sequence.
-- Date, then the summary bullets (they already carry their own emoji).
-- Signature element: each release's real diff figures (`+55 / −10`, 3 files) with
-  a thin bar split green/red in proportion. Real data, not ornament.
+- The release's own `#16` marker as a mono figure on the left, with version and
+  codename beside it. Unlike the arbitrary `01 / 02` of a feature list this is a
+  real identifier, and it is the same one the bot prints in Discord.
+- Date, then the bullets, grouped under mono labels — `HIGHLIGHTS` and `CHANGES`
+  — taken from the embed's own sections. No emoji anywhere on the page.
+- Signature element: each release's real diff figures (`+48 / −8`, 1 file) with a
+  thin bar split green/red in proportion. Real data, not ornament.
 - Linked from the nav and the footer.
+
+**Pagination.** Real routes, not a client-side slice: `/updates` is page one and
+`/updates/2`, `/updates/3` follow, generated with Astro's `paginate()` so every
+page is complete HTML with its own URL that search engines and a JavaScript-less
+browser can both read. Ten releases per page puts today's 29 across three pages
+and grows cleanly. The control is a numbered row — `1 2 3` with previous/next,
+current page marked — sized for touch on mobile.
+
+The live merge runs only on page one and only prepends entries newer than the
+newest baked-in release, so it can never duplicate an entry that already sits on
+page two. Page one may briefly run a little long between deploys; the next site
+build rebalances it.
 
 ## Error handling
 
 - Bot offline: the Worker serves its cached copy; failing that, the page still
   renders the baked-in archive. The page never shows an error state for this.
-- Malformed upstream payload: the merge step validates that each entry has a
-  parsable `created_at` and a non-empty `summary`, and ignores the rest.
+- Two entry shapes meet in the merge: archived posts carry `highlights` and
+  `changes`, while the live engine's history carries a single `summary` list.
+  The endpoint normalises the engine's `summary` into `changes` so the page only
+  ever handles one shape.
+- Malformed upstream payload: the merge step requires a parsable `created_at` and
+  at least one non-empty bullet list, and ignores entries that have neither.
 - Empty archive: the page renders its heading and a single line explaining that
   releases will appear here, rather than an empty timeline.
 
@@ -131,7 +178,7 @@ Layout, in the existing editorial language rather than a card grid:
 ## Out of scope
 
 - Restart notices and timeline recaps.
-- Per-release permalinks, filtering, search, pagination, RSS.
+- Per-release permalinks, filtering, search, RSS.
 - Any change to how the changelog engine detects or announces updates.
 
 ## Deployment
