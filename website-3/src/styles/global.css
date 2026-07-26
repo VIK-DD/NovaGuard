@@ -67,8 +67,11 @@ html {
   font-family: var(--font-sans);
   max-width: 100%;
   overflow-x: clip;
+  /* `text-rendering: optimizeLegibility` is deliberately not set: it forces the
+     full kerning/ligature path for every text run, which costs layout time on
+     low-powered phones and PCs while changing nothing visible in Latin UI copy.
+     Browsers already apply standard kerning under the default `auto`. */
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
 }
 

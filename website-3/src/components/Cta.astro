@@ -6,7 +6,7 @@
     <h2 class="font-display text-3xl leading-tight font-semibold text-balance sm:text-4xl">
       Give your community its <span class="text-primary">guardian</span>.
     </h2>
-    <div class="flex flex-col items-stretch gap-2 sm:items-end">
+    <div class="flex flex-col items-stretch gap-2 sm:relative sm:items-end">
       <a
         href="/dashboard"
         data-invite
@@ -14,7 +14,14 @@
       >
         Add to Discord
       </a>
-      <p class="text-xs text-ink-faint">Free · Open source · Yours to host</p>
+      <!-- From `sm` up the caption hangs below the button instead of sitting in
+           the flex flow, so the column is exactly as tall as the button and the
+           grid's `items-center` lines the button up with the heading. -->
+      <p
+        class="text-xs text-ink-faint sm:absolute sm:top-full sm:right-0 sm:mt-2 sm:whitespace-nowrap"
+      >
+        Free · Open source · Yours to host
+      </p>
     </div>
   </div>
 </section>
