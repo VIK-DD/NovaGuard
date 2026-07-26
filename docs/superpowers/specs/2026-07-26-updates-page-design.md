@@ -143,9 +143,10 @@ Layout, in the existing editorial language rather than a card grid:
 **Pagination.** Real routes, not a client-side slice: `/updates` is page one and
 `/updates/2`, `/updates/3` follow, generated with Astro's `paginate()` so every
 page is complete HTML with its own URL that search engines and a JavaScript-less
-browser can both read. Ten releases per page puts today's 29 across three pages
-and grows cleanly. The control is a numbered row — `1 2 3` with previous/next,
-current page marked — sized for touch on mobile.
+browser can both read. Six releases per page puts today's 29 across five pages
+(6/6/6/6/5) and grows cleanly; five per page would strand a four-item last page.
+The control is a numbered row — `1 2 3 4 5` with previous/next, current page
+marked — sized for touch on mobile.
 
 The live merge runs only on page one and only prepends entries newer than the
 newest baked-in release, so it can never duplicate an entry that already sits on
