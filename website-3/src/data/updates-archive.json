@@ -127,12 +127,12 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🗄️ SQLite now powers server config, XP levels and economy wallets",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "📜 Update embeds now produce cleaner professional release notes"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "SQLite now powers server config, XP levels and economy wallets",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Levels and economy migrate safely from JSON into SQLite",
+      "Update embeds now produce cleaner professional release notes"
     ],
     "changes": [
       "Added commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/balance`, `/ban` +56 more",
@@ -150,12 +150,12 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "📜 Update embeds now produce cleaner professional release notes",
-      "🐙 GitHub/update feeds now respect per-server setup channels"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Levels and economy migrate safely from JSON into SQLite",
+      "Update embeds now produce cleaner professional release notes",
+      "GitHub/update feeds now respect per-server setup channels"
     ],
     "changes": [
       "Updated command behavior: `/giveaway end`, `/giveaway reroll`, `/giveaway start`, `/remind`, `/reminders`"
@@ -170,13 +170,13 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "📜 Update embeds now produce cleaner professional release notes",
-      "🐙 GitHub/update feeds now respect per-server setup channels"
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Update embeds now produce cleaner professional release notes",
+      "GitHub/update feeds now respect per-server setup channels"
     ],
     "changes": [
-      "🛠️ Added global maintenance mode with DND presence and graceful command blocking",
+      "Added global maintenance mode with DND presence and graceful command blocking",
       "Added commands: `/maintenance`",
       "Updated command behavior: `/doctor`, `/status`"
     ]
@@ -190,15 +190,15 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🗄️ SQLite now powers server config, XP levels and economy wallets",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "📜 Update embeds now produce cleaner professional release notes"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "SQLite now powers server config, XP levels and economy wallets",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Levels and economy migrate safely from JSON into SQLite",
+      "Update embeds now produce cleaner professional release notes"
     ],
     "changes": [
-      "🛠️ Added global maintenance mode with DND presence and graceful command blocking",
+      "Added global maintenance mode with DND presence and graceful command blocking",
       "Added commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/balance`, `/ban` +57 more",
       "Updated command behavior: `/dev`, `/forceupdate`, `/ghwatch`, `/github`, `/health`, `/latest`, `/ping`, `/repo`, `/updates`",
       "Refreshed rotating streaming statuses",
@@ -214,8 +214,8 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "🐙 GitHub/update feeds now respect per-server setup channels"
+      "Levels and economy migrate safely from JSON into SQLite",
+      "GitHub/update feeds now respect per-server setup channels"
     ],
     "changes": [
       "Updated command behavior: `/slots`"
@@ -242,7 +242,7 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🐙 GitHub/update feeds now respect per-server setup channels"
+      "GitHub/update feeds now respect per-server setup channels"
     ],
     "changes": [
       "Internal engine improvements: `cogs/developer.py`"
@@ -257,15 +257,15 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🗄️ SQLite now powers server config, XP levels and economy wallets",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "📜 Update embeds now produce cleaner professional release notes"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "SQLite now powers server config, XP levels and economy wallets",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Levels and economy migrate safely from JSON into SQLite",
+      "Update embeds now produce cleaner professional release notes"
     ],
     "changes": [
-      "🛠️ Added global maintenance mode with DND presence and graceful command blocking",
+      "Added global maintenance mode with DND presence and graceful command blocking",
       "Added commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/balance`, `/ban` +57 more",
       "Updated command behavior: `/dev`, `/forceupdate`, `/ghwatch`, `/github`, `/health`, `/latest`, `/ping`, `/repo`, `/updates`",
       "Refreshed rotating streaming statuses",
@@ -281,9 +281,9 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts"
     ],
     "changes": [
       "Added commands: `/resync`"
@@ -298,9 +298,9 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts"
     ],
     "changes": [
       "Added commands: `/resync`"
@@ -315,12 +315,12 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🗄️ SQLite now powers server config, XP levels and economy wallets",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "📜 Update embeds now produce cleaner professional release notes",
-      "🐙 GitHub/update feeds now respect per-server setup channels"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "SQLite now powers server config, XP levels and economy wallets",
+      "Automatic backups added with manual `/config backup` support",
+      "Levels and economy migrate safely from JSON into SQLite",
+      "Update embeds now produce cleaner professional release notes",
+      "GitHub/update feeds now respect per-server setup channels"
     ],
     "changes": [
       "Updated command behavior: `/ask`",
@@ -336,7 +336,7 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🏆 Levels and economy migrate safely from JSON into SQLite"
+      "Levels and economy migrate safely from JSON into SQLite"
     ],
     "changes": [
       "Updated command behavior: `/rank`"
@@ -351,7 +351,7 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🏆 Levels and economy migrate safely from JSON into SQLite"
+      "Levels and economy migrate safely from JSON into SQLite"
     ],
     "changes": [
       "Added commands: `/levels backfill preview`, `/levels backfill run`"
@@ -366,8 +366,8 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts"
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts"
     ],
     "changes": [
       "Updated command behavior: `/resync`"
@@ -382,10 +382,10 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "🏆 Levels and economy migrate safely from JSON into SQLite"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Levels and economy migrate safely from JSON into SQLite"
     ],
     "changes": [
       "Added commands: `/voice off`, `/voice set`, `/voice status`, `/voice test`",
@@ -402,11 +402,11 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "🧳 Automatic backups added with manual `/config backup` support",
-      "🩺 Health monitoring now tracks event-loop lag and sends admin alerts",
-      "🏆 Levels and economy migrate safely from JSON into SQLite",
-      "🐙 GitHub/update feeds now respect per-server setup channels"
+      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
+      "Automatic backups added with manual `/config backup` support",
+      "Health monitoring now tracks event-loop lag and sends admin alerts",
+      "Levels and economy migrate safely from JSON into SQLite",
+      "GitHub/update feeds now respect per-server setup channels"
     ],
     "changes": [
       "Updated command behavior: `/ask`, `/botinfo`, `/commits`, `/config backup`, `/config export`, `/config reset`, `/config view`, `/dev`, `/doctor`, `/forceupdate`, `/github`, `/giveaway end` +16 more"

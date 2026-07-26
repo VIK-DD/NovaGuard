@@ -1,0 +1,88 @@
+---
+import { diffSplit, formatReleaseDate, type Release } from "../data/updates";
+
+interface Props {
+  release: Release;
+  /** Position in date order, oldest = 1. Unique, unlike the bot's own build
+   * number, and stable as newer releases arrive at the top. */
+  index: number;
+  /** Only the first release of a version prints it. Every release so far is
+   * v3.0.0 "Nova", so repeating it on all 29 rows would be noise; printed at the
+   * boundary it marks where a version began. */
+  showVersion?: boolean;
+}
+
+const { release, index, showVersion = true } = Astro.props;
+const { added, removed, addedPercent } = diffSplit(release);
+const hasDiff = added > 0 || removed > 0;
+const highlights = release.highlights ?? [];
+const changes = release.changes ?? [];
+---
+
+<article class="grid gap-4 py-8 sm:grid-cols-[7rem_1fr] sm:gap-8 sm:py-10">
+  <div class="sm:text-right">
+    <p class="font-mono text-sm text-primary">#{index}</p>
+    {
+      showVersion && release.version && (
+        <p class="mt-1 font-mono text-xs text-ink-faint">
+          v{release.version}
+          {release.codename ? ` · ${release.codename}` : ""}
+        </p>
+      )
+    }
+    <p class="mt-1 text-xs text-ink-faint sm:mt-2">{formatReleaseDate(release.created_at)}</p>
+  </div>
+
+  <div class="min-w-0">
+    {
+      highlights.length > 0 && (
+        <>
+          <p class="font-mono text-[11px] tracking-[0.14em] text-ink-faint uppercase">Highlights</p>
+          <ul class="mt-2 space-y-1.5">
+            {highlights.map((item) => <li class="text-sm leading-relaxed text-ink">{item}</li>)}
+          </ul>
+        </>
+      )
+    }
+    {
+      changes.length > 0 && (
+        <>
+          <p
+            class:list={[
+              "font-mono text-[11px] tracking-[0.14em] text-ink-faint uppercase",
+              highlights.length > 0 && "mt-5",
+            ]}
+          >
+            Changes
+          </p>
+          <ul class="mt-2 space-y-1.5">
+            {changes.map((item) => <li class="text-sm leading-relaxed text-ink-muted">{item}</li>)}
+          </ul>
+        </>
+      )
+    }
+    {
+      hasDiff && (
+        <div class="mt-5 flex items-center gap-3">
+          <span class="font-mono text-xs text-good">+{added}</span>
+          <span class="font-mono text-xs text-primary">−{removed}</span>
+          {
+            release.changed_files !== undefined && (
+              <span class="font-mono text-xs text-ink-faint">
+                {release.changed_files} {release.changed_files === 1 ? "file" : "files"}
+              </span>
+            )
+          }
+          <span
+            class="ml-auto flex h-1 w-28 overflow-hidden rounded-full bg-line"
+            role="img"
+            aria-label={`${added} lines added, ${removed} lines removed`}
+          >
+            <span class="h-full bg-good" style={`width:${addedPercent}%`}></span>
+            <span class="h-full flex-1 bg-primary"></span>
+          </span>
+        </div>
+      )
+    }
+  </div>
+</article>

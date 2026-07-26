@@ -1,0 +1,84 @@
+---
+import type { Page, PaginateFunction } from "astro";
+import Base from "../../layouts/Base.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import Pager from "../../components/Pager.astro";
+import ReleaseEntry from "../../components/ReleaseEntry.astro";
+import archive from "../../data/updates-archive.json";
+import { RELEASES_PER_PAGE, sortNewestFirst, type Release } from "../../data/updates";
+
+export async function getStaticPaths({ paginate }: { paginate: PaginateFunction }) {
+  return paginate(sortNewestFirst(archive as Release[]), { pageSize: RELEASES_PER_PAGE });
+}
+
+const { page } = Astro.props as { page: Page<Release> };
+
+// The full ordered list, so version boundaries can be found across page breaks.
+const ordered = sortNewestFirst(archive as Release[]);
+
+// The list is newest-first, so the first row overall carries the highest number.
+// Counting up from the oldest keeps a release's number fixed once published.
+const releaseIndex = (offset: number) => page.total - (page.start + offset);
+
+// Print the version only where it changes. Reading downwards the newer row comes
+// first, so a release starts a version block when the row above differs.
+const startsVersionBlock = (offset: number) => {
+  const position = page.start + offset;
+  return ordered[position - 1]?.version !== ordered[position]?.version;
+};
+const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : "";
+---
+
+<Base
+  title="Updates — NovaGuard"
+  description="Every NovaGuard release, generated automatically from the deployed code."
+>
+  <Nav />
+  <main>
+    <section data-perf-section class="mx-auto max-w-6xl px-5 py-14 sm:px-6 sm:py-20">
+      <p class="font-mono text-xs tracking-[0.14em] text-primary uppercase">Updates</p>
+      <h1
+        class="mt-4 max-w-2xl font-display text-[2.1rem] leading-[1.08] font-semibold tracking-[-0.02em] text-balance sm:text-5xl"
+      >
+        Every release, written by the code itself.
+      </h1>
+      <p class="mt-5 max-w-md text-base leading-relaxed text-ink-muted">
+        NovaGuard fingerprints its own source on every start. When something changed, it writes the
+        release note below — no one edits this page by hand.
+      </p>
+
+      <div
+        class="mt-12 divide-y divide-line border-t border-line"
+        data-release-list
+        data-newest-baked={newestBaked}
+      >
+        {
+          page.data.map((release, offset) => (
+            <ReleaseEntry
+              release={release}
+              index={releaseIndex(offset)}
+              showVersion={startsVersionBlock(offset)}
+            />
+          ))
+        }
+        {
+          page.data.length === 0 && (
+            <p data-empty-note class="py-8 text-sm text-ink-muted">
+              No releases have been recorded yet. The next time NovaGuard starts with changed code,
+              its release note will appear here.
+            </p>
+          )
+        }
+      </div>
+
+      <Pager
+        current={page.currentPage}
+        total={page.lastPage}
+        prevUrl={page.url.prev}
+        nextUrl={page.url.next}
+      />
+    </section>
+  </main>
+  <Footer />
+</Base>

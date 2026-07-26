@@ -1,0 +1,68 @@
+---
+interface Props {
+  current: number;
+  total: number;
+  prevUrl?: string;
+  nextUrl?: string;
+}
+
+const { current, total, prevUrl, nextUrl } = Astro.props;
+const pageUrl = (page: number) => (page === 1 ? "/updates" : `/updates/${page}`);
+const pages = Array.from({ length: total }, (_, index) => index + 1);
+// Every control is at least 44px so the row stays usable on a phone.
+const linkBase =
+  "grid h-11 min-w-11 place-items-center rounded-[6px] px-3 font-mono text-sm transition-colors";
+---
+
+{
+  total > 1 && (
+    <nav class="flex flex-wrap items-center justify-center gap-1.5 pt-10" aria-label="Releases">
+      {
+        prevUrl ? (
+          <a
+            href={prevUrl}
+            rel="prev"
+            class:list={[linkBase, "text-ink-muted hover:bg-card hover:text-ink"]}
+          >
+            Prev
+          </a>
+        ) : (
+          <span class:list={[linkBase, "text-ink-faint"]} aria-hidden="true">
+            Prev
+          </span>
+        )
+      }
+      {
+        pages.map((page) =>
+          page === current ? (
+            <span class:list={[linkBase, "bg-primary text-primary-ink"]} aria-current="page">
+              {page}
+            </span>
+          ) : (
+            <a
+              href={pageUrl(page)}
+              class:list={[linkBase, "text-ink-muted hover:bg-card hover:text-ink"]}
+            >
+              {page}
+            </a>
+          ),
+        )
+      }
+      {
+        nextUrl ? (
+          <a
+            href={nextUrl}
+            rel="next"
+            class:list={[linkBase, "text-ink-muted hover:bg-card hover:text-ink"]}
+          >
+            Next
+          </a>
+        ) : (
+          <span class:list={[linkBase, "text-ink-faint"]} aria-hidden="true">
+            Next
+          </span>
+        )
+      }
+    </nav>
+  )
+}

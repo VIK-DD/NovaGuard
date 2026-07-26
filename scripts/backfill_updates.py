@@ -35,6 +35,12 @@ STAT_PATTERNS = {
     "removed_lines": re.compile(r"-\s*(\d+)\s*lines?\s+removed", re.I),
     "changed_files": re.compile(r"~\s*(\d+)\s*tracked\s+files?\s+changed", re.I),
 }
+# Highlight bullets are written as "• 🚀 Setup wizard upgraded …" — the marker,
+# then a category emoji. The page carries no emoji, so both are stripped and the
+# sentence stands on its own.
+LEADING_EMOJI = re.compile(
+    r"^(?:[\U0001F000-\U0001FAFF☀-➿⬀-⯿️‍]+\s*)+"
+)
 BUILD_PATTERN = re.compile(r"#(\d+)")
 VERSION_PATTERN = re.compile(r"v(\d+\.\d+\.\d+)")
 CODENAME_PATTERN = re.compile(r'"([^"]+)"')
@@ -55,6 +61,7 @@ def parse_bullets(value):
         if not line or line.startswith("```"):
             continue
         line = line.lstrip("•-* \t").strip()
+        line = LEADING_EMOJI.sub("", line).strip()
         if line:
             bullets.append(line)
     return bullets

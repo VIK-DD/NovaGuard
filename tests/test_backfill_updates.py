@@ -72,6 +72,25 @@ check("plain name unchanged", normalize_field_name("What Changed") == "what chan
 check("bullet markers stripped", parse_bullets("• One\n• Two") == ["One", "Two"])
 check("code fences dropped", parse_bullets("```diff\n+ 1 lines added\n```") == ["+ 1 lines added"])
 check("blank lines dropped", parse_bullets("• One\n\n• Two") == ["One", "Two"])
+# Highlight bullets carry a category emoji after the marker; the page has none.
+check(
+    "leading emoji stripped after the marker",
+    parse_bullets("• \U0001f680 Setup wizard upgraded") == ["Setup wizard upgraded"],
+)
+check(
+    "emoji with a variation selector stripped",
+    parse_bullets("• \U0001f5c4️ SQLite now powers server config")
+    == ["SQLite now powers server config"],
+)
+check(
+    "several leading emoji stripped",
+    parse_bullets("• \U0001f6e0️ \U0001f9f3 Backups added") == ["Backups added"],
+)
+check(
+    "emoji inside the sentence is left alone",
+    parse_bullets("• Renamed the \U0001f680 command") == ["Renamed the \U0001f680 command"],
+)
+check("plain bullet untouched", parse_bullets("• Internal engine improvements") == ["Internal engine improvements"])
 
 entry = parse_deploy_embed(FULL_EMBED, "2026-07-24T01:28:56+00:00", 99)
 check("full embed parsed", entry is not None)
