@@ -24,13 +24,18 @@ afterEach(() => {
 });
 
 describe("password session", () => {
-  it("keeps the public landing page available without a session", async () => {
-    const response = await worker.fetch(new Request("https://novaguard.fun/home/"), env);
+  it("serves the landing page to a session, and never from a shared cache", async () => {
+    const login = await worker.fetch(loginRequest(), env);
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { cookie } }),
+      env,
+    );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe(
-      "public, max-age=60, stale-while-revalidate=300",
-    );
+    // The page is behind the password now, so a `public` header could let a
+    // shared cache hand it to a visitor with no session.
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     await expect(response.text()).resolves.toBe("/home/");
   });
 
@@ -136,14 +141,29 @@ describe("password session", () => {
 });
 
 describe("updates feed", () => {
-  it("serves the updates page without a session", async () => {
+  it("asks for the password before showing the updates page", async () => {
     const response = await worker.fetch(new Request("https://novaguard.fun/updates"), env);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toContain("/login/");
   });
 
-  it("serves a deeper updates page without a session", async () => {
+  it("asks for the password on a deeper updates page too", async () => {
     const response = await worker.fetch(new Request("https://novaguard.fun/updates/3"), env);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toContain("/login/");
+  });
+
+  it("asks for the password on the landing page", async () => {
+    const response = await worker.fetch(new Request("https://novaguard.fun/home/"), env);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toContain("/login/");
+  });
+
+  it("keeps the Coming Soon face and the login page open", async () => {
+    for (const path of ["/", "/login/", "/coming-soon/"]) {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), env);
+      expect(response.status, `${path} should stay public`).toBe(200);
+    }
   });
 
   it("proxies the bot feed and marks it cacheable", async () => {

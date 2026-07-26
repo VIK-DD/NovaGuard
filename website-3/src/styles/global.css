@@ -200,6 +200,13 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   contain: layout paint;
 }
 
+/* Each release row is its own layout and paint boundary, so scrolling a long
+   timeline repaints only the rows on screen instead of re-evaluating the whole
+   list. Nothing in a row overhangs its box, so paint containment clips nothing. */
+[data-release-list] > article {
+  contain: content;
+}
+
 /* Tried and rejected: gating `content-visibility: auto` on `[data-low-power]`
    so weak devices skip off-screen sections. Measured on /home it inflated the
    document from 2401px to 2852px, because unrendered sections fall back to

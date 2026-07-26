@@ -96,7 +96,10 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(0, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 260 : lowPower ? 820 : 760,
+              // One duration for every device that animates. The old split gave
+              // desktops the shorter sweep, which is exactly why it read as rushed
+              // next to the phone.
+              duration: reduce ? 260 : 820,
               easing: wipeEasing,
               fill: "both",
             },
@@ -145,7 +148,7 @@ import Icon from "./Icon.astro";
               { transform: "translate3d(-101%, 0, 0)", opacity: 1 },
             ],
             {
-              duration: reduce ? 280 : lowPower ? 920 : 860,
+              duration: reduce ? 280 : 920,
               easing: wipeEasing,
               fill: "both",
             },

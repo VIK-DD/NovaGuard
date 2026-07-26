@@ -93,10 +93,9 @@ function isPublicPath(pathname) {
   return (
     pathname === "/" ||
     pathname === "/index.html" ||
-    pathname === "/home" ||
-    pathname.startsWith("/home/") ||
-    pathname === "/updates" ||
-    pathname.startsWith("/updates/") ||
+    // `/home` and `/updates` are deliberately NOT here: the site is not publicly
+    // launched, so every real page sits behind the password. Only the Coming Soon
+    // face at `/`, the login page, and the assets both need stay open.
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname.startsWith("/coming-soon/") ||
@@ -114,13 +113,16 @@ function isMaintenanceEnabled(env) {
 }
 
 function assetCacheControl(pathname) {
+  // These pages now sit behind the password. A `public` header on an
+  // authenticated response could be stored by a shared cache and handed to a
+  // visitor with no session, so they are never publicly cacheable.
   if (
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
     pathname === "/updates" ||
     pathname.startsWith("/updates/")
   ) {
-    return "public, max-age=60, stale-while-revalidate=300";
+    return "private, no-store";
   }
   if (
     pathname.startsWith("/_astro/") ||
