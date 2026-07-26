@@ -63,6 +63,26 @@ Public. Bot-wide counters.
   "commands": 78, "uptime_seconds": 8123, "ready": true }
 ```
 
+### `GET /updates?limit=50`
+
+Public. Newest-first release feed: the frozen Discord archive
+(`core/updates_archive.json`) merged with the changelog engine's live history,
+deduplicated by `created_at`. `limit` defaults to 50 and is clamped to 200.
+
+```json
+{ "updates": [ { "build": 16, "version": "3.0.0", "codename": "Nova",
+                 "created_at": "2026-07-24T01:28:56+00:00",
+                 "highlights": ["..."], "changes": ["..."],
+                 "added_lines": 48, "removed_lines": 8, "changed_files": 1 } ],
+  "count": 29 }
+```
+
+`version`, `codename`, `highlights`, `changes` and the line counts are all
+optional; every entry has `created_at`. Note that `build` is the number the bot
+printed in Discord and repeats across the archive — the engine's state was reset
+several times — so it is not an identifier. The website numbers releases by date
+order instead.
+
 ### `GET /invite`
 Public. `302` redirect to the bot's Discord install URL.
 

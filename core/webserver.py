@@ -48,6 +48,8 @@ from aiohttp import web
 from .config import BOT_CODENAME, BOT_VERSION
 from .database import connect
 from .storage import get_guild_settings, update_guild_settings
+from .update_feed import merged_update_feed
+from .updates import load_update_state
 
 try:  # at-rest token encryption is optional — degrade gracefully if unavailable
     from cryptography.fernet import Fernet, InvalidToken
@@ -415,6 +417,7 @@ class WebServer:
         routes = [
             ("GET", "/health", self.handle_health),
             ("GET", "/stats", self.handle_stats),
+            ("GET", "/updates", self.handle_updates),
             ("GET", "/invite", self.handle_invite),
             ("GET", "/auth/login", self.handle_login),
             ("GET", "/auth/callback", self.handle_callback),
@@ -879,6 +882,21 @@ class WebServer:
                 "ready": self.bot.is_ready(),
             }
         )
+
+    async def handle_updates(self, request):
+        """Public release feed for the website's /updates page.
+
+        Reads the changelog engine's state but never writes it, so serving this
+        cannot affect what the bot announces in Discord.
+        """
+        self._rate_limit(request, "read")
+        state = load_update_state()
+        updates = merged_update_feed(
+            limit=request.query.get("limit", 50),
+            history=state.get("history"),
+            latest=state.get("latest"),
+        )
+        return web.json_response({"updates": updates, "count": len(updates)})
 
     # ── session endpoints ────────────────────────────────────────────
 
