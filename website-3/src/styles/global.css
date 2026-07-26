@@ -207,6 +207,16 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   contain: content;
 }
 
+/* The sticky header is recomposited on every scroll frame by definition, which
+   makes it the one element that earns a permanent layer — unlike the idle
+   decorations whose `will-change` was removed earlier. Promoted, scrolling moves
+   an existing layer instead of repainting the header band and the content sliding
+   under it. Deliberately no `contain: paint` here: the mobile drawer is absolutely
+   positioned inside the header and would be clipped by it. */
+[data-nav] {
+  will-change: transform;
+}
+
 /* Tried and rejected: gating `content-visibility: auto` on `[data-low-power]`
    so weak devices skip off-screen sections. Measured on /home it inflated the
    document from 2401px to 2852px, because unrendered sections fall back to

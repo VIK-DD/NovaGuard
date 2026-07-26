@@ -64,6 +64,10 @@ export function diffSplit(release: Release): {
   };
 }
 
+// Both formatters are pinned to UTC on purpose. The static pages are rendered on
+// whatever machine ran the build while the live tail is rendered in the visitor's
+// browser, so an unpinned zone would let one release show two different dates
+// depending on who rendered it.
 export function formatReleaseDate(iso: string): string {
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return iso;
@@ -71,5 +75,18 @@ export function formatReleaseDate(iso: string): string {
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: "UTC",
   }).format(new Date(parsed));
+}
+
+export function formatReleaseTime(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return "";
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  }).format(new Date(parsed));
+  return `${time} UTC`;
 }

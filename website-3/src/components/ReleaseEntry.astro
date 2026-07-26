@@ -1,5 +1,5 @@
 ---
-import { diffSplit, formatReleaseDate, type Release } from "../data/updates";
+import { diffSplit, formatReleaseDate, formatReleaseTime, type Release } from "../data/updates";
 
 interface Props {
   release: Release;
@@ -14,6 +14,7 @@ interface Props {
 
 const { release, index, showVersion = true } = Astro.props;
 const { added, removed, addedPercent } = diffSplit(release);
+const releaseTime = formatReleaseTime(release.created_at);
 const hasDiff = added > 0 || removed > 0;
 const highlights = release.highlights ?? [];
 const changes = release.changes ?? [];
@@ -30,7 +31,14 @@ const changes = release.changes ?? [];
         </p>
       )
     }
-    <p class="mt-1 text-xs text-ink-faint sm:mt-2">{formatReleaseDate(release.created_at)}</p>
+    <time datetime={release.created_at} class="mt-1 block text-xs text-ink-faint sm:mt-2">
+      {formatReleaseDate(release.created_at)}
+      {
+        releaseTime && (
+          <span class="mt-0.5 block font-mono opacity-70">{releaseTime}</span>
+        )
+      }
+    </time>
   </div>
 
   <div class="min-w-0">

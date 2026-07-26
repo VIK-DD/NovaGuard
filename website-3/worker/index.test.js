@@ -35,7 +35,10 @@ describe("password session", () => {
     expect(response.status).toBe(200);
     // The page is behind the password now, so a `public` header could let a
     // shared cache hand it to a visitor with no session.
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("Cache-Control")).toBe("private, max-age=60");
+    // `private` is the part that matters: a shared cache must never hold a page
+    // that required a session to reach.
+    expect(response.headers.get("Cache-Control")).not.toContain("public");
     await expect(response.text()).resolves.toBe("/home/");
   });
 

@@ -85,7 +85,12 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
 </Base>
 
 <script>
-  import { formatReleaseDate, newerThan, type Release } from "../../data/updates";
+  import {
+    formatReleaseDate,
+    formatReleaseTime,
+    newerThan,
+    type Release,
+  } from "../../data/updates";
 
   // Page one only: later pages render an empty `data-newest-baked`, so the guard
   // below skips them. The cutoff rule lives in the data module and is unit-tested
@@ -125,7 +130,11 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
             return `<article class="grid gap-4 py-8 sm:grid-cols-[7rem_1fr] sm:gap-8 sm:py-10">
   <div class="sm:text-right">
     <p class="font-mono text-sm text-primary">#${baseNumber + fresh.length - offset}</p>
-    <p class="mt-1 text-xs text-ink-faint sm:mt-2">${escapeHtml(formatReleaseDate(release.created_at))}</p>
+    <time datetime="${escapeHtml(release.created_at)}" class="mt-1 block text-xs text-ink-faint sm:mt-2">${escapeHtml(formatReleaseDate(release.created_at))}${
+      formatReleaseTime(release.created_at)
+        ? `<span class="mt-0.5 block font-mono opacity-70">${escapeHtml(formatReleaseTime(release.created_at))}</span>`
+        : ""
+    }</time>
   </div>
   <div class="min-w-0">${highlightBlock}${changeBlock}</div>
 </article>`;

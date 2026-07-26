@@ -4,6 +4,7 @@ import {
   dedupeByCreatedAt,
   diffSplit,
   formatReleaseDate,
+  formatReleaseTime,
   newerThan,
   sortNewestFirst,
   type Release,
@@ -76,6 +77,36 @@ describe("formatReleaseDate", () => {
 
   it("passes through an unparsable value", () => {
     expect(formatReleaseDate("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("formatReleaseTime", () => {
+  it("renders the UTC clock time", () => {
+    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("20:43 UTC");
+  });
+
+  it("pads a single-digit hour", () => {
+    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("05:07 UTC");
+  });
+
+  it("returns nothing for an unparsable value so the row can omit it", () => {
+    expect(formatReleaseTime("not-a-date")).toBe("");
+  });
+
+  it("reads a non-UTC offset back into UTC", () => {
+    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("19:30 UTC");
+  });
+});
+
+describe("timezone pinning", () => {
+  // Rendered on the build machine for static pages and in the browser for the
+  // live tail: an unpinned zone would let those two disagree about the day.
+  it("keeps a late-evening UTC release on its own date", () => {
+    expect(formatReleaseDate("2026-07-26T23:50:00+00:00")).toBe("26 July 2026");
+  });
+
+  it("keeps an early-morning UTC release on its own date", () => {
+    expect(formatReleaseDate("2026-07-26T00:10:00+00:00")).toBe("26 July 2026");
   });
 });
 

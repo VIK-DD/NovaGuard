@@ -122,7 +122,10 @@ function assetCacheControl(pathname) {
     pathname === "/updates" ||
     pathname.startsWith("/updates/")
   ) {
-    return "private, no-store";
+    // `private` keeps these out of any shared cache, which is what the password
+    // gate requires. Letting the visitor's own browser hold them for a minute is
+    // what makes paging through /updates and going back feel instant.
+    return "private, max-age=60";
   }
   if (
     pathname.startsWith("/_astro/") ||
