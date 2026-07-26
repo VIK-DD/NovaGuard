@@ -38,6 +38,30 @@ check("engine entry keeps no summary key", "summary" not in feed[0])
 check("stats carried through", feed[0]["added_lines"] == 55)
 check("archive highlights preserved", feed[1]["highlights"] == ["Second"])
 
+# The archive stamps a release with its Discord message time and the engine with
+# when it recorded it, so the same release carries two timestamps seconds apart.
+# Only the tail beyond the archive may come from the engine.
+near_duplicate = {
+    "build": 2,
+    "created_at": "2026-07-01T09:59:58+00:00",  # seconds before the archive's #2
+    "summary": ["Second"],
+}
+tail = {"build": 4, "created_at": "2026-07-26T10:00:00+00:00", "summary": ["Tail"]}
+tailed = merged_update_feed(
+    limit=50, archive=ARCHIVE, history=[near_duplicate, tail], latest=None
+)
+check("engine entry at or below the archive cutoff dropped", len(tailed) == 3)
+check("only the tail beyond the archive is admitted", tailed[0]["build"] == 4)
+check(
+    "no near-duplicate of an archived release survives",
+    sum(1 for e in tailed if e.get("changes") == ["Second"] or e.get("highlights") == ["Second"])
+    == 1,
+)
+check(
+    "engine history is used in full when there is no archive",
+    len(merged_update_feed(limit=50, archive=[], history=[near_duplicate, tail], latest=None)) == 2,
+)
+
 duplicate = dict(ARCHIVE[1], build=99, summary=["Dup"])
 deduped = merged_update_feed(limit=50, archive=ARCHIVE, history=[duplicate], latest=None)
 check("duplicate created_at dropped", len(deduped) == 2)

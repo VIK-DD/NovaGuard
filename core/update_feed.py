@@ -88,18 +88,29 @@ def merged_update_feed(limit=DEFAULT_LIMIT, archive=None, history=None, latest=N
 
     feed = []
     seen = set()
+    archive_cutoff = None
     for entry in archive_entries:
         if not isinstance(entry, dict):
             continue
         created_at = entry.get("created_at")
-        if _timestamp(created_at) is None or created_at in seen:
+        stamp = _timestamp(created_at)
+        if stamp is None or created_at in seen:
             continue
         seen.add(created_at)
         feed.append(entry)
+        archive_cutoff = stamp if archive_cutoff is None else max(archive_cutoff, stamp)
 
+    # The archive is the published record up to its newest entry, so the engine
+    # only contributes the tail beyond it. Deduplicating by `created_at` alone is
+    # not enough: the archive stamps a release with its Discord message time while
+    # the engine stamps when it recorded it, seconds apart, so the same release
+    # would otherwise appear twice under two timestamps.
     for raw in engine_entries:
         normalized = normalize_engine_entry(raw)
         if not normalized or normalized["created_at"] in seen:
+            continue
+        stamp = _timestamp(normalized["created_at"])
+        if archive_cutoff is not None and stamp is not None and stamp <= archive_cutoff:
             continue
         seen.add(normalized["created_at"])
         feed.append(normalized)
