@@ -81,20 +81,28 @@ describe("formatReleaseDate", () => {
 });
 
 describe("formatReleaseTime", () => {
-  it("renders the UTC clock time", () => {
-    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("20:43 UTC");
+  it("renders an afternoon time as PM", () => {
+    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("8:43 PM");
   });
 
-  it("pads a single-digit hour", () => {
-    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("05:07 UTC");
+  it("renders a morning time as AM", () => {
+    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("5:07 AM");
+  });
+
+  it("calls midnight 12 AM, not 0", () => {
+    expect(formatReleaseTime("2026-07-26T00:10:00+00:00")).toBe("12:10 AM");
+  });
+
+  it("calls noon 12 PM", () => {
+    expect(formatReleaseTime("2026-07-26T12:00:00+00:00")).toBe("12:00 PM");
   });
 
   it("returns nothing for an unparsable value so the row can omit it", () => {
     expect(formatReleaseTime("not-a-date")).toBe("");
   });
 
-  it("reads a non-UTC offset back into UTC", () => {
-    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("19:30 UTC");
+  it("still resolves a non-UTC offset in UTC", () => {
+    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("7:30 PM");
   });
 });
 

@@ -87,6 +87,8 @@ import Icon from "./Icon.astro";
         if (curtain) {
           // Promote to its own layer only for the duration of the wipe, then
           // release it in the finally block — no permanent full-screen layer.
+          // Render it only for the sweep; see the note on `.theme-curtain`.
+          curtain.style.setProperty("display", "block");
           curtain.style.setProperty("will-change", "transform");
           curtain.style.setProperty("--curtain-background", light ? "#fbfbfe" : "#0a0a0c");
           curtain.style.setProperty("--curtain-accent", light ? "#d4660c" : "#f37f2c");
@@ -184,6 +186,7 @@ import Icon from "./Icon.astro";
           curtain.style.removeProperty("--curtain-background");
           curtain.style.removeProperty("--curtain-accent");
           curtain.style.removeProperty("will-change");
+          curtain.style.removeProperty("display");
         }
         button.removeAttribute("aria-busy");
         root.removeAttribute("data-theme-switching");
@@ -211,6 +214,12 @@ import Icon from "./Icon.astro";
 
 <style>
   .theme-curtain {
+    /* Not rendered until a wipe runs. Left in the tree it was a viewport-sized,
+       fully opaque, 3D-transformed fixed element, which browsers keep as a
+       permanent compositor layer — real memory bandwidth on a weak GPU, held for
+       an animation that only happens on click. The script displays it for the
+       duration of the sweep and hides it again in its finally block. */
+    display: none;
     position: fixed;
     inset: 0;
     z-index: 100;

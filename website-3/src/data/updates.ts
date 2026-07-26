@@ -79,14 +79,14 @@ export function formatReleaseDate(iso: string): string {
   }).format(new Date(parsed));
 }
 
+// Still resolved in UTC — see the note above; only the presentation is 12-hour.
 export function formatReleaseTime(iso: string): string {
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return "";
-  const time = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
     minute: "2-digit",
-    hour12: false,
+    hour12: true,
     timeZone: "UTC",
   }).format(new Date(parsed));
-  return `${time} UTC`;
 }
