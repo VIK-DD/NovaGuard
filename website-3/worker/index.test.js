@@ -134,3 +134,58 @@ describe("password session", () => {
     expect(page.headers.get("Cache-Control")).toBeNull();
   });
 });
+
+describe("updates feed", () => {
+  it("serves the updates page without a session", async () => {
+    const response = await worker.fetch(new Request("https://novaguard.fun/updates"), env);
+    expect(response.status).toBe(200);
+  });
+
+  it("serves a deeper updates page without a session", async () => {
+    const response = await worker.fetch(new Request("https://novaguard.fun/updates/3"), env);
+    expect(response.status).toBe(200);
+  });
+
+  it("proxies the bot feed and marks it cacheable", async () => {
+    const payload = { updates: [{ build: 16, created_at: "2026-07-24T01:28:56+00:00" }], count: 1 };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(payload)),
+    );
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/updates-feed"),
+      env,
+      { waitUntil() {} },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=300, stale-while-revalidate=1800",
+    );
+  });
+
+  it("answers 502 when the bot is unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/updates-feed"),
+      env,
+      { waitUntil() {} },
+    );
+    expect(response.status).toBe(502);
+    expect((await response.json()).code).toBe("updates_unavailable");
+  });
+
+  it("rejects a non-GET request", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/updates-feed", { method: "POST" }),
+      env,
+      { waitUntil() {} },
+    );
+    expect(response.status).toBe(405);
+  });
+});

@@ -95,6 +95,8 @@ function isPublicPath(pathname) {
     pathname === "/index.html" ||
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
+    pathname === "/updates" ||
+    pathname.startsWith("/updates/") ||
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname.startsWith("/coming-soon/") ||
@@ -112,7 +114,12 @@ function isMaintenanceEnabled(env) {
 }
 
 function assetCacheControl(pathname) {
-  if (pathname === "/home" || pathname.startsWith("/home/")) {
+  if (
+    pathname === "/home" ||
+    pathname.startsWith("/home/") ||
+    pathname === "/updates" ||
+    pathname.startsWith("/updates/")
+  ) {
     return "public, max-age=60, stale-while-revalidate=300";
   }
   if (
@@ -181,6 +188,53 @@ async function handleStatusSnapshot(request, env, ctx) {
   }
 }
 
+async function handleUpdatesFeed(request, env, ctx) {
+  if (request.method !== "GET") {
+    return Response.json(
+      { error: "Method not allowed", code: "method_not_allowed" },
+      { status: 405, headers: { Allow: "GET" } },
+    );
+  }
+
+  const url = new URL(request.url);
+  const cacheKey = new Request(`${url.origin}/api/updates-feed`);
+  const edgeCache = globalThis.caches?.default;
+  const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
+  if (cached) return cached;
+
+  const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
+
+  try {
+    const upstream = await fetch(`${apiBase}/updates?limit=200`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!upstream.ok) throw new Error(`Updates upstream failed: ${upstream.status}`);
+
+    const payload = await upstream.json();
+    // Releases land minutes apart at best, so a long window keeps the Pi quiet
+    // without the page ever looking stale.
+    const response = Response.json(payload, {
+      headers: {
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=1800",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+
+    if (edgeCache && ctx?.waitUntil) {
+      ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
+    }
+    return response;
+  } catch {
+    // The page ships its own archive, so an unreachable bot costs only the
+    // newest entries — never the page itself.
+    return Response.json(
+      { error: "Updates unavailable", code: "updates_unavailable" },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+}
+
 async function serveAsset(request, env) {
   const response = await env.ASSETS.fetch(request);
   const cacheControl = assetCacheControl(new URL(request.url).pathname);
@@ -242,6 +296,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
+    if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
     if (url.pathname === "/api/auth/login") return handleLogin(request, env);
     if (url.pathname === "/api/auth/logout") return handleLogout(request);
     if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
