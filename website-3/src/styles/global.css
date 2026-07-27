@@ -253,6 +253,16 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
    pixel-sharp. Paint containment keeps their shadows from expanding scroll
    repaints across the rest of the document. */
 .hero-visual { contain: layout paint; }
+
+/* On integrated graphics, cache the hero as its own layer so its shadows, borders
+   and small text are rasterized once rather than re-rasterized as tiles scroll
+   through it. This is the case layer promotion is actually for — expensive static
+   content — which is why it belongs here and was reverted on the sticky header,
+   where there was nothing costly to cache. Gated so a machine with a real GPU
+   spends no layer memory on it. */
+:root[data-low-power] .hero-visual {
+  will-change: transform;
+}
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .hero-float-a,
   .hero-float-b {
