@@ -99,6 +99,9 @@ class TimeoutHttp:
     def get(self, *args, **kwargs):
         return TimeoutRequest()
 
+    def post(self, *args, **kwargs):
+        return TimeoutRequest()
+
 
 async def main():
     server = WebServer(FakeBot())
@@ -146,6 +149,33 @@ async def main():
         await check(
             "path WEB_AFTER_LOGIN fine when no cross-origin dashboard is declared",
             not after_login_strands_user("/api/me", set()),
+        )
+
+        # ── OAuth token exchange survives a flaky upstream ────────────
+        # Observed in production: aiohttp.SocketTimeoutError escaped
+        # _token_request, which had no handler, and the login died as an
+        # unhandled 500 with a stack trace. It must become the same retryable
+        # error every other Discord call produces.
+        original_http = server.http
+        server.http = TimeoutHttp()
+        try:
+            await server._token_request({"grant_type": "authorization_code", "code": "x"})
+            token_timeout = None
+        except ApiError as error:
+            token_timeout = error
+        finally:
+            server.http = original_http
+        await check(
+            "a token-exchange timeout is a clean 503, not an unhandled error",
+            token_timeout is not None
+            and token_timeout.status == 503
+            and token_timeout.code == "upstream_unavailable",
+        )
+        await check(
+            "a timeout never reads as Discord refusing the token",
+            # None means "Discord answered and said no", which makes
+            # _ensure_fresh_token delete the session. A blip must not do that.
+            token_timeout is not None,
         )
 
         # ── health + DB probe (fix #5) ────────────────────────────────

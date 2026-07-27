@@ -697,15 +697,38 @@ class WebServer:
             ) from error
 
     async def _token_request(self, data):
+        """Exchange or refresh an OAuth token.
+
+        Returns None only when Discord *answered* and refused — that is a real
+        rejection, and callers treat it as a dead session. A network failure
+        raises instead, because the two must not be confused: returning None on
+        a timeout would make _ensure_fresh_token delete a perfectly good session
+        over a blip on the Pi's connection.
+
+        Given a longer budget than the shared session timeout. This runs once
+        per login and its failure costs the whole flow, while a slow answer
+        still succeeds. Timing out on the read is also the worst case for the
+        authorization code, which Discord may have already spent.
+        """
         assert self.http is not None
-        async with self.http.post(
-            f"{DISCORD_API}/oauth2/token",
-            data={"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, **data},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        ) as response:
-            if response.status >= 400:
-                return None
-            return await response.json()
+        try:
+            async with self.http.post(
+                f"{DISCORD_API}/oauth2/token",
+                data={"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, **data},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=aiohttp.ClientTimeout(total=20, connect=5, sock_connect=5, sock_read=15),
+            ) as response:
+                if response.status >= 400:
+                    return None
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            log.warning("Discord token request failed: %s", type(error).__name__)
+            raise ApiError(
+                503,
+                "Discord is temporarily unavailable — retry in a few seconds.",
+                code="upstream_unavailable",
+                retry_after=3,
+            ) from error
 
     async def _ensure_fresh_token(self, sid, entry):
         """Refresh the OAuth token ~before it expires; kill the session if we can't.
@@ -815,9 +838,23 @@ class WebServer:
         if not state_valid:
             raise ApiError(400, "Invalid OAuth state — try logging in again.", code="invalid_state")
 
-        token_data = await self._token_request(
-            {"grant_type": "authorization_code", "code": code, "redirect_uri": OAUTH_REDIRECT}
-        )
+        try:
+            token_data = await self._token_request(
+                {"grant_type": "authorization_code", "code": code, "redirect_uri": OAUTH_REDIRECT}
+            )
+        except ApiError as error:
+            if error.code != "upstream_unavailable":
+                raise
+            # This one is read by a person in a browser, so it has to say what
+            # to do. Reloading this URL cannot work: Discord may already have
+            # spent the authorization code, and a fresh login is the only way
+            # to get a new one.
+            raise ApiError(
+                503,
+                "Discord did not answer in time. Go back and log in again.",
+                code="upstream_unavailable",
+                retry_after=3,
+            ) from error
         if not token_data or "access_token" not in token_data:
             raise ApiError(502, "Discord rejected the OAuth code.", code="upstream_error")
 
