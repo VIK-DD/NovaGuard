@@ -31,9 +31,13 @@ From `cogs/setup.py`:
 - The embed groups them as **Core** (`update_channel`, `github_event_channel`,
   `error_log_channel`, `log_channel`) and **Community** (`welcome_channel`,
   `goodbye_channel`, `voice_report_channel`).
-- Four are **required** for completion: `update_channel`, `error_log_channel`,
-  `log_channel`, `welcome_channel`. `github_event_channel` counts towards progress
-  but is not required.
+- Four channels are **recommended**, not required — `RECOMMENDED_KEYS` in
+  `cogs/setup.py:27`: `update_channel`, `error_log_channel`, `log_channel`,
+  `welcome_channel`. `github_event_channel` joins them, raising the total from
+  four to five, only when the bot has GitHub repos configured.
+- Nothing is strictly required. `setup_completed` is a manual flag set by the
+  "Mark Complete" button, independent of the score; the embed says every channel
+  is optional and that a server can be marked complete with none set.
 - Other commands: `/config view`, `/config export`, `/config backup`,
   `/config reset`.
 
@@ -57,8 +61,8 @@ From the site and API:
 4. **No emoji anywhere on the page**, including the channel table — the labels use
    their text names only, consistent with `/updates`. The Discord embed shows
    emoji; the page does not need to mirror that to be recognisable.
-5. Required channels are read from the same four keys the bot uses, so the page and
-   the bot can never disagree about what "complete" means.
+5. The counted channels and the total come from the same rule the bot scores with
+   (`setup_score`), so the page and the bot can never disagree about progress.
 
 ## Components
 
@@ -81,11 +85,14 @@ Sits directly under the heading. Four states, in the order a visitor meets them:
 - **Loading**: a skeleton the width of the finished strip. This is the site's
   first honest loading state: there is a real round trip to wait for, unlike the
   static pages where a spinner would invent a delay.
-- **Ready**: "3 of 4 essential channels set", naming the ones still missing, with
-  a link to the dashboard for that guild.
+- **Ready**: "3 of 4 recommended channels set", naming the ones still missing,
+  with a link to the dashboard for that guild. The denominator is whatever
+  `setup_score` reports, so it reads 5 on a bot with GitHub repos configured
+  rather than being hard-coded to 4.
 
-Copy uses "essential channels" throughout; in code the same four are the required
-keys listed above. One concept, one word in each register.
+Copy says "recommended channels", matching both the Discord embed and
+`RECOMMENDED_KEYS`. The page never calls a channel required, because none is:
+the bot lets a server be marked complete with nothing set.
 - **Unavailable** (bot offline, network error, malformed payload): the strip
   removes itself. The page is already complete without it, so there is no error
   state to show.
@@ -108,7 +115,8 @@ vocabulary; cards would introduce a second system for no gain.
 ### 4. Channel reference
 
 All seven channels in the bot's own two groups, each with the description from
-`CHANNEL_KEYS` and a marker on the four that are required. Text labels, no emoji.
+`CHANNEL_KEYS` and a marker on the ones `RECOMMENDED_KEYS` covers. Text labels,
+no emoji.
 
 ### 5. Commands
 
@@ -122,30 +130,32 @@ references.
 strip mounts
   → GET {PUBLIC_API_BASE}/guilds   (credentials: include)
       401 / network error → not-connected state
-      []                  → not-connected state (nothing to report on)
+      []                  → no-manageable-guilds state (its own copy)
       one guild           → use it
       several             → render selector, use the first
   → GET {PUBLIC_API_BASE}/guilds/{id}/config
-      → count how many of the four required keys hold a channel
-      → render "n of 4", naming what is missing
+      → count how many recommended keys hold a channel
+      → render "n of total", naming what is missing
       failure → remove the strip
 ```
 
-The four required keys are declared once in the page's data module so the count
-cannot drift from the bot's definition.
+The recommended keys, and the rule that adds `github_event_channel` to the
+total, are declared once in the page's data module so the count cannot drift
+from `setup_score`.
 
 ## Error handling
 
 - Any failure in the strip is silent: it removes itself rather than showing an
   error, because the page's purpose survives without it.
 - A malformed config payload is treated as a failure, not as "nothing configured" —
-  reporting "0 of 4" for a parse error would be a lie.
+  reporting "0 of n" for a parse error would be a lie.
 - The page renders and reads completely with JavaScript disabled; the strip is the
   only thing lost.
 
 ## Testing
 
-- Unit tests for the required-channel counter: all four set, none set, some set,
+- Unit tests for the recommended-channel counter: all set, none set, some set,
+  the GitHub case that raises the total to five,
   a payload missing the keys entirely, and a malformed payload (which must be
   distinguishable from "none set").
 - Unit test for guild selection: none, one, several.
