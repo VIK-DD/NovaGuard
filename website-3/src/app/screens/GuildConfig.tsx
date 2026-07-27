@@ -10,6 +10,7 @@ import {
 } from "../../lib/api/schemas";
 import BadwordsEditor from "../components/BadwordsEditor";
 import ChannelSelect from "../components/ChannelSelect";
+import Icon, { type IconName } from "../components/Icon";
 import IgnoreListEditor from "../components/IgnoreListEditor";
 import RoleSelect from "../components/RoleSelect";
 import SaveBar from "../components/SaveBar";
@@ -114,11 +115,24 @@ function NumberField(props: {
   );
 }
 
-function Section(props: { kicker: string; children: React.ReactNode }) {
+function Section(props: {
+  icon: IconName;
+  kicker: string;
+  description: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mt-12">
-      <p className="text-xs tracking-[0.2em] text-primary uppercase">{props.kicker}</p>
-      <div className="mt-4">{props.children}</div>
+    <section className="mt-6 rounded-[var(--radius-card)] border border-line bg-card p-5 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] sm:p-6">
+      <div className="flex items-start gap-3.5">
+        <span className="bg-line/40 grid h-10 w-10 shrink-0 place-items-center rounded-[8px] border border-line text-ink">
+          <Icon name={props.icon} size={20} />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <p className="text-xs tracking-[0.2em] text-primary uppercase">{props.kicker}</p>
+          <p className="mt-1 text-sm text-ink-muted">{props.description}</p>
+        </div>
+      </div>
+      <div className="mt-6">{props.children}</div>
     </section>
   );
 }
@@ -201,7 +215,11 @@ export default function GuildConfig() {
       </p>
       <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">{guild.name}</h1>
 
-      <Section kicker="Channels">
+      <Section
+        icon="hash"
+        kicker="Channels"
+        description="Where NovaGuard posts activity for this server."
+      >
         <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
           {CHANNEL_FIELDS.map(([key, label]) => (
             <ChannelSelect
@@ -216,7 +234,11 @@ export default function GuildConfig() {
         </div>
       </Section>
 
-      <Section kicker="Roles">
+      <Section
+        icon="users-three"
+        kicker="Roles"
+        description="Assigned automatically, or held by ticket staff."
+      >
         <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
           <RoleSelect
             label="Auto-role for newcomers"
@@ -235,7 +257,11 @@ export default function GuildConfig() {
         </div>
       </Section>
 
-      <Section kicker="AutoMod">
+      <Section
+        icon="shield-check"
+        kicker="AutoMod"
+        description="Automatic moderation for invites, spam and blocked words."
+      >
         <Toggle
           label="Block Discord invites"
           checked={draft.automod.invites}
@@ -255,7 +281,11 @@ export default function GuildConfig() {
         </div>
       </Section>
 
-      <Section kicker="Levels">
+      <Section
+        icon="trophy"
+        kicker="Levels"
+        description="XP, level-up announcements and who's exempt."
+      >
         <Toggle
           label="Give XP for messages"
           checked={draft.levels.enabled}
