@@ -207,15 +207,13 @@ select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   contain: content;
 }
 
-/* The sticky header is recomposited on every scroll frame by definition, which
-   makes it the one element that earns a permanent layer — unlike the idle
-   decorations whose `will-change` was removed earlier. Promoted, scrolling moves
-   an existing layer instead of repainting the header band and the content sliding
-   under it. Deliberately no `contain: paint` here: the mobile drawer is absolutely
-   positioned inside the header and would be clipped by it. */
-[data-nav] {
-  will-change: transform;
-}
+/* Tried and reverted: `will-change: transform` on the sticky header. The theory
+   was that promoting it would stop the header band repainting each scroll frame.
+   Measured in Chrome afterwards, both pages already scroll at 59-60fps with a
+   16.7ms median and no frame over 33ms — there was no repaint cost for it to
+   remove, so all it bought was a permanent full-width compositor layer. On a
+   GPU-bound machine that is a cost, not a saving, which is the same reason the
+   idle `will-change` hints were stripped from the hero and the theme curtain. */
 
 /* Tried and rejected: gating `content-visibility: auto` on `[data-low-power]`
    so weak devices skip off-screen sections. Measured on /home it inflated the
