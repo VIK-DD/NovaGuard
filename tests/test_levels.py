@@ -12,13 +12,11 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core.levels_settings import LEVELS_DEFAULTS  # noqa: E402
 from cogs.levels import (  # noqa: E402
-    XP_COOLDOWN_SECONDS,
     BACKFILL_DEFAULT_DAYS,
     BACKFILL_MAX_DAYS,
     MAX_LEVEL,
-    XP_GAIN_MAX,
-    XP_GAIN_MIN,
     XP_PER_LEVEL,
     replace_backfill_for_guild,
     backfill_window,
@@ -33,9 +31,12 @@ from cogs.levels import (  # noqa: E402
 
 class LevelsHelperTests(unittest.TestCase):
     def test_xp_gain_is_slower_than_old_defaults(self):
-        self.assertEqual(XP_COOLDOWN_SECONDS, 120)
-        self.assertLessEqual(XP_GAIN_MAX, 10)
-        self.assertGreaterEqual(XP_GAIN_MIN, 5)
+        # These moved into LEVELS_DEFAULTS when XP became per-guild. A server
+        # that saves nothing must still behave exactly as it did before, so the
+        # defaults are what this guards.
+        self.assertEqual(LEVELS_DEFAULTS["cooldown"], 120)
+        self.assertLessEqual(LEVELS_DEFAULTS["xp_max"], 10)
+        self.assertGreaterEqual(LEVELS_DEFAULTS["xp_min"], 5)
 
     def test_level_math_uses_a_fixed_169_level_curve(self):
         first_level_xp = xp_needed(0)

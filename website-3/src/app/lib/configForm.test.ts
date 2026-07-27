@@ -18,9 +18,48 @@ const base: GuildSettings = {
   autorole: "300",
   ticket_staff_role: null,
   automod: { invites: true, spam: false, badwords: ["alpha", "beta"] },
+  levels: {
+    enabled: true,
+    announce: "dm",
+    announce_channel: null,
+    xp_min: 5,
+    xp_max: 10,
+    cooldown: 120,
+    ignored_channels: ["400"],
+    ignored_roles: [],
+  },
 };
 
 const clone = (): GuildSettings => structuredClone(base);
+
+describe("mapValidationDetails for levels", () => {
+  it("pairs each levels error with its own field", () => {
+    expect(
+      mapValidationDetails([
+        "levels.xp_min: cannot be greater than xp_max",
+        "levels.cooldown: must be a whole number between 0 and 3600",
+      ]),
+    ).toEqual({
+      "levels.xp_min": "levels.xp_min: cannot be greater than xp_max",
+      "levels.cooldown": "levels.cooldown: must be a whole number between 0 and 3600",
+    });
+  });
+
+  it("does not mistake announce_channel for announce", () => {
+    // Both keys share a prefix, so a plain substring match would light up the
+    // mode select instead of the channel picker.
+    const map = mapValidationDetails([
+      "levels.announce_channel: required when announcing in a channel",
+    ]);
+    expect(Object.keys(map)).toEqual(["levels.announce_channel"]);
+  });
+
+  it("keeps levels errors away from the channel fields above", () => {
+    const map = mapValidationDetails(["levels.ignored_channels: at most 50 entries"]);
+    expect(map).toHaveProperty("levels.ignored_channels");
+    expect(map).not.toHaveProperty("log_channel");
+  });
+});
 
 describe("diffSettings", () => {
   it("returns only the changed keys", () => {
@@ -33,6 +72,39 @@ describe("diffSettings", () => {
     const draft = clone();
     draft.welcome_channel = null;
     expect(diffSettings(base, draft)).toEqual({ welcome_channel: null });
+  });
+
+  it("sends only the toggled levels field", () => {
+    const draft = clone();
+    draft.levels.enabled = false;
+    expect(diffSettings(base, draft)).toEqual({ levels: { enabled: false } });
+  });
+
+  it("carries both sides of the XP range whenever either moves", () => {
+    // The server checks xp_min against xp_max on the merged result. Sending
+    // xp_min alone would have it judged against the stored xp_max.
+    const draft = clone();
+    draft.levels.xp_min = 8;
+    expect(diffSettings(base, draft)).toEqual({ levels: { xp_min: 8, xp_max: 10 } });
+  });
+
+  it("leaves the XP range alone when only the cooldown moves", () => {
+    const draft = clone();
+    draft.levels.cooldown = 30;
+    expect(diffSettings(base, draft)).toEqual({ levels: { cooldown: 30 } });
+  });
+
+  it("ignores reordering of an ignore list", () => {
+    const draft = clone();
+    draft.levels.ignored_channels = ["400"];
+    draft.levels.ignored_roles = [];
+    expect(diffSettings(base, draft)).toEqual({});
+  });
+
+  it("sends an emptied ignore list", () => {
+    const draft = clone();
+    draft.levels.ignored_channels = [];
+    expect(diffSettings(base, draft)).toEqual({ levels: { ignored_channels: [] } });
   });
 
   it("sends only the toggled automod field", () => {

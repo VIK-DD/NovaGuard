@@ -43,8 +43,8 @@ already stored and patched.
 | `xp_min` | int 1–100 | `5` | lower bound of the per-message XP roll |
 | `xp_max` | int 1–100 | `10` | upper bound; must be ≥ `xp_min` |
 | `cooldown` | int 0–3600 | `120` | seconds between two XP gains for one member |
-| `ignored_channels` | list of channel ids, ≤50 | `[]` | no XP earned in these channels |
-| `ignored_roles` | list of role ids, ≤50 | `[]` | members holding any of these earn no XP |
+| `ignored_channels` | list of channel ids, ≤50 | `[]` | messages here are skipped entirely: no XP, not counted |
+| `ignored_roles` | list of role ids, ≤50 | `[]` | members holding any of these are skipped the same way |
 
 Every default is the module's current behaviour, so a guild that saves nothing
 behaves exactly as it does today. `announce: "dm"` preserves the existing

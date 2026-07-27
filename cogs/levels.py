@@ -13,13 +13,15 @@ from discord.ext import commands, tasks
 
 from core.backups import create_backup
 from core.database import load_levels_data, save_levels_data
+from core.levels_settings import resolve_levels
+from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, humanize_number, respond
 
-XP_COOLDOWN_SECONDS = 120
+# XP amount, cooldown and announcement routing are per-guild now; their defaults
+# live in core/levels_settings.LEVELS_DEFAULTS. Keeping a second copy here is how
+# AUTOMOD_DEFAULTS ended up declared twice, so there is deliberately none.
 XP_FLUSH_SECONDS = 30
-XP_GAIN_MIN = 5
-XP_GAIN_MAX = 10
 MIN_XP_MESSAGE_CHARS = 4
 MAX_LEVEL = 169
 # 118 × 169 = 19,942 XP. This keeps the 20k historical import cap aligned
@@ -437,12 +439,50 @@ class Levels(commands.Cog):
         )
         await respond(interaction, embed, ephemeral=True)
 
+    async def _announce_level_up(self, message, config, embed):
+        """Deliver a level-up where this guild asked for it.
+
+        Every failure is silent. A locked DM, a deleted announce channel or a
+        missing permission must not interrupt handling the message that earned
+        the level. There is deliberately no fallback from a channel to a DM:
+        someone who moved announcements out of DMs should not get them back.
+        """
+        if config["announce"] == "channel":
+            channel = message.guild.get_channel(int(config["announce_channel"] or 0))
+            if channel is None:
+                return
+            try:
+                await channel.send(content=message.author.mention, embed=embed)
+            except discord.HTTPException:
+                pass
+            return
+
+        try:
+            await message.author.send(embed=embed)
+        except discord.HTTPException:
+            pass
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or message.guild is None or message.webhook_id:
             return
         if not meaningful_message(message):
             return
+
+        # Cheap after the first message per guild: core.storage caches settings
+        # in process, so this is a dict lookup rather than a locked SQLite read.
+        config = resolve_levels(get_guild_settings(message.guild.id))
+        if not config["enabled"]:
+            return
+        # An ignored channel or role is ignored outright — no XP and no message
+        # counted. Counting messages somewhere that earns nothing would inflate
+        # the number shown on the rank card.
+        if str(message.channel.id) in config["ignored_channels"]:
+            return
+        if config["ignored_roles"]:
+            member_roles = {str(role.id) for role in getattr(message.author, "roles", ())}
+            if member_roles.intersection(config["ignored_roles"]):
+                return
 
         guild_data = self.data.setdefault(str(message.guild.id), {})
         record = guild_data.setdefault(str(message.author.id), {"xp": 0, "messages": 0, "last_gain": None})
@@ -451,11 +491,11 @@ class Levels(commands.Cog):
 
         now = datetime.now(UTC)
         last_gain = parse_saved_datetime(record.get("last_gain"))
-        if last_gain and (now - last_gain).total_seconds() < XP_COOLDOWN_SECONDS:
+        if last_gain and (now - last_gain).total_seconds() < config["cooldown"]:
             return
 
         old_level, _ = level_from_xp(record.get("xp", 0))
-        xp_gain = random.randint(XP_GAIN_MIN, XP_GAIN_MAX)
+        xp_gain = random.randint(config["xp_min"], config["xp_max"])
         record["xp"] = record.get("xp", 0) + xp_gain
         record["last_gain"] = now.isoformat()
         new_level, _ = level_from_xp(record["xp"])
@@ -465,6 +505,8 @@ class Levels(commands.Cog):
                 await self.flush()
             except Exception as error:
                 print(f"Levels immediate flush skipped due to storage issue: {error!r}")
+            if config["announce"] == "off":
+                return
             position, ranked_count = rank_position(guild_data, message.author.id)
             embed = build_level_up_embed(
                 message.author,
@@ -475,10 +517,7 @@ class Levels(commands.Cog):
                 position,
                 ranked_count,
             )
-            try:
-                await message.author.send(embed=embed)
-            except discord.HTTPException:
-                pass
+            await self._announce_level_up(message, config, embed)
 
     @app_commands.command(name="rank", description="Your XP card: level, progress and server rank")
     @app_commands.describe(member="Whose rank? (defaults to you)")

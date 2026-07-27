@@ -122,7 +122,12 @@ Auth + Manage Server. Current settings plus the pickers the UI needs.
     "log_channel": "…|null", "voice_report_channel": "…|null", "update_channel": "…|null",
     "github_event_channel": "…|null", "error_log_channel": "…|null",
     "autorole": "…|null", "ticket_staff_role": "…|null",
-    "automod": { "invites": true, "spam": true, "badwords": ["…"] }
+    "automod": { "invites": true, "spam": true, "badwords": ["…"] },
+    "levels": {
+      "enabled": true, "announce": "dm|channel|off", "announce_channel": "…|null",
+      "xp_min": 5, "xp_max": 10, "cooldown": 120,
+      "ignored_channels": ["…"], "ignored_roles": ["…"]
+    }
   },
   "channels": [ { "id": "…", "name": "…", "category": "…|null" } ],
   "roles": [ { "id": "…", "name": "…", "color": "#RRGGBB", "assignable": true } ]
@@ -136,10 +141,24 @@ only the keys present are changed. Returns the same payload as GET on success.
 - Channel keys must be a text channel **in that guild** (or `null`/`""`/`0` to clear).
 - `autorole` must be **below the bot's top role** and not managed.
 - `automod.badwords`: list, each lowercased + trimmed, capped at 100 × 40 chars, deduped.
+- `levels` is validated by `core/levels_settings.validate_levels`, the same rules
+  the bot itself reads, so the two cannot disagree:
+  - `xp_min`/`xp_max` are whole numbers 1–100 and `xp_min <= xp_max`. The pair is
+    checked **after merging with the saved values**, so a patch that moves one
+    side is judged against the stored other side — send both when either moves.
+  - `cooldown` is a whole number 0–3600 seconds.
+  - `announce` is `dm`, `channel` or `off`. `channel` requires a valid
+    `announce_channel`; a mode with nowhere to announce is rejected rather than
+    saved.
+  - `ignored_channels`/`ignored_roles`: at most 50 ids each, all existing in that
+    guild, duplicates dropped. Messages there earn no XP and are not counted.
+  - The XP curve and level cap are **not** configurable: a member's level is
+    derived from total XP, so changing them would move everyone at once.
 
 ```json
 { "welcome_channel": "123", "autorole": "456",
-  "automod": { "invites": false, "badwords": ["spoiler"] } }
+  "automod": { "invites": false, "badwords": ["spoiler"] },
+  "levels": { "xp_min": 3, "xp_max": 30, "announce": "channel", "announce_channel": "789" } }
 ```
 
 ### `GET /guilds/{guild_id}/audit?limit=50`

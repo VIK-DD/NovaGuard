@@ -47,6 +47,7 @@ from aiohttp import web
 
 from .config import BOT_CODENAME, BOT_VERSION
 from .database import connect
+from .levels_settings import resolve_levels, validate_levels
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
@@ -964,6 +965,7 @@ class WebServer:
                 **{key: (str(settings[key]) if settings.get(key) else None) for key in CHANNEL_KEYS},
                 **{key: (str(settings[key]) if settings.get(key) else None) for key in ROLE_KEYS},
                 "automod": automod,
+                "levels": resolve_levels(settings),
             },
             "channels": [
                 {"id": str(channel.id), "name": channel.name,
@@ -1053,6 +1055,20 @@ class WebServer:
                                 words.append(word)
                         automod["badwords"] = words
                 changes["automod"] = automod
+
+        if "levels" in body:
+            # Rules live in core.levels_settings so the cog and this endpoint
+            # cannot disagree about them. Validated against the guild's saved
+            # config, which is what makes a one-sided xp_min/xp_max patch right.
+            current = await asyncio.to_thread(get_guild_settings, guild.id)
+            role_ids = {str(role.id) for role in guild.roles}
+            levels, levels_errors = validate_levels(
+                body["levels"], resolve_levels(current), text_channel_ids, role_ids
+            )
+            if levels_errors:
+                errors.extend(levels_errors)
+            else:
+                changes["levels"] = levels
 
         if errors:
             raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)

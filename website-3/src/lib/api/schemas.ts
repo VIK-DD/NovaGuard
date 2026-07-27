@@ -40,6 +40,20 @@ export const AutomodSchema = z.object({
   badwords: z.array(z.string()),
 });
 
+/** Ids stay strings: Discord snowflakes exceed 2^53 and would lose digits as numbers. */
+export const LevelsSchema = z.object({
+  enabled: z.boolean(),
+  announce: z.enum(["dm", "channel", "off"]),
+  announce_channel: z.string().nullable(),
+  xp_min: z.number(),
+  xp_max: z.number(),
+  cooldown: z.number(),
+  ignored_channels: z.array(z.string()),
+  ignored_roles: z.array(z.string()),
+});
+export type Levels = z.infer<typeof LevelsSchema>;
+export type AnnounceMode = Levels["announce"];
+
 export const GuildSettingsSchema = z.object({
   welcome_channel: z.string().nullable(),
   goodbye_channel: z.string().nullable(),
@@ -51,6 +65,7 @@ export const GuildSettingsSchema = z.object({
   autorole: z.string().nullable(),
   ticket_staff_role: z.string().nullable(),
   automod: AutomodSchema,
+  levels: LevelsSchema,
 });
 export type GuildSettings = z.infer<typeof GuildSettingsSchema>;
 
@@ -105,4 +120,5 @@ export type SettingsPatch = Partial<{
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: Partial<{ invites: boolean; spam: boolean; badwords: string[] }>;
+  levels: Partial<Levels>;
 }>;

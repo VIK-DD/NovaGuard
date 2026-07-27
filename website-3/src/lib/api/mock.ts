@@ -74,7 +74,29 @@ type Settings = {
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: { invites: boolean; spam: boolean; badwords: string[] };
+  levels: {
+    enabled: boolean;
+    announce: "dm" | "channel" | "off";
+    announce_channel: string | null;
+    xp_min: number;
+    xp_max: number;
+    cooldown: number;
+    ignored_channels: string[];
+    ignored_roles: string[];
+  };
 };
+
+/** Mirrors LEVELS_DEFAULTS in core/levels_settings.py. */
+const levelsDefaults = (): Settings["levels"] => ({
+  enabled: true,
+  announce: "dm",
+  announce_channel: null,
+  xp_min: 5,
+  xp_max: 10,
+  cooldown: 120,
+  ignored_channels: [],
+  ignored_roles: [],
+});
 
 const settingsByGuild: Record<string, Settings> = {
   "1001": {
@@ -88,6 +110,15 @@ const settingsByGuild: Record<string, Settings> = {
     autorole: "r1",
     ticket_staff_role: "r6",
     automod: { invites: true, spam: true, badwords: ["scam", "freenitro", "raid"] },
+    levels: {
+      ...levelsDefaults(),
+      announce: "channel",
+      announce_channel: "c3",
+      xp_min: 8,
+      xp_max: 15,
+      ignored_channels: ["c7"],
+      ignored_roles: ["r6"],
+    },
   },
   "1002": {
     welcome_channel: "c4",
@@ -100,6 +131,7 @@ const settingsByGuild: Record<string, Settings> = {
     autorole: null,
     ticket_staff_role: null,
     automod: { invites: false, spam: true, badwords: [] },
+    levels: levelsDefaults(),
   },
   "1003": {
     welcome_channel: null,
@@ -112,6 +144,7 @@ const settingsByGuild: Record<string, Settings> = {
     autorole: "r1",
     ticket_staff_role: null,
     automod: { invites: true, spam: false, badwords: ["spoiler"] },
+    levels: { ...levelsDefaults(), enabled: false, announce: "off" },
   },
 };
 
@@ -168,16 +201,24 @@ function configPayload(id: string): Json | null {
   };
 }
 
-function applyPatch(id: string, patch: Partial<Settings> & { automod?: Partial<Settings["automod"]> }) {
+function applyPatch(
+  id: string,
+  patch: Partial<Settings> & {
+    automod?: Partial<Settings["automod"]>;
+    levels?: Partial<Settings["levels"]>;
+  },
+) {
   const s = settingsByGuild[id];
   if (!s) return;
-  const { automod, ...rest } = patch;
+  const { automod, levels, ...rest } = patch;
   Object.assign(s, rest);
   if (automod) s.automod = { ...s.automod, ...automod };
+  if (levels) s.levels = { ...s.levels, ...levels };
 
   const flat: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rest)) flat[k] = v;
   if (automod) for (const [k, v] of Object.entries(automod)) flat[`automod.${k}`] = v;
+  if (levels) for (const [k, v] of Object.entries(levels)) flat[`levels.${k}`] = v;
 
   (auditByGuild[id] ??= []).unshift({
     username: me.user.username,

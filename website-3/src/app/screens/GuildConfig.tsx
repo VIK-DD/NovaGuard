@@ -4,11 +4,13 @@ import { useParams } from "@tanstack/react-router";
 import { ApiError, apiFetch } from "../../lib/api/client";
 import {
   GuildConfigSchema,
+  type AnnounceMode,
   type GuildSettings,
   type SettingsPatch,
 } from "../../lib/api/schemas";
 import BadwordsEditor from "../components/BadwordsEditor";
 import ChannelSelect from "../components/ChannelSelect";
+import IgnoreListEditor from "../components/IgnoreListEditor";
 import RoleSelect from "../components/RoleSelect";
 import SaveBar from "../components/SaveBar";
 import { diffSettings, isDirty, mapValidationDetails } from "../lib/configForm";
@@ -61,6 +63,54 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
         </span>
       </button>
     </div>
+  );
+}
+
+function NumberField(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  suffix?: string;
+  error?: string;
+  onChange: (value: number) => void;
+}) {
+  // Held as text while editing so the field can be cleared and retyped. A
+  // number-only state would snap the old value back on the first keystroke of
+  // a two-digit edit. Blur reconciles with whatever was actually committed.
+  const [text, setText] = useState(String(props.value));
+  const [editing, setEditing] = useState(false);
+  if (!editing && text !== String(props.value)) setText(String(props.value));
+
+  return (
+    <label className="block">
+      <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+        {props.label}
+        {props.suffix && <span className="normal-case"> ({props.suffix})</span>}
+      </span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={props.min}
+        max={props.max}
+        value={text}
+        aria-invalid={props.error ? true : undefined}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => {
+          setText(e.target.value);
+          const parsed = Number(e.target.value);
+          if (e.target.value !== "" && Number.isInteger(parsed)) props.onChange(parsed);
+        }}
+        onBlur={() => {
+          setEditing(false);
+          setText(String(props.value));
+        }}
+        className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
+          props.error ? "border-primary" : "border-line"
+        }`}
+      />
+      {props.error && <p className="text-primary mt-1 text-xs">{props.error}</p>}
+    </label>
   );
 }
 
@@ -141,6 +191,9 @@ export default function GuildConfig() {
   const set = <K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) =>
     setDraft({ ...draft, [key]: value });
 
+  const setLevels = (patch: Partial<GuildSettings["levels"]>) =>
+    setDraft({ ...draft, levels: { ...draft.levels, ...patch } });
+
   return (
     <main className="mx-auto max-w-3xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
       <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
@@ -198,6 +251,90 @@ export default function GuildConfig() {
             value={draft.automod.badwords}
             error={fieldErrors.badwords ?? fieldErrors.automod}
             onChange={(v) => set("automod", { ...draft.automod, badwords: v })}
+          />
+        </div>
+      </Section>
+
+      <Section kicker="Levels">
+        <Toggle
+          label="Give XP for messages"
+          checked={draft.levels.enabled}
+          onChange={(v) => setLevels({ enabled: v })}
+        />
+        <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+              Level-up announcement
+            </span>
+            <select
+              value={draft.levels.announce}
+              aria-invalid={fieldErrors["levels.announce"] ? true : undefined}
+              onChange={(e) => setLevels({ announce: e.target.value as AnnounceMode })}
+              className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
+                fieldErrors["levels.announce"] ? "border-primary" : "border-line"
+              }`}
+            >
+              <option value="dm">Direct message</option>
+              <option value="channel">In a channel</option>
+              <option value="off">Don't announce</option>
+            </select>
+            {fieldErrors["levels.announce"] && (
+              <p className="text-primary mt-1 text-xs">{fieldErrors["levels.announce"]}</p>
+            )}
+          </label>
+          {draft.levels.announce === "channel" && (
+            <ChannelSelect
+              label="Announcement channel"
+              value={draft.levels.announce_channel}
+              channels={channels}
+              error={fieldErrors["levels.announce_channel"]}
+              onChange={(v) => setLevels({ announce_channel: v })}
+            />
+          )}
+        </div>
+        <div className="mt-5 grid gap-5 sm:grid-cols-3">
+          <NumberField
+            label="XP minimum"
+            value={draft.levels.xp_min}
+            min={1}
+            max={100}
+            error={fieldErrors["levels.xp_min"]}
+            onChange={(v) => setLevels({ xp_min: v })}
+          />
+          <NumberField
+            label="XP maximum"
+            value={draft.levels.xp_max}
+            min={1}
+            max={100}
+            error={fieldErrors["levels.xp_max"]}
+            onChange={(v) => setLevels({ xp_max: v })}
+          />
+          <NumberField
+            label="Cooldown"
+            suffix="seconds"
+            value={draft.levels.cooldown}
+            min={0}
+            max={3600}
+            error={fieldErrors["levels.cooldown"]}
+            onChange={(v) => setLevels({ cooldown: v })}
+          />
+        </div>
+        <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+          <IgnoreListEditor
+            label="Channels without XP"
+            prefix="#"
+            value={draft.levels.ignored_channels}
+            options={channels}
+            error={fieldErrors["levels.ignored_channels"]}
+            onChange={(v) => setLevels({ ignored_channels: v })}
+          />
+          <IgnoreListEditor
+            label="Roles without XP"
+            prefix="@"
+            value={draft.levels.ignored_roles}
+            options={roles}
+            error={fieldErrors["levels.ignored_roles"]}
+            onChange={(v) => setLevels({ ignored_roles: v })}
           />
         </div>
       </Section>

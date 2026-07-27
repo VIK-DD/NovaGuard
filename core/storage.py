@@ -6,6 +6,8 @@ economy are backed by SQLite so they can be managed safely from Discord.
 
 import json
 import os
+import threading
+from copy import deepcopy
 
 from .config import BASE_DIR, ERROR_LOG_CHANNEL_ID, GUILD_ID, github_config
 from .database import (
@@ -60,12 +62,44 @@ def default_guild_settings(guild_id):
     return defaults
 
 
+# Guild settings sit on hot paths: automod reads them for every message, and the
+# levels cog now does too. Each read was a locked SQLite query, which on a
+# Raspberry Pi is the most expensive part of handling a message. Cache per guild.
+#
+# A plain in-process dict is safe because there is only one process: the web API
+# runs inside the bot and writes through update_guild_settings, so there is no
+# second writer to go stale against. Anything reaching into the database
+# directly has to call invalidate_guild_settings_cache.
+_SETTINGS_CACHE = {}
+_SETTINGS_CACHE_LOCK = threading.Lock()
+
+
+def invalidate_guild_settings_cache(guild_id=None):
+    """Drop one guild's cached settings, or every guild's when given nothing."""
+    with _SETTINGS_CACHE_LOCK:
+        if guild_id is None:
+            _SETTINGS_CACHE.clear()
+        else:
+            _SETTINGS_CACHE.pop(str(guild_id), None)
+
+
 def get_guild_settings(guild_id):
     if not guild_id:
         return {}
+    key = str(guild_id)
+    with _SETTINGS_CACHE_LOCK:
+        cached = _SETTINGS_CACHE.get(key)
+    if cached is not None:
+        # A copy, because callers treat the result as their own and some mutate
+        # it. Handing back the cached object would let one caller's edit leak
+        # into every later reader.
+        return deepcopy(cached)
+
     migrate_legacy_settings_json()
     settings = default_guild_settings(guild_id)
     settings.update(get_guild_settings_db(guild_id))
+    with _SETTINGS_CACHE_LOCK:
+        _SETTINGS_CACHE[key] = deepcopy(settings)
     return settings
 
 
@@ -74,6 +108,7 @@ def update_guild_settings(guild_id, **changes):
         return {}
     migrate_legacy_settings_json()
     update_guild_settings_db(guild_id, **changes)
+    invalidate_guild_settings_cache(guild_id)
     return get_guild_settings(guild_id)
 
 
@@ -91,4 +126,5 @@ def reset_guild_settings(guild_id):
         return {}
     migrate_legacy_settings_json()
     delete_guild_settings_db(guild_id)
+    invalidate_guild_settings_cache(guild_id)
     return get_guild_settings(guild_id)

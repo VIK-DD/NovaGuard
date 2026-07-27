@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import aiohttp  # noqa: E402
 
 from core.database import connect  # noqa: E402
+from core.levels_settings import resolve_levels  # noqa: E402
 from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
 from core.webserver import (  # noqa: E402
     _CIPHER,
@@ -313,6 +314,58 @@ async def main():
 
         stored = get_guild_settings(TEST_GUILD_ID)
         await check("storage really persisted", stored.get("welcome_channel") == 111)
+        await check(
+            "the settings cache serves the write straight back",
+            get_guild_settings(TEST_GUILD_ID).get("welcome_channel") == 111,
+        )
+
+        # ── levels block ──────────────────────────────────────────────
+        async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
+            levels = (await r.json()).get("settings", {}).get("levels", {})
+            await check(
+                "levels defaults appear in the config payload",
+                levels.get("announce") == "dm"
+                and levels.get("xp_min") == 5
+                and levels.get("ignored_roles") == [],
+            )
+
+        patch = {"levels": {"xp_min": 3, "xp_max": 30, "cooldown": 45,
+                            "announce": "channel", "announce_channel": "112",
+                            "ignored_channels": ["111"]}}
+        async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config", json=patch, cookies=cookies) as r:
+            saved = (await r.json()).get("settings", {}).get("levels", {})
+            await check(
+                "a valid levels patch saves",
+                r.status == 200 and saved.get("xp_max") == 30 and saved.get("cooldown") == 45
+                and saved.get("announce_channel") == "112"
+                and saved.get("ignored_channels") == ["111"],
+            )
+        await check(
+            "levels survived the round trip to storage",
+            resolve_levels(get_guild_settings(TEST_GUILD_ID))["xp_max"] == 30,
+        )
+
+        # Only xp_min moves, and it has to be judged against the saved xp_max.
+        async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config",
+                            json={"levels": {"xp_min": 90}}, cookies=cookies) as r:
+            data = await r.json()
+            await check(
+                "a one-sided xp patch is checked against what is saved",
+                r.status == 400 and data.get("code") == "validation_failed"
+                and any("xp_max" in d for d in data.get("details", [])),
+            )
+
+        async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config",
+                            json={"levels": {"announce_channel": "999"}}, cookies=cookies) as r:
+            data = await r.json()
+            await check(
+                "an announce channel from another guild is refused",
+                r.status == 400 and data.get("code") == "validation_failed",
+            )
+
+        async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config",
+                            json={"levels": "nope"}, cookies=cookies) as r:
+            await check("a non-object levels patch is refused", r.status == 400)
 
         async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/audit", cookies=cookies) as r:
             data = await r.json()
