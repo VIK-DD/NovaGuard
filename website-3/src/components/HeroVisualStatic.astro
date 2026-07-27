@@ -174,4 +174,20 @@
   @media (prefers-reduced-motion: reduce) {
     .hero-window { box-shadow: 0 12px 28px hsl(20 20% 2% / 0.14); }
   }
+
+  /* Integrated-graphics machines pay for large-radius blur more than for
+     anything else on this page: three stacked shadows at a 48-52px radius, on
+     two cards, re-rasterized every time the compositor needs a fresh tile. One
+     shallow shadow still lifts the cards off the page at a fraction of the cost,
+     and geometricPrecision returns to the fast text path for the same reason
+     optimizeLegibility was dropped globally.
+
+     Gated on the flag Base.astro sets before first paint, so machines with a
+     real GPU keep the full treatment. Placed last on purpose: it shares
+     specificity with the theme rules above and has to win on source order. */
+  :root[data-low-power] .hero-window,
+  :root[data-low-power] .hero-window-dashboard {
+    box-shadow: 0 2px 6px hsl(20 20% 2% / 0.16);
+    text-rendering: auto;
+  }
 </style>
