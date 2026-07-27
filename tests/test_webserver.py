@@ -33,6 +33,7 @@ from core.webserver import (  # noqa: E402
     _hash_sid,
     ApiError,
     WebServer,
+    after_login_strands_user,
     db_load_session,
     db_ping,
     db_save_session,
@@ -124,6 +125,26 @@ async def main():
             and timeout_result.status == 503
             and timeout_result.code == "upstream_unavailable"
             and timeout_result.retry_after == 3,
+        )
+
+        # ── post-login redirect target ────────────────────────────────
+        # A bare path resolves against the API's own origin, so it can never
+        # reach a dashboard declared on a separate origin. Only the first login
+        # is affected — later visits already carry the session cookie — so this
+        # has to be caught at startup rather than waited for as a bug report.
+        split_origin = {"https://novaguard.fun"}
+        await check(
+            "path WEB_AFTER_LOGIN flagged when the dashboard is cross-origin",
+            after_login_strands_user("/dashboard", split_origin)
+            and after_login_strands_user("/api/me", split_origin),
+        )
+        await check(
+            "absolute WEB_AFTER_LOGIN accepted",
+            not after_login_strands_user("https://novaguard.fun/dashboard/", split_origin),
+        )
+        await check(
+            "path WEB_AFTER_LOGIN fine when no cross-origin dashboard is declared",
+            not after_login_strands_user("/api/me", set()),
         )
 
         # ── health + DB probe (fix #5) ────────────────────────────────

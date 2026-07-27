@@ -75,6 +75,25 @@ CORS_ORIGINS = {
     if origin.strip()
 }
 AFTER_LOGIN = os.getenv("WEB_AFTER_LOGIN", "/api/me")
+
+
+def after_login_strands_user(after_login=None, cors_origins=None):
+    """True when the post-login redirect cannot land on a cross-origin dashboard.
+
+    `WEB_AFTER_LOGIN` is handed to the browser verbatim as a `Location`, so a
+    bare path resolves against *this API's* origin. That is right for a
+    single-origin setup, but a non-empty `WEB_CORS_ORIGIN` declares that the
+    dashboard lives elsewhere — and then the path strands the user on an API
+    URL: raw JSON for `/api/me`, a 404 body for anything else.
+
+    Worth warning about loudly, because the symptom lies about its cause. It
+    only bites the first login: afterwards the session cookie is already set,
+    so the user reaches the dashboard on their own and everything works. That
+    reads as a flaky login rather than a misconfigured one.
+    """
+    target = AFTER_LOGIN if after_login is None else after_login
+    origins = CORS_ORIGINS if cors_origins is None else cors_origins
+    return bool(origins) and not target.lower().startswith(("http://", "https://"))
 COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes", "on"}
 # Cookie SameSite policy. "Lax" works when the dashboard is same-site as the API
 # (including subdomains of one registrable domain). Use "None" for a dashboard on
@@ -463,8 +482,16 @@ class WebServer:
         crypto_note = "tokens encrypted" if _CIPHER else "tokens plaintext (install cryptography)"
         print(
             f"Web API listening on {WEB_HOST}:{WEB_PORT}{API_PREFIX} • {oauth_note} • "
-            f"sessions in SQLite • {crypto_note}"
+            f"sessions in SQLite • {crypto_note} • after login → {AFTER_LOGIN}"
         )
+        if after_login_strands_user():
+            example = sorted(CORS_ORIGINS)[0]
+            print(
+                f"  WARNING: WEB_AFTER_LOGIN={AFTER_LOGIN!r} is a path, so after logging in "
+                f"the browser stays on this API instead of the dashboard. Only the first "
+                f"login is affected, which makes it look intermittent. Set the full URL, "
+                f"e.g. WEB_AFTER_LOGIN={example}/dashboard/"
+            )
 
     async def stop(self):
         if self.runner:
