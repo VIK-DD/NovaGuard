@@ -1129,6 +1129,9 @@ class WebServer:
             brand_footer(embed, "Web dashboard")
             self.bot.dispatch("modlog", guild, embed)
         except Exception:
-            pass
+            # The save already succeeded above; this only announces it. Losing
+            # the announcement silently would look identical to it never having
+            # been sent, so it gets a log line instead of a bare pass.
+            log.warning("Could not post the dashboard change to modlog", exc_info=True)
 
         return web.json_response(await self._config_payload(guild))

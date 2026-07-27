@@ -76,6 +76,7 @@ class FakeBot:
         self.launched_at = None
         self.ready = True
         self._guild = FakeGuild()
+        self.dispatched = []
 
     def is_ready(self):
         return self.ready
@@ -84,7 +85,10 @@ class FakeBot:
         return self._guild if gid == TEST_GUILD_ID else None
 
     def dispatch(self, *args, **kwargs):
-        pass
+        # Recorded, not simulated: no listener runs, but a test can assert a
+        # config save actually reached the same "modlog" event moderation
+        # actions use (cogs/logs.py on_modlog -> send_log -> log_channel).
+        self.dispatched.append((args, kwargs))
 
 
 class TimeoutRequest:
@@ -344,6 +348,21 @@ async def main():
 
         stored = get_guild_settings(TEST_GUILD_ID)
         await check("storage really persisted", stored.get("welcome_channel") == 111)
+
+        # ── config save reaches the Discord log channel ─────────────────
+        # cogs/logs.py's on_modlog -> send_log already ships and is proven by
+        # moderation.py's kick/ban/mute embeds; this confirms the dashboard's
+        # PUT actually reaches that same dispatch, not just that the code path
+        # reads correctly.
+        last_event, last_args = server.bot.dispatched[-1]
+        await check(
+            "a saved config change dispatches modlog for the guild",
+            last_event[0] == "modlog" and last_event[1] is server.bot._guild,
+        )
+        await check(
+            "the modlog embed names who changed what",
+            "Vik" in last_event[2].description and "welcome_channel" in last_event[2].description,
+        )
         await check(
             "the settings cache serves the write straight back",
             get_guild_settings(TEST_GUILD_ID).get("welcome_channel") == 111,
