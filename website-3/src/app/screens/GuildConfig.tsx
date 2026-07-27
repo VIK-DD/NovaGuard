@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { ApiError, apiFetch } from "../../lib/api/client";
@@ -38,7 +38,14 @@ const CHANNEL_FIELDS: ReadonlyArray<
   ["error_log_channel", "Error log"],
 ];
 
-function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+// Memoized like the field components in components/ — see the note in
+// ChannelSelect.tsx. Only worth it once the caller also hands these a stable
+// onChange identity, which the callbacks below are built to provide.
+const Toggle = memo(function Toggle(props: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <div className="flex items-center justify-between border-t border-line py-4">
       <span className="text-sm">{props.label}</span>
@@ -65,9 +72,9 @@ function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean)
       </button>
     </div>
   );
-}
+});
 
-function NumberField(props: {
+const NumberField = memo(function NumberField(props: {
   label: string;
   value: number;
   min: number;
@@ -113,7 +120,7 @@ function NumberField(props: {
       {props.error && <p className="text-primary mt-1 text-xs">{props.error}</p>}
     </label>
   );
-}
+});
 
 function Section(props: {
   icon: IconName;
@@ -166,6 +173,70 @@ export default function GuildConfig() {
     },
   });
 
+  // Stable identities (empty deps — the functional setDraft form needs no
+  // closure over `draft`) so the memoized fields below can actually bail out
+  // of re-rendering on an unrelated keystroke. A version of `set` closing over
+  // `draft` would get a fresh identity every render, which would silently
+  // defeat every React.memo below it: same props value, but a "new" onChange
+  // reference each time reads as changed.
+  //
+  // Declared before the loading/error returns below, unlike the values that
+  // depend on config.data — every hook here has to run on every render
+  // regardless of which branch returns, or React throws on the next render
+  // that takes a different branch.
+  const set = useCallback(
+    <K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) =>
+      setDraft((d) => (d ? { ...d, [key]: value } : d)),
+    [],
+  );
+  const setAutomod = useCallback(
+    (patch: Partial<GuildSettings["automod"]>) =>
+      setDraft((d) => (d ? { ...d, automod: { ...d.automod, ...patch } } : d)),
+    [],
+  );
+  const setLevels = useCallback(
+    (patch: Partial<GuildSettings["levels"]>) =>
+      setDraft((d) => (d ? { ...d, levels: { ...d.levels, ...patch } } : d)),
+    [],
+  );
+
+  // One stable handler per channel field, built off the stable `set` above —
+  // built once, not one fresh arrow function per field per render.
+  const channelFieldHandlers = useMemo(
+    () =>
+      Object.fromEntries(
+        CHANNEL_FIELDS.map(([key]) => [key, (v: string | null) => set(key, v)]),
+      ) as Record<(typeof CHANNEL_FIELDS)[number][0], (v: string | null) => void>,
+    [set],
+  );
+  const onAutoroleChange = useCallback((v: string | null) => set("autorole", v), [set]);
+  const onTicketRoleChange = useCallback(
+    (v: string | null) => set("ticket_staff_role", v),
+    [set],
+  );
+  const onInvitesChange = useCallback((v: boolean) => setAutomod({ invites: v }), [setAutomod]);
+  const onSpamChange = useCallback((v: boolean) => setAutomod({ spam: v }), [setAutomod]);
+  const onBadwordsChange = useCallback(
+    (v: string[]) => setAutomod({ badwords: v }),
+    [setAutomod],
+  );
+  const onLevelsEnabledChange = useCallback((v: boolean) => setLevels({ enabled: v }), [setLevels]);
+  const onAnnounceChannelChange = useCallback(
+    (v: string | null) => setLevels({ announce_channel: v }),
+    [setLevels],
+  );
+  const onXpMinChange = useCallback((v: number) => setLevels({ xp_min: v }), [setLevels]);
+  const onXpMaxChange = useCallback((v: number) => setLevels({ xp_max: v }), [setLevels]);
+  const onCooldownChange = useCallback((v: number) => setLevels({ cooldown: v }), [setLevels]);
+  const onIgnoredChannelsChange = useCallback(
+    (v: string[]) => setLevels({ ignored_channels: v }),
+    [setLevels],
+  );
+  const onIgnoredRolesChange = useCallback(
+    (v: string[]) => setLevels({ ignored_roles: v }),
+    [setLevels],
+  );
+
   if (config.isPending || (config.data && !draft)) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16" aria-busy="true">
@@ -202,12 +273,6 @@ export default function GuildConfig() {
       ? save.error.message
       : fieldErrors._global;
 
-  const set = <K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) =>
-    setDraft({ ...draft, [key]: value });
-
-  const setLevels = (patch: Partial<GuildSettings["levels"]>) =>
-    setDraft({ ...draft, levels: { ...draft.levels, ...patch } });
-
   return (
     <main className="mx-auto max-w-3xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
       <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
@@ -228,7 +293,7 @@ export default function GuildConfig() {
               value={draft[key]}
               channels={channels}
               error={fieldErrors[key]}
-              onChange={(v) => set(key, v)}
+              onChange={channelFieldHandlers[key]}
             />
           ))}
         </div>
@@ -245,14 +310,14 @@ export default function GuildConfig() {
             value={draft.autorole}
             roles={roles.filter((r) => r.assignable)}
             error={fieldErrors.autorole}
-            onChange={(v) => set("autorole", v)}
+            onChange={onAutoroleChange}
           />
           <RoleSelect
             label="Ticket staff role"
             value={draft.ticket_staff_role}
             roles={roles}
             error={fieldErrors.ticket_staff_role}
-            onChange={(v) => set("ticket_staff_role", v)}
+            onChange={onTicketRoleChange}
           />
         </div>
       </Section>
@@ -265,18 +330,14 @@ export default function GuildConfig() {
         <Toggle
           label="Block Discord invites"
           checked={draft.automod.invites}
-          onChange={(v) => set("automod", { ...draft.automod, invites: v })}
+          onChange={onInvitesChange}
         />
-        <Toggle
-          label="Anti-spam"
-          checked={draft.automod.spam}
-          onChange={(v) => set("automod", { ...draft.automod, spam: v })}
-        />
+        <Toggle label="Anti-spam" checked={draft.automod.spam} onChange={onSpamChange} />
         <div className="border-t border-line pt-4">
           <BadwordsEditor
             value={draft.automod.badwords}
             error={fieldErrors.badwords ?? fieldErrors.automod}
-            onChange={(v) => set("automod", { ...draft.automod, badwords: v })}
+            onChange={onBadwordsChange}
           />
         </div>
       </Section>
@@ -289,7 +350,7 @@ export default function GuildConfig() {
         <Toggle
           label="Give XP for messages"
           checked={draft.levels.enabled}
-          onChange={(v) => setLevels({ enabled: v })}
+          onChange={onLevelsEnabledChange}
         />
         <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
           <label className="block">
@@ -318,7 +379,7 @@ export default function GuildConfig() {
               value={draft.levels.announce_channel}
               channels={channels}
               error={fieldErrors["levels.announce_channel"]}
-              onChange={(v) => setLevels({ announce_channel: v })}
+              onChange={onAnnounceChannelChange}
             />
           )}
         </div>
@@ -329,7 +390,7 @@ export default function GuildConfig() {
             min={1}
             max={100}
             error={fieldErrors["levels.xp_min"]}
-            onChange={(v) => setLevels({ xp_min: v })}
+            onChange={onXpMinChange}
           />
           <NumberField
             label="XP maximum"
@@ -337,7 +398,7 @@ export default function GuildConfig() {
             min={1}
             max={100}
             error={fieldErrors["levels.xp_max"]}
-            onChange={(v) => setLevels({ xp_max: v })}
+            onChange={onXpMaxChange}
           />
           <NumberField
             label="Cooldown"
@@ -346,7 +407,7 @@ export default function GuildConfig() {
             min={0}
             max={3600}
             error={fieldErrors["levels.cooldown"]}
-            onChange={(v) => setLevels({ cooldown: v })}
+            onChange={onCooldownChange}
           />
         </div>
         <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
@@ -356,7 +417,7 @@ export default function GuildConfig() {
             value={draft.levels.ignored_channels}
             options={channels}
             error={fieldErrors["levels.ignored_channels"]}
-            onChange={(v) => setLevels({ ignored_channels: v })}
+            onChange={onIgnoredChannelsChange}
           />
           <IgnoreListEditor
             label="Roles without XP"
@@ -364,7 +425,7 @@ export default function GuildConfig() {
             value={draft.levels.ignored_roles}
             options={roles}
             error={fieldErrors["levels.ignored_roles"]}
-            onChange={(v) => setLevels({ ignored_roles: v })}
+            onChange={onIgnoredRolesChange}
           />
         </div>
       </Section>

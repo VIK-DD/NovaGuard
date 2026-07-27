@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { normalizeBadwords } from "../lib/configForm";
 
 interface Props {
@@ -7,7 +7,8 @@ interface Props {
   onChange: (value: string[]) => void;
 }
 
-export default function BadwordsEditor({ value, error, onChange }: Props) {
+// See the note in ChannelSelect.tsx — same shared-draft-object problem.
+function BadwordsEditor({ value, error, onChange }: Props) {
   const [input, setInput] = useState("");
 
   const add = () => {
@@ -70,3 +71,5 @@ export default function BadwordsEditor({ value, error, onChange }: Props) {
     </div>
   );
 }
+
+export default memo(BadwordsEditor);

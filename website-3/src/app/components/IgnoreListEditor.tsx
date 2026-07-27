@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 interface Option {
   id: string;
   name: string;
@@ -19,7 +21,8 @@ interface Props {
  * Already-picked options leave the select, which stops the duplicates the
  * server would strip from being offered in the first place.
  */
-export default function IgnoreListEditor({
+// See the note in ChannelSelect.tsx — same shared-draft-object problem.
+function IgnoreListEditor({
   label,
   prefix,
   value,
@@ -84,3 +87,5 @@ export default function IgnoreListEditor({
     </div>
   );
 }
+
+export default memo(IgnoreListEditor);

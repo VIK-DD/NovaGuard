@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { GuildChannel } from "../../lib/api/schemas";
 
 interface Props {
@@ -9,7 +9,12 @@ interface Props {
   onChange: (value: string | null) => void;
 }
 
-export default function ChannelSelect({ label, value, channels, error, onChange }: Props) {
+// GuildConfig holds one settings object for the whole form, so every field
+// change re-renders every field. Memoized, an unrelated field's keystroke
+// bails out here on the shallow prop check instead of rebuilding this select
+// and its option groups — the fix only works if the caller also hands this a
+// stable onChange identity, not a fresh arrow function per render.
+function ChannelSelect({ label, value, channels, error, onChange }: Props) {
   const groups = useMemo(() => {
     const map = new Map<string, GuildChannel[]>();
     for (const c of channels) {
@@ -47,3 +52,5 @@ export default function ChannelSelect({ label, value, channels, error, onChange 
     </label>
   );
 }
+
+export default memo(ChannelSelect);

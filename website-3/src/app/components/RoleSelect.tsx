@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { GuildRole } from "../../lib/api/schemas";
 
 interface Props {
@@ -8,7 +9,8 @@ interface Props {
   onChange: (value: string | null) => void;
 }
 
-export default function RoleSelect({ label, value, roles, error, onChange }: Props) {
+// See the note in ChannelSelect.tsx — same shared-draft-object problem.
+function RoleSelect({ label, value, roles, error, onChange }: Props) {
   const selected = roles.find((r) => r.id === value);
 
   return (
@@ -42,3 +44,5 @@ export default function RoleSelect({ label, value, roles, error, onChange }: Pro
     </label>
   );
 }
+
+export default memo(RoleSelect);
