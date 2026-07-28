@@ -35,6 +35,7 @@ const set = (key: string, value: string) => {
   if (node) node.textContent = value;
 };
 const fmt = (n: number) => new Intl.NumberFormat("en").format(n);
+const statusSnapshotUrl = () => `/api/status-snapshot?t=${Math.floor(Date.now() / 30_000)}`;
 
 const fmtUptime = (total: number) => {
   const d = Math.floor(total / 86400);
@@ -140,7 +141,8 @@ const getStatusSnapshot = async (refresh = false) => {
     .__ngGetStatusSnapshot;
   if (sharedGetter) return sharedGetter(refresh);
 
-  return fetch("/api/status-snapshot", {
+  return fetch(statusSnapshotUrl(), {
+    cache: "no-store",
     headers: { Accept: "application/json" },
     signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(4000) : undefined,
   }).then((response) => {

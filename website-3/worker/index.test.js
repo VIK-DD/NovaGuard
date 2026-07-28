@@ -67,9 +67,8 @@ describe("password session", () => {
     const snapshot = await response.json();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe(
-      "public, max-age=30, stale-while-revalidate=120",
-    );
+    expect(response.headers.get("Cache-Control")).toBe("no-store, private");
+    expect(response.headers.get("Cloudflare-CDN-Cache-Control")).toBe("no-store");
     expect(snapshot.stats.uptime_seconds).toBe(120);
     expect(snapshot.health.db_ok).toBe(true);
     expect(upstream).toHaveBeenCalledTimes(2);
@@ -113,7 +112,7 @@ describe("password session", () => {
     const snapshot = await staleResponse.json();
 
     expect(staleResponse.status).toBe(200);
-    expect(staleResponse.headers.get("Cache-Control")).toBe("no-store");
+    expect(staleResponse.headers.get("Cache-Control")).toBe("no-store, private");
     expect(snapshot.stale).toBe(true);
     expect(snapshot.stats.ready).toBe(true);
     expect(snapshot.health.bot_ready).toBe(true);

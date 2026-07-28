@@ -69,6 +69,7 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
       // The promise also prevents duplicate requests from StatsStrip and Footer.
       const NG_STATUS_CACHE_KEY = "ng-status-snapshot-v1";
       const NG_STATUS_CACHE_MAX_AGE = 10 * 60 * 1000;
+      const getNgStatusUrl = () => `/api/status-snapshot?t=${Math.floor(Date.now() / 30000)}`;
       const readNgStatusCache = () => {
         try {
           const raw =
@@ -103,7 +104,7 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
           if (typeof AbortSignal.timeout === "function") {
             options.signal = AbortSignal.timeout(4000);
           }
-          window.__ngStatusRequest = fetch("/api/status-snapshot", options)
+          window.__ngStatusRequest = fetch(getNgStatusUrl(), { ...options, cache: "no-store" })
             .then((response) => {
               if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
               return response.json();

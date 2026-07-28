@@ -6,6 +6,16 @@ const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
 const encoder = new TextEncoder();
 let lastGoodStatusSnapshot = null;
+const STATUS_CLIENT_HEADERS = {
+  "Cache-Control": "no-store, private",
+  "CDN-Cache-Control": "no-store",
+  "Cloudflare-CDN-Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+};
+const STATUS_EDGE_CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+  "X-Content-Type-Options": "nosniff",
+};
 
 function base64UrlEncode(bytes) {
   let binary = "";
@@ -158,7 +168,9 @@ async function handleStatusSnapshot(request, env, ctx) {
   const cacheKey = new Request(`${url.origin}/api/status-snapshot`);
   const edgeCache = globalThis.caches?.default;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
-  if (cached) return cached;
+  if (cached) {
+    return Response.json(await cached.json(), { headers: STATUS_CLIENT_HEADERS });
+  }
 
   const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
   const upstreamOptions = {
@@ -179,20 +191,10 @@ async function handleStatusSnapshot(request, env, ctx) {
     const snapshot = { stats, health, fetched_at: Date.now(), stale: false };
     lastGoodStatusSnapshot = snapshot;
 
-    const response = Response.json(
-      snapshot,
-      {
-        headers: {
-          "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
-          "X-Content-Type-Options": "nosniff",
-        },
-      },
-    );
-
     if (edgeCache && ctx?.waitUntil) {
-      ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
+      ctx.waitUntil(edgeCache.put(cacheKey, Response.json(snapshot, { headers: STATUS_EDGE_CACHE_HEADERS })));
     }
-    return response;
+    return Response.json(snapshot, { headers: STATUS_CLIENT_HEADERS });
   } catch (error) {
     if (lastGoodStatusSnapshot) {
       return Response.json(
@@ -201,18 +203,13 @@ async function handleStatusSnapshot(request, env, ctx) {
           stale: true,
           stale_reason: error instanceof Error ? error.message : "Status upstream unavailable",
         },
-        {
-          headers: {
-            "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff",
-          },
-        },
+        { headers: STATUS_CLIENT_HEADERS },
       );
     }
 
     return Response.json(
       { error: "Status snapshot unavailable", code: "status_unavailable" },
-      { status: 502, headers: { "Cache-Control": "no-store" } },
+      { status: 502, headers: STATUS_CLIENT_HEADERS },
     );
   }
 }
