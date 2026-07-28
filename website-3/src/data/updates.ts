@@ -64,7 +64,9 @@ export function diffSplit(release: Release): {
   };
 }
 
-// Both formatters are pinned to UTC on purpose. The static pages are rendered on
+const RELEASE_TIME_ZONE = "Europe/Bucharest";
+
+// Both formatters are pinned to Romania time. The static pages are rendered on
 // whatever machine ran the build while the live tail is rendered in the visitor's
 // browser, so an unpinned zone would let one release show two different dates
 // depending on who rendered it.
@@ -75,18 +77,19 @@ export function formatReleaseDate(iso: string): string {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: RELEASE_TIME_ZONE,
   }).format(new Date(parsed));
 }
 
-// Still resolved in UTC — see the note above; only the presentation is 12-hour.
+// Still resolved in Romania time — see the note above. Use 24-hour time because
+// the audience reads this as operational history, not casual prose.
 export function formatReleaseTime(iso: string): string {
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
     minute: "2-digit",
-    hour12: true,
-    timeZone: "UTC",
+    hour12: false,
+    timeZone: RELEASE_TIME_ZONE,
   }).format(new Date(parsed));
 }
