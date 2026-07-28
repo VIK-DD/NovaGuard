@@ -107,6 +107,25 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
       items
         .map((item) => `<li class="text-sm leading-relaxed ${tone}">${escapeHtml(item)}</li>`)
         .join("");
+    const diffBlock = (release: Release) => {
+      const { added, removed, addedPercent } = diffSplit(release);
+      if (added <= 0 && removed <= 0) return "";
+      const fileText =
+        release.changed_files !== undefined
+          ? `<span class="font-mono text-xs text-ink-faint">${release.changed_files} ${
+              release.changed_files === 1 ? "file" : "files"
+            }</span>`
+          : "";
+      return `<div class="mt-5 flex items-center gap-3">
+  <span class="font-mono text-xs text-good">+${added}</span>
+  <span class="font-mono text-xs text-primary">-${removed}</span>
+  ${fileText}
+  <span class="ml-auto flex h-1 w-28 overflow-hidden rounded-full bg-line" role="img" aria-label="${added} lines added, ${removed} lines removed">
+    <span class="h-full bg-good" style="width:${addedPercent}%"></span>
+    <span class="h-full flex-1 bg-primary"></span>
+  </span>
+</div>`;
+    };
 
     fetch("/api/updates-feed", { headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
@@ -136,7 +155,7 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
         : ""
     }</time>
   </div>
-  <div class="min-w-0">${highlightBlock}${changeBlock}</div>
+  <div class="min-w-0">${highlightBlock}${changeBlock}${diffBlock(release)}</div>
 </article>`;
           })
           .join("");
