@@ -5,6 +5,7 @@ const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
 const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
 const encoder = new TextEncoder();
+let lastGoodStatusSnapshot = null;
 
 function base64UrlEncode(bytes) {
   let binary = "";
@@ -121,6 +122,8 @@ function assetCacheControl(pathname) {
   if (
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
+    pathname === "/status" ||
+    pathname.startsWith("/status/") ||
     pathname === "/updates" ||
     pathname.startsWith("/updates/")
   ) {
@@ -173,8 +176,11 @@ async function handleStatusSnapshot(request, env, ctx) {
     }
 
     const [stats, health] = await Promise.all([statsResponse.json(), healthResponse.json()]);
+    const snapshot = { stats, health, fetched_at: Date.now(), stale: false };
+    lastGoodStatusSnapshot = snapshot;
+
     const response = Response.json(
-      { stats, health, fetched_at: Date.now() },
+      snapshot,
       {
         headers: {
           "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
@@ -187,7 +193,23 @@ async function handleStatusSnapshot(request, env, ctx) {
       ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
     }
     return response;
-  } catch {
+  } catch (error) {
+    if (lastGoodStatusSnapshot) {
+      return Response.json(
+        {
+          ...lastGoodStatusSnapshot,
+          stale: true,
+          stale_reason: error instanceof Error ? error.message : "Status upstream unavailable",
+        },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+        },
+      );
+    }
+
     return Response.json(
       { error: "Status snapshot unavailable", code: "status_unavailable" },
       { status: 502, headers: { "Cache-Control": "no-store" } },
