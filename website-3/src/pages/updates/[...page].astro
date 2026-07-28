@@ -86,6 +86,7 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
 
 <script>
   import {
+    diffSplit,
     formatReleaseDate,
     formatReleaseTime,
     newerThan,
@@ -133,11 +134,9 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
         const fresh = newerThan(payload?.updates ?? [], newestBaked);
         if (!fresh.length) return;
 
-        // Numbers continue above the newest baked-in release, which is the last
-        // row's number plus one, so the sequence stays unbroken.
-        const baseNumber = Number(list.dataset.newestNumber ?? "0");
         const markup = fresh
           .map((release, offset) => {
+            const releaseNumber = release.build || Number(list.dataset.newestNumber ?? "0") + fresh.length - offset;
             const highlights = release.highlights ?? [];
             const changes = release.changes ?? [];
             const highlightBlock = highlights.length
@@ -148,7 +147,7 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
               : "";
             return `<article class="grid gap-4 py-8 sm:grid-cols-[7rem_1fr] sm:gap-8 sm:py-10">
   <div class="sm:text-right">
-    <p class="font-mono text-sm text-primary">#${baseNumber + fresh.length - offset}</p>
+    <p class="font-mono text-sm text-primary">#${releaseNumber}</p>
     <time datetime="${escapeHtml(release.created_at)}" class="mt-1 block text-xs text-ink-faint sm:mt-2">${escapeHtml(formatReleaseDate(release.created_at))}${
       formatReleaseTime(release.created_at)
         ? `<span class="mt-0.5 block font-mono opacity-70">${escapeHtml(formatReleaseTime(release.created_at))}</span>`
