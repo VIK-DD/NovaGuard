@@ -43,6 +43,7 @@ from core.utils import build_link_view, defer_interaction, format_timedelta, res
 
 LAG_MONITOR_SECONDS = 5
 BACKUP_INTERVAL_HOURS = 6
+BACKUP_STARTUP_DELAY_SECONDS = 120
 HEALTH_ALERT_COOLDOWN_SECONDS = 900
 HIGH_LAG_ALERT_MS = 3000
 HIGH_LAG_STREAK_REQUIRED = 2
@@ -521,6 +522,7 @@ class System(commands.Cog):
     @backup_loop.before_loop
     async def before_backup_loop(self):
         await self.bot.wait_until_ready()
+        await asyncio.sleep(BACKUP_STARTUP_DELAY_SECONDS)
 
     @tasks.loop(seconds=stream_status_interval_seconds)
     async def rotate_stream_status(self):

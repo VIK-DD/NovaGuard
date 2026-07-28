@@ -650,7 +650,7 @@ class Developer(commands.Cog):
             try:
                 events = await github_api.fetch_repo_events(repo_name, per_page=10)
             except RuntimeError as error:
-                print(f"GitHub watcher error for {repo_name}: {error}")
+                print(f"GitHub watcher skipped {repo_name}: {error}")
                 continue
             except (asyncio.TimeoutError, aiohttp.ClientError) as error:
                 print(f"GitHub watcher skipped {repo_name}: temporary network issue ({error})")

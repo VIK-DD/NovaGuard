@@ -25,7 +25,7 @@ class GitHubAPI:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
-        timeout = aiohttp.ClientTimeout(total=20)
+        timeout = aiohttp.ClientTimeout(total=10, connect=4, sock_connect=4, sock_read=8)
         self.session = aiohttp.ClientSession(headers=headers, timeout=timeout)
 
     async def close(self):
@@ -48,7 +48,9 @@ class GitHubAPI:
                         )
                     raise RuntimeError(f"GitHub API error {response.status}: {await response.text()}")
                 return await response.json()
-        except (asyncio.TimeoutError, aiohttp.ClientError) as error:
+        except asyncio.TimeoutError as error:
+            raise RuntimeError("GitHub API timed out") from error
+        except aiohttp.ClientError as error:
             raise RuntimeError(f"GitHub API temporary network issue: {error}") from error
 
     async def get_json_with_headers(self, path, params=None):
@@ -67,7 +69,9 @@ class GitHubAPI:
                         )
                     raise RuntimeError(f"GitHub API error {response.status}: {await response.text()}")
                 return await response.json(), response.headers
-        except (asyncio.TimeoutError, aiohttp.ClientError) as error:
+        except asyncio.TimeoutError as error:
+            raise RuntimeError("GitHub API timed out") from error
+        except aiohttp.ClientError as error:
             raise RuntimeError(f"GitHub API temporary network issue: {error}") from error
 
     async def fetch_user(self, username):
