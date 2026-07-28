@@ -1,6 +1,8 @@
 const SESSION_COOKIE = "ng_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
 const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
+const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
+const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
 const encoder = new TextEncoder();
 
@@ -158,7 +160,7 @@ async function handleStatusSnapshot(request, env, ctx) {
   const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
   const upstreamOptions = {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(3000),
+    signal: AbortSignal.timeout(STATUS_SNAPSHOT_TIMEOUT_MS),
   };
 
   try {
@@ -212,7 +214,7 @@ async function handleUpdatesFeed(request, env, ctx) {
   try {
     const upstream = await fetch(`${apiBase}/updates?limit=200`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(UPDATES_FEED_TIMEOUT_MS),
     });
     if (!upstream.ok) throw new Error(`Updates upstream failed: ${upstream.status}`);
 
