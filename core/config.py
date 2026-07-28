@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 UPDATE_STATE_FILE = BASE_DIR / ".update_state.json"
 GITHUB_STATE_FILE = BASE_DIR / ".github_state.json"
 
-BOT_VERSION = "3.0.0"
+BOT_VERSION = "3.1.0"
 BOT_CODENAME = "Nova"
 STREAM_URL = "https://www.twitch.tv/the8bitdrummer"
 
