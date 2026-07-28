@@ -82,19 +82,19 @@ describe("formatReleaseDate", () => {
 
 describe("formatReleaseTime", () => {
   it("renders an evening UTC update in Romania summer time", () => {
-    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("23:43");
+    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("11:43 PM");
   });
 
   it("renders a morning UTC update in Romania summer time", () => {
-    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("08:07");
+    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("8:07 AM");
   });
 
-  it("uses 24-hour time for after-midnight Romania releases", () => {
-    expect(formatReleaseTime("2026-07-28T00:41:00+00:00")).toBe("03:41");
+  it("uses AM for after-midnight Romania releases", () => {
+    expect(formatReleaseTime("2026-07-28T00:41:00+00:00")).toBe("3:41 AM");
   });
 
   it("renders noon UTC as afternoon in Romania", () => {
-    expect(formatReleaseTime("2026-07-26T12:00:00+00:00")).toBe("15:00");
+    expect(formatReleaseTime("2026-07-26T12:00:00+00:00")).toBe("3:00 PM");
   });
 
   it("returns nothing for an unparsable value so the row can omit it", () => {
@@ -102,7 +102,7 @@ describe("formatReleaseTime", () => {
   });
 
   it("still resolves a non-UTC offset in Romania time", () => {
-    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("22:30");
+    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("10:30 PM");
   });
 });
 

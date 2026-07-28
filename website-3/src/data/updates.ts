@@ -81,15 +81,15 @@ export function formatReleaseDate(iso: string): string {
   }).format(new Date(parsed));
 }
 
-// Still resolved in Romania time — see the note above. Use 24-hour time because
-// the audience reads this as operational history, not casual prose.
+// Still resolved in Romania time — see the note above. AM/PM keeps overnight
+// releases unambiguous without depending on the visitor's local clock.
 export function formatReleaseTime(iso: string): string {
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return "";
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
     minute: "2-digit",
-    hour12: false,
+    hour12: true,
     timeZone: RELEASE_TIME_ZONE,
   }).format(new Date(parsed));
 }

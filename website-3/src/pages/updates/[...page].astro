@@ -28,6 +28,7 @@ const startsVersionBlock = (offset: number) => {
   return ordered[position - 1]?.version !== ordered[position]?.version;
 };
 const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : "";
+const waitsForLiveFeed = Boolean(newestBaked);
 ---
 
 <Base
@@ -49,10 +50,14 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
       </p>
 
       <div
-        class="mt-12 divide-y divide-line border-t border-line"
+        class:list={[
+          "mt-12 divide-y divide-line border-t border-line",
+          waitsForLiveFeed && "opacity-0",
+        ]}
         data-release-list
         data-newest-baked={newestBaked}
         data-newest-number={page.currentPage === 1 ? String(page.total) : ""}
+        data-live-pending={waitsForLiveFeed ? "true" : undefined}
       >
         {
           page.data.map((release, offset) => (
@@ -98,6 +103,10 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
   // there rather than restated here.
   const list = document.querySelector<HTMLElement>("[data-release-list]");
   const newestBaked = list?.dataset.newestBaked ?? "";
+  const revealList = () => {
+    list?.classList.remove("opacity-0");
+    if (list) list.dataset.livePending = "false";
+  };
 
   if (list && newestBaked) {
     const escapeHtml = (value: string) =>
@@ -132,7 +141,10 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
       .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
       .then((payload: { updates?: Release[] }) => {
         const fresh = newerThan(payload?.updates ?? [], newestBaked);
-        if (!fresh.length) return;
+        if (!fresh.length) {
+          revealList();
+          return;
+        }
 
         const markup = fresh
           .map((release, offset) => {
@@ -162,9 +174,13 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
         // Only reachable when the archive shipped empty and the bot has since
         // recorded a release.
         list.querySelector("[data-empty-note]")?.remove();
+        revealList();
       })
       .catch(() => {
         // The page is already correct without the newest entries.
+        revealList();
       });
+  } else {
+    revealList();
   }
 </script>
