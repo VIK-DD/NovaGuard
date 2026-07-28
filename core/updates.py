@@ -9,7 +9,6 @@ import ast
 import asyncio
 import difflib
 import hashlib
-import re
 from datetime import UTC, datetime
 
 import aiohttp
@@ -23,20 +22,6 @@ from .utils import build_link_view, parse_github_datetime
 
 COMMAND_DECORATORS = {"command", "hybrid_command", "context_menu"}
 STATUS_VARIABLE_NAMES = {"stream_statuses", "DEFAULT_STREAM_STATUSES"}
-RELEASE_HIGHLIGHT_PREFIXES = (
-    "Setup wizard upgraded",
-    "SQLite now powers",
-    "Automatic backups added",
-    "Health monitoring now tracks",
-    "Levels and economy migrate",
-    "Update embeds now produce",
-    "GitHub/update feeds now respect",
-)
-LEADING_EMOJI = re.compile(r"^(?:[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\ufe0f\u200d]+\s*)+")
-
-
-def strip_leading_emoji(text):
-    return LEADING_EMOJI.sub("", str(text)).strip()
 
 
 def tracked_files():
@@ -229,33 +214,33 @@ def summarize_feature_highlights(old_files, new_files):
     if any_changed(changed_files, "cogs/setup.py", "core/guild_config.py"):
         setup_source = new_files.get("cogs/setup.py", "")
         if "ChannelSelect" in setup_source and "config = app_commands.Group" in setup_source:
-            highlights.append("Setup wizard upgraded with select menus, channel picker and `/config` admin tools")
+            highlights.append("🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools")
 
     if any_changed(changed_files, "core/database.py", "core/storage.py"):
         database_source = new_files.get("core/database.py", "")
         if "novaguard.sqlite3" in database_source and "level_records" in database_source:
-            highlights.append("SQLite now powers server config, XP levels and economy wallets")
+            highlights.append("🗄️ SQLite now powers server config, XP levels and economy wallets")
 
     if any_changed(changed_files, "core/backups.py", "cogs/system.py"):
         if "create_backup" in new_files.get("core/backups.py", ""):
-            highlights.append("Automatic backups added with manual `/config backup` support")
+            highlights.append("🧳 Automatic backups added with manual `/config backup` support")
 
     if any_changed(changed_files, "cogs/system.py", "core/error_digest.py"):
         system_source = new_files.get("cogs/system.py", "")
         if "HIGH_LAG_ALERT_MS" in system_source and "loop_lag_snapshot" in system_source:
-            highlights.append("Health monitoring now tracks event-loop lag and sends admin alerts")
+            highlights.append("🩺 Health monitoring now tracks event-loop lag and sends admin alerts")
 
     if any_changed(changed_files, "cogs/levels.py", "cogs/economy.py", "core/database.py"):
         if "load_levels_data" in new_files.get("core/database.py", "") and "load_economy_data" in new_files.get("core/database.py", ""):
-            highlights.append("Levels and economy migrate safely from JSON into SQLite")
+            highlights.append("🏆 Levels and economy migrate safely from JSON into SQLite")
 
     if any_changed(changed_files, "core/updates.py"):
-        highlights.append("Update embeds now produce cleaner professional release notes")
+        highlights.append("📜 Update embeds now produce cleaner professional release notes")
 
     if any_changed(changed_files, "cogs/developer.py", "core/updates.py", "core/guild_config.py"):
         developer_source = new_files.get("cogs/developer.py", "")
         if "resolve_configured_channels" in developer_source:
-            highlights.append("GitHub/update feeds now respect per-server setup channels")
+            highlights.append("🐙 GitHub/update feeds now respect per-server setup channels")
 
     return highlights[:6]
 
@@ -293,7 +278,7 @@ def summarize_changes(old_files, new_files, has_history=False):
     )
 
     if "maintenance" in added_commands or any_changed(changed_files, "core/maintenance.py"):
-        summary.append("Added global maintenance mode with DND presence and graceful command blocking")
+        summary.append("🛠️ Added global maintenance mode with DND presence and graceful command blocking")
 
     if added_commands:
         summary.append("Added commands: " + format_command_list(added_commands, limit=12))
@@ -436,7 +421,7 @@ def clamp(text, limit=1024):
 
 
 def is_release_highlight(item):
-    return strip_leading_emoji(item).startswith(RELEASE_HIGHLIGHT_PREFIXES)
+    return item.startswith(("🚀", "🗄️", "🧳", "🩺", "🏆", "📜", "🐙"))
 
 
 def bullet_list(items):
@@ -444,12 +429,12 @@ def bullet_list(items):
 
 
 def build_code_update_embed(update_entry):
-    summary_items = [strip_leading_emoji(item) for item in update_entry.get("summary", [])] or ["General improvements"]
+    summary_items = update_entry.get("summary", []) or ["General improvements"]
     highlight_items = [item for item in summary_items if is_release_highlight(item)]
     change_items = [item for item in summary_items if not is_release_highlight(item)]
 
     embed = discord.Embed(
-        title="Bot Update Deployed",
+        title="🚀 Bot Update Deployed",
         description=(
             "A fresh NovaGuard build is live. "
             "This release note was generated automatically from the deployed code."
@@ -459,20 +444,20 @@ def build_code_update_embed(update_entry):
     )
     if highlight_items:
         embed.add_field(
-            name="Release Highlights",
+            name="✨ Release Highlights",
             value=clamp(bullet_list(highlight_items)),
             inline=False,
         )
     if change_items:
         embed.add_field(
-            name="Command & Project Changes",
+            name="🧭 Command & Project Changes",
             value=clamp(bullet_list(change_items)),
             inline=False,
         )
     if not highlight_items and not change_items:
-        embed.add_field(name="What Changed", value="• General improvements", inline=False)
+        embed.add_field(name="✨ What Changed", value="• General improvements", inline=False)
     embed.add_field(
-        name="Code Stats",
+        name="📊 Code Stats",
         value=(
             f"```diff\n+ {update_entry.get('added_lines', 0)} lines added\n"
             f"- {update_entry.get('removed_lines', 0)} lines removed\n"
@@ -482,7 +467,7 @@ def build_code_update_embed(update_entry):
     )
     if update_entry.get("build"):
         embed.add_field(
-            name="Build",
+            name="🏗️ Build",
             value=f"`#{update_entry['build']}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
             inline=True,
         )
@@ -492,23 +477,23 @@ def build_code_update_embed(update_entry):
 
 def build_restart_update_embed(update_entry):
     build_number = update_entry.get("build", "?")
-    summary_items = [strip_leading_emoji(item) for item in update_entry.get("summary", [])] or ["General improvements"]
+    summary_items = update_entry.get("summary", []) or ["General improvements"]
     highlight_items = [item for item in summary_items if is_release_highlight(item)]
     change_items = [item for item in summary_items if not is_release_highlight(item)]
 
     embed = discord.Embed(
-        title="Bot Restarted • Current Live Build",
+        title="🔄 Bot Restarted • Current Live Build",
         description="NovaGuard is back online. No new deployment was detected during this restart.",
         color=discord.Color(Palette.PRIMARY),
         timestamp=parse_github_datetime(update_entry.get("created_at")) or datetime.now(UTC),
     )
     embed.add_field(
-        name="Live Build",
+        name="🏗️ Live Build",
         value=f"`#{build_number}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
         inline=True,
     )
     embed.add_field(
-        name="Code Stats",
+        name="📊 Code Stats",
         value=(
             f"`+{update_entry.get('added_lines', 0)}` / "
             f"`-{update_entry.get('removed_lines', 0)}` lines\n"
@@ -518,7 +503,7 @@ def build_restart_update_embed(update_entry):
     )
     preview_items = (highlight_items or change_items or summary_items)[:3]
     embed.add_field(
-        name="Latest Deployment Summary",
+        name="📝 Latest Deployment Summary",
         value=clamp(bullet_list(preview_items)),
         inline=False,
     )
@@ -532,7 +517,7 @@ def build_update_history_overview_embed(update_history):
     first_time = parse_github_datetime(first_update.get("created_at"))
 
     embed = discord.Embed(
-        title="Bot Release Timeline",
+        title="📜 Bot Release Timeline",
         description="A professional summary of every saved bot update, from the earliest build to the current live version.",
         color=discord.Color(Palette.PRIMARY),
         timestamp=latest_time or datetime.now(UTC),
@@ -561,10 +546,7 @@ def build_update_history_overview_embed(update_history):
         value=clamp(
             "\n".join(
                 f"• {item}"
-                for item in (
-                    [strip_leading_emoji(item) for item in latest_update.get("summary", [])]
-                    or ["General internal improvements and cleanup"]
-                )[:5]
+                for item in (latest_update.get("summary", []) or ["General internal improvements and cleanup"])[:5]
             )
         ),
         inline=False,
@@ -583,7 +565,7 @@ def build_update_history_embeds(update_history):
     for index in range(0, len(newest_first), 4):
         chunk = newest_first[index:index + 4]
         embed = discord.Embed(
-            title="Bot Update Timeline",
+            title="🗂️ Bot Update Timeline",
             description="Latest and previous bot updates collected in one place.",
             color=discord.Color(Palette.PRIMARY),
         )
@@ -591,9 +573,7 @@ def build_update_history_embeds(update_history):
         for offset, update_entry in enumerate(chunk, start=index + 1):
             timestamp = parse_github_datetime(update_entry.get("created_at"))
             time_label = discord.utils.format_dt(timestamp, "f") if timestamp else "Unknown time"
-            summary = [strip_leading_emoji(item) for item in update_entry.get("summary", [])] or [
-                "General internal improvements and cleanup"
-            ]
+            summary = update_entry.get("summary", []) or ["General internal improvements and cleanup"]
             summary_text = "\n".join(f"• {item}" for item in summary[:4])
             stats_text = (
                 f"`+{update_entry.get('added_lines', 0)}` / "
