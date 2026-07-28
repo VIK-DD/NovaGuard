@@ -23,7 +23,7 @@ HISTORY = [
     {
         "build": 3,
         "created_at": "2026-07-20T10:00:00+00:00",
-        "summary": ["Third", "Also third"],
+        "summary": ["🚀 Third", "🧳 Also third"],
         "added_lines": 55,
         "removed_lines": 10,
         "changed_files": 3,
@@ -34,6 +34,7 @@ feed = merged_update_feed(limit=50, archive=ARCHIVE, history=HISTORY, latest=Non
 check("all entries merged", len(feed) == 3)
 check("newest first", [entry["build"] for entry in feed] == [3, 2, 1])
 check("engine summary becomes changes", feed[0]["changes"] == ["Third", "Also third"])
+check("leading emoji stripped from engine entries", "🚀" not in repr(feed[0]))
 check("engine entry keeps no summary key", "summary" not in feed[0])
 check("stats carried through", feed[0]["added_lines"] == 55)
 check("archive highlights preserved", feed[1]["highlights"] == ["Second"])

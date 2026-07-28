@@ -5,6 +5,7 @@ Read-only with respect to the changelog engine. This module never writes
 feed cannot disturb what the bot posts to Discord.
 """
 
+import re
 from datetime import datetime
 
 from .config import BASE_DIR
@@ -16,6 +17,7 @@ ARCHIVE_FILE = BASE_DIR / "core" / "updates_archive.json"
 STAT_KEYS = ("added_lines", "removed_lines", "changed_files")
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
+LEADING_EMOJI = re.compile(r"^(?:[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\ufe0f\u200d]+\s*)+")
 
 
 def load_archive():
@@ -36,7 +38,27 @@ def _timestamp(value):
 def _bullets(value):
     if not isinstance(value, list):
         return []
-    return [str(item) for item in value if str(item).strip()]
+    bullets = []
+    for item in value:
+        text = LEADING_EMOJI.sub("", str(item)).strip()
+        if text:
+            bullets.append(text)
+    return bullets
+
+
+def _clean_feed_entry(entry):
+    cleaned = dict(entry)
+    changes = _bullets(cleaned.get("changes"))
+    highlights = _bullets(cleaned.get("highlights"))
+    if changes:
+        cleaned["changes"] = changes
+    else:
+        cleaned.pop("changes", None)
+    if highlights:
+        cleaned["highlights"] = highlights
+    else:
+        cleaned.pop("highlights", None)
+    return cleaned
 
 
 def normalize_engine_entry(entry):
@@ -97,7 +119,7 @@ def merged_update_feed(limit=DEFAULT_LIMIT, archive=None, history=None, latest=N
         if stamp is None or created_at in seen:
             continue
         seen.add(created_at)
-        feed.append(entry)
+        feed.append(_clean_feed_entry(entry))
         archive_cutoff = stamp if archive_cutoff is None else max(archive_cutoff, stamp)
 
     # The archive is the published record up to its newest entry, so the engine
