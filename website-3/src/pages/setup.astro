@@ -115,3 +115,131 @@ const steps = [
   </main>
   <Footer />
 </Base>
+
+<script>
+  import { ApiError, apiFetch, inviteUrl } from "../lib/api/client";
+  import { GuildConfigSchema, GuildsSchema, type Guild } from "../lib/api/schemas";
+  import { classifyGuilds, countRecommended } from "../data/setup";
+
+  const container = document.querySelector<HTMLElement>("[data-setup-strip]");
+  if (container) void init(container);
+
+  async function init(el: HTMLElement) {
+    let guilds: Guild[];
+    try {
+      guilds = (await apiFetch("/guilds", GuildsSchema)).guilds;
+    } catch (err) {
+      if (err instanceof ApiError && (err.code === "unauthorized" || err.code === "session_expired")) {
+        renderNotConnected(el);
+      }
+      // Any other failure (network, bot_starting, upstream_unavailable) leaves
+      // the strip empty — the page is already complete without it.
+      return;
+    }
+
+    const selection = classifyGuilds(guilds);
+    if (selection.kind === "none") {
+      renderNoGuilds(el);
+      return;
+    }
+
+    renderLoading(el);
+
+    if (selection.kind === "single") {
+      await renderProgress(el, selection.guild);
+      return;
+    }
+
+    renderSelector(el, selection.guilds, (guild) => renderProgress(el, guild));
+  }
+
+  function renderNotConnected(el: HTMLElement) {
+    el.innerHTML = `<p class="text-sm text-ink-muted">Connect your Discord account to see your setup progress here. <a href="/dashboard" class="text-primary underline underline-offset-4">Open the dashboard</a></p>`;
+  }
+
+  function renderNoGuilds(el: HTMLElement) {
+    el.innerHTML = `<p class="text-sm text-ink-muted">No server to report on yet. <a href="${escapeHtml(inviteUrl())}" class="text-primary underline underline-offset-4">Add NovaGuard to a server</a></p>`;
+  }
+
+  function renderLoading(el: HTMLElement) {
+    el.innerHTML = `<div class="h-5 w-64 animate-pulse rounded bg-line/60" aria-busy="true"></div>`;
+  }
+
+  function renderSelector(
+    el: HTMLElement,
+    guilds: { id: string; name: string }[],
+    onPick: (guild: { id: string; name: string }) => void,
+  ) {
+    const options = guilds
+      .map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`)
+      .join("");
+    el.innerHTML = `
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="text-sm text-ink-muted">
+          Show progress for
+          <select data-setup-guild-select class="ml-2 rounded-md border border-line bg-card px-2 py-1 text-sm text-ink outline-none focus:border-ink">
+            ${options}
+          </select>
+        </label>
+        <span data-setup-progress-slot></span>
+      </div>`;
+
+    const select = el.querySelector<HTMLSelectElement>("[data-setup-guild-select]")!;
+    const slot = el.querySelector<HTMLElement>("[data-setup-progress-slot]")!;
+    const pick = () => {
+      const guild = guilds.find((g) => g.id === select.value);
+      if (guild) {
+        slot.innerHTML = `<span class="inline-block h-4 w-40 animate-pulse rounded bg-line/60" aria-busy="true"></span>`;
+        onPick(guild);
+      }
+    };
+    select.addEventListener("change", pick);
+    pick();
+
+    // renderProgress below targets `el` directly, which would blow away the
+    // selector itself. Route single/repeat picks through the slot instead.
+    (el as HTMLElement).dataset.setupHasSelector = "true";
+  }
+
+  async function renderProgress(el: HTMLElement, guild: { id: string; name: string }) {
+    const target = el.querySelector<HTMLElement>("[data-setup-progress-slot]") ?? el;
+    try {
+      const config = await apiFetch(`/guilds/${guild.id}/config`, GuildConfigSchema);
+      const { done, total, missing } = countRecommended(
+        config.settings,
+        config.github_watch_configured,
+      );
+      const missingLabel = missing.length
+        ? ` — missing ${missing.map((key) => escapeHtml(labelFor(key))).join(", ")}`
+        : "";
+      target.innerHTML = `<span class="text-sm text-ink">${done} of ${total} recommended channels set${missingLabel}. <a href="/dashboard/g/${escapeHtml(guild.id)}" class="text-primary underline underline-offset-4">Open ${escapeHtml(guild.name)} in the dashboard</a></span>`;
+    } catch {
+      // A guild-config failure (deleted guild, bot removed mid-session, a
+      // malformed payload Zod rejects) is indistinguishable from "nothing
+      // configured" only if we let it be — treat it as a failure instead of
+      // reporting a false "0 of n".
+      if (el.dataset.setupHasSelector === "true") {
+        target.innerHTML = "";
+      } else {
+        el.innerHTML = "";
+      }
+    }
+  }
+
+  function labelFor(key: string): string {
+    const known: Record<string, string> = {
+      update_channel: "Bot Updates",
+      error_log_channel: "Admin Errors",
+      log_channel: "Server Logs",
+      welcome_channel: "Welcome",
+      github_event_channel: "GitHub Feed",
+    };
+    return known[key] ?? key;
+  }
+
+  function escapeHtml(value: string): string {
+    return value.replace(/[&<>"]/g, (char) =>
+      char === "&" ? "&amp;" : char === "<" ? "&lt;" : char === ">" ? "&gt;" : "&quot;",
+    );
+  }
+</script>
