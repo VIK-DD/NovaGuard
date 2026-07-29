@@ -1,0 +1,117 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import { CHANNEL_REFERENCE, SETUP_COMMANDS } from "../data/setup";
+
+const coreChannels = CHANNEL_REFERENCE.filter((c) => c.group === "core");
+const communityChannels = CHANNEL_REFERENCE.filter((c) => c.group === "community");
+
+const steps = [
+  {
+    title: "Invite NovaGuard",
+    body: "Add the bot to your server with the button below. No setup happens yet — this only gets it in the door.",
+  },
+  {
+    title: "Open /setup in Discord",
+    body: "Run the command, then pick a channel from the dropdown or press a quick button — Updates, GitHub, Admin Errors, Server Logs, Welcome, Goodbye. Every channel is optional.",
+  },
+  {
+    title: "Press Mark Complete",
+    body: "This only sets a status flag on the setup embed — NovaGuard already works with none, some, or all channels set.",
+  },
+];
+---
+
+<Base
+  title="Setup — NovaGuard"
+  description="How to configure NovaGuard: three steps, and a reference for every channel and command."
+>
+  <Nav />
+  <main class="mx-auto max-w-5xl px-5 py-12 sm:px-6 sm:py-20">
+    <p class="font-mono text-xs tracking-[0.14em] text-primary uppercase">Setup</p>
+    <h1 class="font-display mt-4 max-w-2xl text-3xl leading-tight sm:text-5xl">
+      Three steps. Nothing required.
+    </h1>
+    <p class="mt-4 max-w-md text-ink-muted">
+      Every channel below is optional — NovaGuard runs with none, some, or all of them set.
+    </p>
+
+    <div data-setup-strip class="mt-8"></div>
+
+    <section class="mt-16">
+      <dl class="divide-y divide-line border-t border-line">
+        {
+          steps.map((step, i) => (
+            <div class="grid gap-2 py-6 sm:grid-cols-[3rem_1fr] sm:items-baseline sm:gap-6">
+              <dt class="font-mono text-xs text-ink-faint">{String(i + 1).padStart(2, "0")}</dt>
+              <div>
+                <p class="font-display text-lg font-semibold">{step.title}</p>
+                <p class="mt-1.5 max-w-lg text-sm leading-relaxed text-ink-muted">{step.body}</p>
+                {i === 0 && (
+                  <a
+                    href="/dashboard"
+                    data-invite
+                    class="ng-pressable mt-4 inline-flex h-11 items-center justify-center rounded-[6px] bg-primary px-4 text-sm font-medium text-primary-ink transition-colors hover:bg-primary/90"
+                  >
+                    Add to Discord
+                  </a>
+                )}
+              </div>
+            </div>
+          ))
+        }
+      </dl>
+    </section>
+
+    <section class="mt-16">
+      <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Channel reference</p>
+      <h2 class="font-display mt-3 text-2xl">Every channel NovaGuard can use.</h2>
+
+      <p class="mt-8 text-xs tracking-[0.2em] text-primary uppercase">Core</p>
+      <div class="mt-3 divide-y divide-line border-t border-line">
+        {
+          coreChannels.map((c) => (
+            <div class="grid gap-1 py-4 sm:grid-cols-[14rem_1fr] sm:gap-6">
+              <p class="text-sm font-medium">
+                {c.label}
+                {c.recommended && <span class="ml-2 text-xs text-primary">Recommended</span>}
+              </p>
+              <p class="text-sm text-ink-muted">{c.description}</p>
+            </div>
+          ))
+        }
+      </div>
+
+      <p class="mt-10 text-xs tracking-[0.2em] text-primary uppercase">Community</p>
+      <div class="mt-3 divide-y divide-line border-t border-line">
+        {
+          communityChannels.map((c) => (
+            <div class="grid gap-1 py-4 sm:grid-cols-[14rem_1fr] sm:gap-6">
+              <p class="text-sm font-medium">
+                {c.label}
+                {c.recommended && <span class="ml-2 text-xs text-primary">Recommended</span>}
+              </p>
+              <p class="text-sm text-ink-muted">{c.description}</p>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="mt-16">
+      <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Commands</p>
+      <div class="mt-3 divide-y divide-line border-t border-line">
+        {
+          SETUP_COMMANDS.map((cmd) => (
+            <div class="grid gap-1 py-4 sm:grid-cols-[14rem_1fr] sm:gap-6">
+              <code class="font-mono text-sm">{cmd.name}</code>
+              <p class="text-sm text-ink-muted">{cmd.purpose}</p>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+  </main>
+  <Footer />
+</Base>
