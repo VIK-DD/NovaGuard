@@ -70,6 +70,10 @@ export const GuildSettingsSchema = z.object({
 export type GuildSettings = z.infer<typeof GuildSettingsSchema>;
 
 export const GuildConfigSchema = z.object({
+  // Instance-wide (same for every guild), not a per-guild setting — see
+  // core/webserver.py's _config_payload. Used only to size the /setup page's
+  // recommended-channel count the same way cogs/setup.py's setup_score does.
+  github_watch_configured: z.boolean(),
   guild: z.object({
     id: z.string(),
     name: z.string(),

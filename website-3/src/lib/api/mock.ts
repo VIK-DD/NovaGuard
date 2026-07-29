@@ -194,6 +194,7 @@ function configPayload(id: string): Json | null {
   const settings = settingsByGuild[id];
   if (!meta || !settings) return null;
   return {
+    github_watch_configured: false,
     guild: { id, name: meta.name, icon: null, member_count: meta.member_count },
     settings,
     channels,
