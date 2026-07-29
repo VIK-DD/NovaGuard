@@ -309,6 +309,12 @@ async def main():
                 and "automod" in data["settings"]
                 and "voice_report_channel" in data["settings"],
             )
+        async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
+            data = await r.json()
+            await check(
+                "config payload exposes github_watch_configured",
+                r.status == 200 and isinstance(data.get("github_watch_configured"), bool),
+            )
         async with http.get(f"{LEGACY}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
             await check("config GET legacy alias", r.status == 200)
 

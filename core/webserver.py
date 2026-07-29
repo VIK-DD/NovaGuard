@@ -45,7 +45,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
-from .config import BOT_CODENAME, BOT_VERSION
+from .config import BOT_CODENAME, BOT_VERSION, github_config
 from .database import connect
 from .levels_settings import resolve_levels, validate_levels
 from .storage import get_guild_settings, update_guild_settings
@@ -998,6 +998,15 @@ class WebServer:
                 "icon": str(guild.icon) if guild.icon else None,
                 "member_count": guild.member_count,
             },
+            # Instance-wide, not per-guild — same value for every guild this bot
+            # serves. Exposed here (rather than a new endpoint) so the setup page
+            # can read a guild's progress and this flag in one request. Lets the
+            # website's recommended-channel count agree with cogs/setup.py's
+            # setup_score, which adds a 5th recommended channel under the same
+            # condition.
+            "github_watch_configured": bool(
+                github_config.watch_repos or github_config.primary_repo
+            ),
             "settings": {
                 **{key: (str(settings[key]) if settings.get(key) else None) for key in CHANNEL_KEYS},
                 **{key: (str(settings[key]) if settings.get(key) else None) for key in ROLE_KEYS},
