@@ -52,7 +52,7 @@ def create_backup(label="auto"):
 
     included = []
     try:
-        with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as zip_file:
             if DB_PATH.exists():
                 backup_sqlite_to(temp_db)
                 zip_file.write(temp_db, "data/novaguard.sqlite3")

@@ -81,36 +81,36 @@ describe("formatReleaseDate", () => {
 });
 
 describe("formatReleaseTime", () => {
-  it("renders an afternoon time as PM", () => {
-    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("8:43 PM");
+  it("renders an evening UTC update in Romania summer time", () => {
+    expect(formatReleaseTime("2026-07-26T20:43:18.956521+00:00")).toBe("11:43 PM");
   });
 
-  it("renders a morning time as AM", () => {
-    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("5:07 AM");
+  it("renders a morning UTC update in Romania summer time", () => {
+    expect(formatReleaseTime("2026-07-26T05:07:00+00:00")).toBe("8:07 AM");
   });
 
-  it("calls midnight 12 AM, not 0", () => {
-    expect(formatReleaseTime("2026-07-26T00:10:00+00:00")).toBe("12:10 AM");
+  it("uses AM for after-midnight Romania releases", () => {
+    expect(formatReleaseTime("2026-07-28T00:41:00+00:00")).toBe("3:41 AM");
   });
 
-  it("calls noon 12 PM", () => {
-    expect(formatReleaseTime("2026-07-26T12:00:00+00:00")).toBe("12:00 PM");
+  it("renders noon UTC as afternoon in Romania", () => {
+    expect(formatReleaseTime("2026-07-26T12:00:00+00:00")).toBe("3:00 PM");
   });
 
   it("returns nothing for an unparsable value so the row can omit it", () => {
     expect(formatReleaseTime("not-a-date")).toBe("");
   });
 
-  it("still resolves a non-UTC offset in UTC", () => {
-    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("7:30 PM");
+  it("still resolves a non-UTC offset in Romania time", () => {
+    expect(formatReleaseTime("2026-07-26T23:30:00+04:00")).toBe("10:30 PM");
   });
 });
 
 describe("timezone pinning", () => {
   // Rendered on the build machine for static pages and in the browser for the
   // live tail: an unpinned zone would let those two disagree about the day.
-  it("keeps a late-evening UTC release on its own date", () => {
-    expect(formatReleaseDate("2026-07-26T23:50:00+00:00")).toBe("26 July 2026");
+  it("moves late-evening UTC releases onto the Romania calendar day", () => {
+    expect(formatReleaseDate("2026-07-26T23:50:00+00:00")).toBe("27 July 2026");
   });
 
   it("keeps an early-morning UTC release on its own date", () => {

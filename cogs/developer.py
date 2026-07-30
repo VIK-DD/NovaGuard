@@ -444,7 +444,11 @@ async def build_watcher_embed(repo_name, event):
         changed_files = []
         payload_commits = payload.get("commits") or []
         if base_sha and head_sha and set(base_sha) != {"0"}:
-            comparison = await github_api.fetch_compare(repo_name, base_sha, head_sha)
+            try:
+                comparison = await github_api.fetch_compare(repo_name, base_sha, head_sha)
+            except RuntimeError as error:
+                print(f"GitHub watcher compare skipped for {repo_name}: {error}")
+                comparison = None
             if comparison:
                 commits = comparison.get("commits", [])
                 changed_files = comparison.get("files", [])
@@ -454,11 +458,15 @@ async def build_watcher_embed(repo_name, event):
 
         if not commits:
             fallback_count = min(max(payload.get("size", 1), 1), 5)
-            commits = await github_api.fetch_repo_commits(
-                repo_name,
-                per_page=fallback_count,
-                sha=payload.get("ref", "refs/heads/main").split("/")[-1],
-            ) or []
+            try:
+                commits = await github_api.fetch_repo_commits(
+                    repo_name,
+                    per_page=fallback_count,
+                    sha=payload.get("ref", "refs/heads/main").split("/")[-1],
+                ) or []
+            except RuntimeError as error:
+                print(f"GitHub watcher commit fallback skipped for {repo_name}: {error}")
+                commits = []
 
         branch_name = payload.get("ref", "refs/heads/main").split("/")[-1]
         commit_lines = []
@@ -642,7 +650,7 @@ class Developer(commands.Cog):
             try:
                 events = await github_api.fetch_repo_events(repo_name, per_page=10)
             except RuntimeError as error:
-                print(f"GitHub watcher error for {repo_name}: {error}")
+                print(f"GitHub watcher skipped {repo_name}: {error}")
                 continue
             except (asyncio.TimeoutError, aiohttp.ClientError) as error:
                 print(f"GitHub watcher skipped {repo_name}: temporary network issue ({error})")

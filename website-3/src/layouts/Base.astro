@@ -67,6 +67,33 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
     <script is:inline>
       // Public stats and the status page share one small, edge-cached snapshot.
       // The promise also prevents duplicate requests from StatsStrip and Footer.
+      const NG_STATUS_CACHE_KEY = "ng-status-snapshot-v1";
+      const NG_STATUS_CACHE_MAX_AGE = 10 * 60 * 1000;
+      const getNgStatusUrl = () => `/api/status-snapshot?t=${Math.floor(Date.now() / 30000)}`;
+      const readNgStatusCache = () => {
+        try {
+          const raw =
+            sessionStorage.getItem(NG_STATUS_CACHE_KEY) ||
+            localStorage.getItem(NG_STATUS_CACHE_KEY);
+          const snapshot = raw ? JSON.parse(raw) : null;
+          if (!Number.isFinite(snapshot?.fetched_at) || !snapshot?.stats || !snapshot?.health) {
+            return null;
+          }
+          const age = Date.now() - snapshot.fetched_at;
+          return age >= -5000 && age <= NG_STATUS_CACHE_MAX_AGE
+            ? { ...snapshot, stale: true }
+            : null;
+        } catch {
+          return null;
+        }
+      };
+      const writeNgStatusCache = (snapshot) => {
+        try {
+          const payload = JSON.stringify(snapshot);
+          sessionStorage.setItem(NG_STATUS_CACHE_KEY, payload);
+          localStorage.setItem(NG_STATUS_CACHE_KEY, payload);
+        } catch {}
+      };
       window.__ngGetStatusSnapshot = (refresh = false) => {
         if (refresh) window.__ngStatusRequest = null;
         if (!window.__ngStatusRequest) {
@@ -77,21 +104,21 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
           if (typeof AbortSignal.timeout === "function") {
             options.signal = AbortSignal.timeout(4000);
           }
-          window.__ngStatusRequest = fetch("/api/status-snapshot", options)
+          window.__ngStatusRequest = fetch(getNgStatusUrl(), { ...options, cache: "no-store" })
             .then((response) => {
               if (!response.ok) throw new Error(`Status request failed: ${response.status}`);
               return response.json();
             })
             .then((snapshot) => {
               if (Number.isFinite(snapshot?.fetched_at) && snapshot?.stats && snapshot?.health) {
-                try {
-                  sessionStorage.setItem("ng-status-snapshot-v1", JSON.stringify(snapshot));
-                } catch {}
+                writeNgStatusCache(snapshot);
               }
               return snapshot;
             })
             .catch((error) => {
               window.__ngStatusRequest = null;
+              const cached = readNgStatusCache();
+              if (cached) return cached;
               throw error;
             });
         }

@@ -43,11 +43,13 @@ from core.utils import build_link_view, defer_interaction, format_timedelta, res
 
 LAG_MONITOR_SECONDS = 5
 BACKUP_INTERVAL_HOURS = 6
+BACKUP_STARTUP_DELAY_SECONDS = 120
 HEALTH_ALERT_COOLDOWN_SECONDS = 900
 HIGH_LAG_ALERT_MS = 3000
 HIGH_LAG_STREAK_REQUIRED = 2
 IGNORE_HUGE_LAG_MS = 60000
 PRESENCE_ERROR_LOG_COOLDOWN_SECONDS = 180
+PRESENCE_UPDATE_TIMEOUT_SECONDS = 5
 STARTUP_UPDATE_INITIAL_DELAY_SECONDS = 12
 STARTUP_UPDATE_RETRY_DELAY_SECONDS = 20
 STARTUP_UPDATE_MAX_ATTEMPTS = 6
@@ -330,12 +332,15 @@ class System(commands.Cog):
 
     async def apply_stream_presence(self, advance=True):
         try:
-            await self.bot.change_presence(
-                status=discord.Status.online,
-                activity=discord.Streaming(
-                    name=stream_statuses[self.status_index],
-                    url=STREAM_URL,
+            await asyncio.wait_for(
+                self.bot.change_presence(
+                    status=discord.Status.online,
+                    activity=discord.Streaming(
+                        name=stream_statuses[self.status_index],
+                        url=STREAM_URL,
+                    ),
                 ),
+                timeout=PRESENCE_UPDATE_TIMEOUT_SECONDS,
             )
         except (
             discord.HTTPException,
@@ -356,9 +361,12 @@ class System(commands.Cog):
     async def apply_maintenance_presence(self, state=None):
         state = state or self.maintenance_state()
         try:
-            await self.bot.change_presence(
-                status=discord.Status.dnd,
-                activity=discord.Game(name=state.get("message") or DEFAULT_MAINTENANCE_MESSAGE),
+            await asyncio.wait_for(
+                self.bot.change_presence(
+                    status=discord.Status.dnd,
+                    activity=discord.Game(name=state.get("message") or DEFAULT_MAINTENANCE_MESSAGE),
+                ),
+                timeout=PRESENCE_UPDATE_TIMEOUT_SECONDS,
             )
         except (
             discord.HTTPException,
@@ -514,6 +522,7 @@ class System(commands.Cog):
     @backup_loop.before_loop
     async def before_backup_loop(self):
         await self.bot.wait_until_ready()
+        await asyncio.sleep(BACKUP_STARTUP_DELAY_SECONDS)
 
     @tasks.loop(seconds=stream_status_interval_seconds)
     async def rotate_stream_status(self):

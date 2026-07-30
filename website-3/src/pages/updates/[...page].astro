@@ -28,6 +28,7 @@ const startsVersionBlock = (offset: number) => {
   return ordered[position - 1]?.version !== ordered[position]?.version;
 };
 const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : "";
+const waitsForLiveFeed = Boolean(newestBaked);
 ---
 
 <Base
@@ -49,10 +50,14 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
       </p>
 
       <div
-        class="mt-12 divide-y divide-line border-t border-line"
+        class:list={[
+          "mt-12 divide-y divide-line border-t border-line",
+          waitsForLiveFeed && "opacity-0",
+        ]}
         data-release-list
         data-newest-baked={newestBaked}
         data-newest-number={page.currentPage === 1 ? String(page.total) : ""}
+        data-live-pending={waitsForLiveFeed ? "true" : undefined}
       >
         {
           page.data.map((release, offset) => (
@@ -86,6 +91,7 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
 
 <script>
   import {
+    diffSplit,
     formatReleaseDate,
     formatReleaseTime,
     newerThan,
@@ -97,6 +103,10 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
   // there rather than restated here.
   const list = document.querySelector<HTMLElement>("[data-release-list]");
   const newestBaked = list?.dataset.newestBaked ?? "";
+  const revealList = () => {
+    list?.classList.remove("opacity-0");
+    if (list) list.dataset.livePending = "false";
+  };
 
   if (list && newestBaked) {
     const escapeHtml = (value: string) =>
@@ -107,18 +117,38 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
       items
         .map((item) => `<li class="text-sm leading-relaxed ${tone}">${escapeHtml(item)}</li>`)
         .join("");
+    const diffBlock = (release: Release) => {
+      const { added, removed, addedPercent } = diffSplit(release);
+      if (added <= 0 && removed <= 0) return "";
+      const fileText =
+        release.changed_files !== undefined
+          ? `<span class="font-mono text-xs text-ink-faint">${release.changed_files} ${
+              release.changed_files === 1 ? "file" : "files"
+            }</span>`
+          : "";
+      return `<div class="mt-5 flex items-center gap-3">
+  <span class="font-mono text-xs text-good">+${added}</span>
+  <span class="font-mono text-xs text-primary">-${removed}</span>
+  ${fileText}
+  <span class="ml-auto flex h-1 w-28 overflow-hidden rounded-full bg-line" role="img" aria-label="${added} lines added, ${removed} lines removed">
+    <span class="h-full bg-good" style="width:${addedPercent}%"></span>
+    <span class="h-full flex-1 bg-primary"></span>
+  </span>
+</div>`;
+    };
 
     fetch("/api/updates-feed", { headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
       .then((payload: { updates?: Release[] }) => {
         const fresh = newerThan(payload?.updates ?? [], newestBaked);
-        if (!fresh.length) return;
+        if (!fresh.length) {
+          revealList();
+          return;
+        }
 
-        // Numbers continue above the newest baked-in release, which is the last
-        // row's number plus one, so the sequence stays unbroken.
-        const baseNumber = Number(list.dataset.newestNumber ?? "0");
         const markup = fresh
           .map((release, offset) => {
+            const releaseNumber = release.build || Number(list.dataset.newestNumber ?? "0") + fresh.length - offset;
             const highlights = release.highlights ?? [];
             const changes = release.changes ?? [];
             const highlightBlock = highlights.length
@@ -129,14 +159,14 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
               : "";
             return `<article class="grid gap-4 py-8 sm:grid-cols-[7rem_1fr] sm:gap-8 sm:py-10">
   <div class="sm:text-right">
-    <p class="font-mono text-sm text-primary">#${baseNumber + fresh.length - offset}</p>
+    <p class="font-mono text-sm text-primary">#${releaseNumber}</p>
     <time datetime="${escapeHtml(release.created_at)}" class="mt-1 block text-xs text-ink-faint sm:mt-2">${escapeHtml(formatReleaseDate(release.created_at))}${
       formatReleaseTime(release.created_at)
         ? `<span class="mt-0.5 block font-mono opacity-70">${escapeHtml(formatReleaseTime(release.created_at))}</span>`
         : ""
     }</time>
   </div>
-  <div class="min-w-0">${highlightBlock}${changeBlock}</div>
+  <div class="min-w-0">${highlightBlock}${changeBlock}${diffBlock(release)}</div>
 </article>`;
           })
           .join("");
@@ -144,9 +174,13 @@ const newestBaked = page.currentPage === 1 ? (page.data[0]?.created_at ?? "") : 
         // Only reachable when the archive shipped empty and the bot has since
         // recorded a release.
         list.querySelector("[data-empty-note]")?.remove();
+        revealList();
       })
       .catch(() => {
         // The page is already correct without the newest entries.
+        revealList();
       });
+  } else {
+    revealList();
   }
 </script>

@@ -1,8 +1,21 @@
 const SESSION_COOKIE = "ng_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
 const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
+const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
+const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
 const encoder = new TextEncoder();
+let lastGoodStatusSnapshot = null;
+const STATUS_CLIENT_HEADERS = {
+  "Cache-Control": "no-store, private",
+  "CDN-Cache-Control": "no-store",
+  "Cloudflare-CDN-Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+};
+const STATUS_EDGE_CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+  "X-Content-Type-Options": "nosniff",
+};
 
 function base64UrlEncode(bytes) {
   let binary = "";
@@ -119,6 +132,8 @@ function assetCacheControl(pathname) {
   if (
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
+    pathname === "/status" ||
+    pathname.startsWith("/status/") ||
     pathname === "/updates" ||
     pathname.startsWith("/updates/")
   ) {
@@ -153,12 +168,14 @@ async function handleStatusSnapshot(request, env, ctx) {
   const cacheKey = new Request(`${url.origin}/api/status-snapshot`);
   const edgeCache = globalThis.caches?.default;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
-  if (cached) return cached;
+  if (cached) {
+    return Response.json(await cached.json(), { headers: STATUS_CLIENT_HEADERS });
+  }
 
   const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
   const upstreamOptions = {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(3000),
+    signal: AbortSignal.timeout(STATUS_SNAPSHOT_TIMEOUT_MS),
   };
 
   try {
@@ -171,24 +188,28 @@ async function handleStatusSnapshot(request, env, ctx) {
     }
 
     const [stats, health] = await Promise.all([statsResponse.json(), healthResponse.json()]);
-    const response = Response.json(
-      { stats, health, fetched_at: Date.now() },
-      {
-        headers: {
-          "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
-          "X-Content-Type-Options": "nosniff",
-        },
-      },
-    );
+    const snapshot = { stats, health, fetched_at: Date.now(), stale: false };
+    lastGoodStatusSnapshot = snapshot;
 
     if (edgeCache && ctx?.waitUntil) {
-      ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
+      ctx.waitUntil(edgeCache.put(cacheKey, Response.json(snapshot, { headers: STATUS_EDGE_CACHE_HEADERS })));
     }
-    return response;
-  } catch {
+    return Response.json(snapshot, { headers: STATUS_CLIENT_HEADERS });
+  } catch (error) {
+    if (lastGoodStatusSnapshot) {
+      return Response.json(
+        {
+          ...lastGoodStatusSnapshot,
+          stale: true,
+          stale_reason: error instanceof Error ? error.message : "Status upstream unavailable",
+        },
+        { headers: STATUS_CLIENT_HEADERS },
+      );
+    }
+
     return Response.json(
       { error: "Status snapshot unavailable", code: "status_unavailable" },
-      { status: 502, headers: { "Cache-Control": "no-store" } },
+      { status: 502, headers: STATUS_CLIENT_HEADERS },
     );
   }
 }
@@ -212,7 +233,7 @@ async function handleUpdatesFeed(request, env, ctx) {
   try {
     const upstream = await fetch(`${apiBase}/updates?limit=200`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(UPDATES_FEED_TIMEOUT_MS),
     });
     if (!upstream.ok) throw new Error(`Updates upstream failed: ${upstream.status}`);
 

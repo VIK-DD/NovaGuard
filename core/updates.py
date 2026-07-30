@@ -18,6 +18,8 @@ from .config import BASE_DIR, BOT_CODENAME, BOT_VERSION, UPDATE_STATE_FILE, gith
 from .guild_config import resolve_configured_channels
 from .storage import load_json_file, save_json_file
 from .theme import Palette
+from .update_feed import MAX_LIMIT as UPDATE_FEED_MAX_LIMIT
+from .update_feed import merged_update_feed
 from .utils import build_link_view, parse_github_datetime
 
 COMMAND_DECORATORS = {"command", "hybrid_command", "context_menu"}
@@ -416,6 +418,24 @@ def next_build_number(update_history):
     return highest + 1
 
 
+def public_build_numbers(update_history):
+    """Map engine entries to the public timeline number used by /updates."""
+    feed = merged_update_feed(limit=UPDATE_FEED_MAX_LIMIT, history=update_history, latest=None)
+    return {
+        entry.get("created_at"): entry.get("build")
+        for entry in feed
+        if entry.get("created_at") and isinstance(entry.get("build"), int)
+    }
+
+
+def public_build_number(update_entry, update_history=None):
+    if update_history:
+        number = public_build_numbers(update_history).get(update_entry.get("created_at"))
+        if number:
+            return number
+    return update_entry.get("build", "?")
+
+
 def clamp(text, limit=1024):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
@@ -428,7 +448,8 @@ def bullet_list(items):
     return "\n".join(f"• {item}" for item in items)
 
 
-def build_code_update_embed(update_entry):
+def build_code_update_embed(update_entry, update_history=None):
+    build_number = public_build_number(update_entry, update_history)
     summary_items = update_entry.get("summary", []) or ["General improvements"]
     highlight_items = [item for item in summary_items if is_release_highlight(item)]
     change_items = [item for item in summary_items if not is_release_highlight(item)]
@@ -468,15 +489,15 @@ def build_code_update_embed(update_entry):
     if update_entry.get("build"):
         embed.add_field(
             name="🏗️ Build",
-            value=f"`#{update_entry['build']}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
+            value=f"`#{build_number}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
             inline=True,
         )
     embed.set_footer(text=f"{github_config.brand_name} • Automatic update summary")
     return embed
 
 
-def build_restart_update_embed(update_entry):
-    build_number = update_entry.get("build", "?")
+def build_restart_update_embed(update_entry, update_history=None):
+    build_number = public_build_number(update_entry, update_history)
     summary_items = update_entry.get("summary", []) or ["General improvements"]
     highlight_items = [item for item in summary_items if is_release_highlight(item)]
     change_items = [item for item in summary_items if not is_release_highlight(item)]
@@ -534,7 +555,7 @@ def build_update_history_overview_embed(update_history):
     embed.add_field(
         name="Current Build",
         value=(
-            f"Build: `#{latest_update.get('build', '?')}`\n"
+            f"Build: `#{public_build_number(latest_update, update_history)}`\n"
             f"Version: `v{BOT_VERSION} \"{BOT_CODENAME}\"`\n"
             f"Tracked files: `{len(tracked_files())}`\n"
             f"Primary repo: `{github_config.primary_repo or 'Not set'}`"
@@ -561,6 +582,7 @@ def build_update_history_embeds(update_history):
 
     embeds = [build_update_history_overview_embed(update_history)]
     newest_first = list(reversed(update_history))
+    build_numbers = public_build_numbers(update_history)
 
     for index in range(0, len(newest_first), 4):
         chunk = newest_first[index:index + 4]
@@ -580,7 +602,10 @@ def build_update_history_embeds(update_history):
                 f"`-{update_entry.get('removed_lines', 0)}` lines"
             )
             embed.add_field(
-                name=f"Build #{update_entry.get('build', len(update_history) - offset + 1)} • {time_label}",
+                name=(
+                    f"Build #{build_numbers.get(update_entry.get('created_at'), update_entry.get('build', '?'))}"
+                    f" • {time_label}"
+                ),
                 value=clamp(f"{summary_text}\n{stats_text}"),
                 inline=False,
             )
@@ -676,7 +701,12 @@ async def send_latest_saved_update_embed(bot):
     pending_fingerprint = saved_state.get("pending_announcement")
     latest_fingerprint = latest_update.get("fingerprint")
     is_pending_deploy = bool(pending_fingerprint and pending_fingerprint == latest_fingerprint)
-    embed = build_code_update_embed(latest_update) if is_pending_deploy else build_restart_update_embed(latest_update)
+    update_history = normalize_update_history(saved_state.get("history", []))
+    embed = (
+        build_code_update_embed(latest_update, update_history)
+        if is_pending_deploy
+        else build_restart_update_embed(latest_update, update_history)
+    )
 
     sent_any = False
     for channel in channels:

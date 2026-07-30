@@ -1,6 +1,6 @@
 const OK_GREEN = "#3d8a57";
 const STATUS_CACHE_KEY = "ng-status-snapshot-v1";
-const STATUS_CACHE_TTL_MS = 60_000;
+const STATUS_CACHE_TTL_MS = 10 * 60_000;
 
 type StatusStats = {
   version: string;
@@ -22,6 +22,7 @@ type StatusSnapshot = {
   stats: StatusStats;
   health: StatusHealth;
   fetched_at: number;
+  stale?: boolean;
 };
 
 let stopRuntime: (() => void) | null = null;
@@ -34,6 +35,7 @@ const set = (key: string, value: string) => {
   if (node) node.textContent = value;
 };
 const fmt = (n: number) => new Intl.NumberFormat("en").format(n);
+const statusSnapshotUrl = () => `/api/status-snapshot?t=${Math.floor(Date.now() / 30_000)}`;
 
 const fmtUptime = (total: number) => {
   const d = Math.floor(total / 86400);
@@ -61,12 +63,21 @@ const applySnapshot = (snapshot: StatusSnapshot) => {
   const { stats, health } = snapshot;
   const allGood = health.ok && health.db_ok && stats.ready;
   const uptime = stats.uptime_seconds + Math.max(0, (Date.now() - snapshot.fetched_at) / 1000);
+  const stale = snapshot.stale === true;
 
   setHeadline(
-    allGood ? "All systems operational." : "Running with a limp.",
-    allGood
-      ? "NovaGuard is awake and answering."
-      : "The bot is up, but something needs attention.",
+    stale
+      ? allGood
+        ? "Last known: operational."
+        : "Last known: degraded."
+      : allGood
+        ? "All systems operational."
+        : "Running with a limp.",
+    stale
+      ? "Refreshing live status in the background."
+      : allGood
+        ? "NovaGuard is awake and answering."
+        : "The bot is up, but something needs attention.",
   );
   setDot(allGood ? OK_GREEN : "hsl(var(--primary))");
   set("status", allGood ? "Operational" : "Degraded");
@@ -93,10 +104,12 @@ const isSnapshot = (value: unknown): value is StatusSnapshot => {
 
 const readCachedSnapshot = () => {
   try {
-    const snapshot: unknown = JSON.parse(sessionStorage.getItem(STATUS_CACHE_KEY) || "null");
+    const snapshot: unknown = JSON.parse(
+      sessionStorage.getItem(STATUS_CACHE_KEY) || localStorage.getItem(STATUS_CACHE_KEY) || "null",
+    );
     if (!isSnapshot(snapshot)) return null;
     const age = Date.now() - snapshot.fetched_at;
-    return age >= -5_000 && age <= STATUS_CACHE_TTL_MS ? snapshot : null;
+    return age >= -5_000 && age <= STATUS_CACHE_TTL_MS ? { ...snapshot, stale: true } : null;
   } catch {
     return null;
   }
@@ -104,7 +117,10 @@ const readCachedSnapshot = () => {
 
 const cacheSnapshot = (snapshot: StatusSnapshot) => {
   try {
-    sessionStorage.setItem(STATUS_CACHE_KEY, JSON.stringify(snapshot));
+    const freshSnapshot = { ...snapshot, stale: false };
+    const payload = JSON.stringify(freshSnapshot);
+    sessionStorage.setItem(STATUS_CACHE_KEY, payload);
+    localStorage.setItem(STATUS_CACHE_KEY, payload);
   } catch {}
 };
 
@@ -125,7 +141,8 @@ const getStatusSnapshot = async (refresh = false) => {
     .__ngGetStatusSnapshot;
   if (sharedGetter) return sharedGetter(refresh);
 
-  return fetch("/api/status-snapshot", {
+  return fetch(statusSnapshotUrl(), {
+    cache: "no-store",
     headers: { Accept: "application/json" },
     signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(4000) : undefined,
   }).then((response) => {
@@ -180,11 +197,11 @@ function init() {
         return;
       }
       setHeadline(
-        "The bot is resting.",
-        "NovaGuard is unreachable right now — most likely an update or planned maintenance.",
+        "Status is reconnecting.",
+        "Live data is temporarily unavailable. NovaGuard may still be online.",
       );
       setDot("hsl(var(--primary))");
-      set("status", "Offline");
+      set("status", "Unverified");
       for (const key of ["version", "uptime", "guilds", "members", "commands", "database", "gateway"]) {
         set(key, "—");
       }
