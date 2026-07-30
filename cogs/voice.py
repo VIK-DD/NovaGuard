@@ -22,8 +22,10 @@ MAX_ACTIVITY_FIELDS = 3
 MAX_FIELD_LENGTH = 1000
 ACTIVITY_BAR_SLOTS = 12
 VOICE_PENDING_REPORTS_STORE = "voice_pending_reports"
+VOICE_REPORT_HISTORY_STORE = "voice_report_history"
 REPORT_RETRY_SECONDS = 90
 REPORT_SEND_TIMEOUT_SECONDS = 15
+REPORT_HISTORY_LIMIT = 10
 
 
 def now_utc():
@@ -164,6 +166,72 @@ def full_participant_lines(session: dict) -> list[str]:
     return [line for _, line in sorted(rows, key=lambda row: (-row[0], row[1].lower()))]
 
 
+def csv_escape(value) -> str:
+    text = "" if value is None else str(value)
+    return f'"{text.replace(chr(34), chr(34) * 2)}"'
+
+
+def report_export_text(report: dict, *, csv: bool = False) -> str:
+    session = report.get("session", {})
+    ended_at = parse_time(report.get("ended_at")) or now_utc()
+    started_at = parse_time(session.get("started_at")) or ended_at
+    rows = []
+    for member_id, record in session.get("members", {}).items():
+        rows.append(
+            (
+                float(record.get("total_seconds", 0)),
+                member_id,
+                record.get("display_name", "Unknown"),
+                int(record.get("joins", 0)),
+            )
+        )
+    rows.sort(key=lambda row: (-row[0], str(row[2]).lower()))
+
+    if csv:
+        lines = ["member_id,display_name,total_seconds,duration,entries"]
+        for total, member_id, display_name, joins in rows:
+            lines.append(
+                ",".join(
+                    [
+                        csv_escape(member_id),
+                        csv_escape(display_name),
+                        str(round(total, 3)),
+                        csv_escape(human_duration(total)),
+                        str(joins),
+                    ]
+                )
+            )
+        return "\n".join(lines)
+
+    return "\n".join(
+        [
+            f"Voice session: {report.get('channel_name', 'Unknown channel')}",
+            f"Channel ID: {report.get('channel_id', 'unknown')}",
+            f"Started: {started_at.isoformat()}",
+            f"Ended: {ended_at.isoformat()}",
+            f"Duration: {human_duration(session_duration(session, ended_at))}",
+            f"Unique participants: {len(session.get('members', {}))}",
+            f"Peak concurrent: {session.get('peak_members', 0)}",
+            "",
+            "Participant activity:",
+            *[
+                f"{display_name} ({member_id}) - {human_duration(total)} ({joins} {'entry' if joins == 1 else 'entries'})"
+                for total, member_id, display_name, joins in rows
+            ],
+        ]
+    )
+
+
+def report_to_file(report: dict, *, csv: bool = False) -> discord.File:
+    ended_at = parse_time(report.get("ended_at")) or now_utc()
+    suffix = "csv" if csv else "txt"
+    payload = report_export_text(report, csv=csv).encode("utf-8")
+    return discord.File(
+        io.BytesIO(payload),
+        filename=f"voice-session-{report.get('channel_id', 'unknown')}-{ended_at:%Y%m%d-%H%M}.{suffix}",
+    )
+
+
 def split_lines(lines: list[str], limit: int = MAX_FIELD_LENGTH) -> list[str]:
     chunks = []
     current = ""
@@ -284,8 +352,10 @@ class VoiceReports(commands.Cog):
         self.bot = bot
         self.sessions: dict[str, dict[str, dict]] = {}
         self.pending_reports: dict[str, dict[str, dict]] = {}
+        self.report_history: dict[str, list[dict]] = {}
         self._persist_lock = asyncio.Lock()
         self._pending_lock = asyncio.Lock()
+        self._history_lock = asyncio.Lock()
         self._restore_task: asyncio.Task | None = None
         self._retry_task: asyncio.Task | None = None
 
@@ -294,6 +364,8 @@ class VoiceReports(commands.Cog):
         self.sessions = raw_sessions if isinstance(raw_sessions, dict) else {}
         raw_pending = await asyncio.to_thread(load_data, VOICE_PENDING_REPORTS_STORE, {})
         self.pending_reports = raw_pending if isinstance(raw_pending, dict) else {}
+        raw_history = await asyncio.to_thread(load_data, VOICE_REPORT_HISTORY_STORE, {})
+        self.report_history = raw_history if isinstance(raw_history, dict) else {}
         self._restore_task = asyncio.create_task(self._restore_sessions_after_ready())
         self._retry_task = asyncio.create_task(self._retry_pending_reports())
 
@@ -313,19 +385,29 @@ class VoiceReports(commands.Cog):
             snapshot = copy.deepcopy(self.pending_reports)
             await asyncio.to_thread(save_data, VOICE_PENDING_REPORTS_STORE, snapshot)
 
+    async def _persist_history(self):
+        async with self._history_lock:
+            snapshot = copy.deepcopy(self.report_history)
+            await asyncio.to_thread(save_data, VOICE_REPORT_HISTORY_STORE, snapshot)
+
     def _pending_guild_reports(self, guild_id: int) -> dict[str, dict]:
         return self.pending_reports.setdefault(str(guild_id), {})
 
-    async def _queue_pending_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime) -> str:
-        report_id = f"{voice_channel.id}-{int(ended_at.timestamp())}"
-        guild_reports = self._pending_guild_reports(guild.id)
-        guild_reports[report_id] = {
-            "id": report_id,
+    def _report_payload(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime, report_id: str | None = None):
+        return {
+            "id": report_id or f"{voice_channel.id}-{int(ended_at.timestamp())}",
             "guild_id": str(guild.id),
             "channel_id": str(voice_channel.id),
             "channel_name": getattr(voice_channel, "name", f"Voice #{voice_channel.id}"),
             "ended_at": as_iso(ended_at),
             "session": copy.deepcopy(session),
+        }
+
+    async def _queue_pending_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime) -> str:
+        report_id = f"{voice_channel.id}-{int(ended_at.timestamp())}"
+        guild_reports = self._pending_guild_reports(guild.id)
+        guild_reports[report_id] = {
+            **self._report_payload(guild, voice_channel, session, ended_at, report_id),
             "attempts": int(guild_reports.get(report_id, {}).get("attempts", 0)),
             "last_error": guild_reports.get(report_id, {}).get("last_error"),
         }
@@ -348,6 +430,19 @@ class VoiceReports(commands.Cog):
         report["last_error"] = repr(error)
         report["last_attempt_at"] = as_iso(now_utc())
         await self._persist_pending()
+
+    async def _remember_sent_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime, report_id: str | None = None):
+        guild_history = self.report_history.setdefault(str(guild.id), [])
+        payload = self._report_payload(guild, voice_channel, session, ended_at, report_id)
+        payload["sent_at"] = as_iso(now_utc())
+        guild_history[:] = [report for report in guild_history if report.get("id") != payload["id"]]
+        guild_history.insert(0, payload)
+        del guild_history[REPORT_HISTORY_LIMIT:]
+        await self._persist_history()
+
+    def _last_report(self, guild_id: int) -> dict | None:
+        reports = self.report_history.get(str(guild_id), [])
+        return reports[0] if reports else None
 
     @staticmethod
     def _voice_channel(channel):
@@ -431,37 +526,21 @@ class VoiceReports(commands.Cog):
                 self.sessions.pop(str(member.guild.id), None)
             await self._persist()
 
-    async def _send_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime):
+    async def _send_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime, *, remember: bool = True, report_id: str | None = None):
         report_channel = await self._report_channel(guild)
         if report_channel is None:
             return False
 
         embed, needs_attachment = build_report_embed(session, voice_channel, ended_at)
-        file = None
-        if needs_attachment:
-            started_at = parse_time(session.get("started_at")) or ended_at
-            full_text = "\n".join(
-                [
-                    f"Voice session: {voice_channel.name}",
-                    f"Started: {started_at.isoformat()}",
-                    f"Ended: {ended_at.isoformat()}",
-                    f"Duration: {human_duration(session_duration(session, ended_at))}",
-                    f"Unique participants: {len(session.get('members', {}))}",
-                    f"Peak concurrent: {session.get('peak_members', 0)}",
-                    "",
-                    "Participant activity:",
-                    *full_participant_lines(session),
-                ]
-            )
-            file = discord.File(
-                io.BytesIO(full_text.encode("utf-8")),
-                filename=f"voice-session-{voice_channel.id}-{ended_at:%Y%m%d-%H%M}.txt",
-            )
+        report = self._report_payload(guild, voice_channel, session, ended_at, report_id)
+        file = report_to_file(report) if needs_attachment else None
         try:
             await asyncio.wait_for(
                 report_channel.send(embed=embed, file=file),
                 timeout=REPORT_SEND_TIMEOUT_SECONDS,
             )
+            if remember:
+                await self._remember_sent_report(guild, voice_channel, session, ended_at, report_id)
             return True
         except (discord.HTTPException, asyncio.TimeoutError) as error:
             print(f"Voice session report skipped for #{voice_channel.id}: {error!r}")
@@ -478,7 +557,13 @@ class VoiceReports(commands.Cog):
             voice_channel = StoredVoiceChannel(guild, report.get("channel_id", 0), report.get("channel_name", "Voice session"))
 
         try:
-            sent = await self._send_report(guild, voice_channel, report.get("session", {}), ended_at)
+            sent = await self._send_report(
+                guild,
+                voice_channel,
+                report.get("session", {}),
+                ended_at,
+                report_id=report.get("id"),
+            )
         except Exception as error:
             await self._mark_pending_failed(guild.id, report_id, error)
             print(f"Voice session report retry failed for #{report.get('channel_id')}: {error!r}")
@@ -669,6 +754,80 @@ class VoiceReports(commands.Cog):
             )
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
+
+    resend = app_commands.Group(
+        name="resend",
+        description="Resend a previously delivered voice report",
+        parent=voice,
+    )
+
+    @resend.command(name="last", description="Resend the most recently delivered voice report")
+    async def voice_resend_last(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True, thinking=True)
+        report = self._last_report(interaction.guild_id)
+        if not report:
+            embed = make_embed(
+                "No voice report history yet",
+                "I have not sent a voice report since report history was enabled.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        ended_at = parse_time(report.get("ended_at")) or now_utc()
+        voice_channel = StoredVoiceChannel(interaction.guild, report.get("channel_id", 0), report.get("channel_name", "Voice session"))
+        sent = await self._send_report(
+            interaction.guild,
+            voice_channel,
+            report.get("session", {}),
+            ended_at,
+            remember=False,
+            report_id=report.get("id"),
+        )
+        embed = make_embed(
+            "Voice report resent" if sent else "Could not resend voice report",
+            (
+                f"The last report was posted again for {voice_channel.mention}."
+                if sent
+                else "Discord did not accept the resend in time. Try again in a moment."
+            ),
+            color=Palette.SUCCESS if sent else Palette.WARNING,
+        )
+        brand_footer(embed, "Voice session reports")
+        await respond(interaction, embed, ephemeral=True)
+
+    export = app_commands.Group(
+        name="export",
+        description="Export saved voice report data",
+        parent=voice,
+    )
+
+    @export.command(name="last", description="Export the most recently delivered voice report")
+    @app_commands.describe(format="Export format")
+    @app_commands.choices(
+        format=[
+            app_commands.Choice(name="Text", value="txt"),
+            app_commands.Choice(name="CSV", value="csv"),
+        ]
+    )
+    async def voice_export_last(self, interaction: discord.Interaction, format: app_commands.Choice[str] | None = None):
+        report = self._last_report(interaction.guild_id)
+        if not report:
+            embed = make_embed(
+                "No voice report history yet",
+                "I have not sent a voice report since report history was enabled.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        export_format = format.value if format else "txt"
+        file = report_to_file(report, csv=export_format == "csv")
+        await interaction.response.send_message(
+            content=f"Export for `{report.get('channel_name', 'Voice session')}`.",
+            file=file,
+            ephemeral=True,
+        )
 
     @voice.command(name="test", description="Send a preview voice session report to the configured channel")
     async def voice_test(self, interaction: discord.Interaction):
