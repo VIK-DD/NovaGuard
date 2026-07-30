@@ -26,6 +26,8 @@ VOICE_REPORT_HISTORY_STORE = "voice_report_history"
 REPORT_RETRY_SECONDS = 90
 REPORT_SEND_TIMEOUT_SECONDS = 15
 REPORT_HISTORY_LIMIT = 10
+REPORT_SEND_SPACING_SECONDS = 3
+REPORT_SEND_QUEUE_MAXSIZE = 50
 
 
 def now_utc():
@@ -90,12 +92,22 @@ def record_member_join(session: dict, member_id: int, display_name: str, joined_
     members = session.setdefault("members", {})
     record = members.setdefault(
         member_key,
-        {"display_name": display_name, "joined_at": None, "total_seconds": 0, "joins": 0},
+        {
+            "display_name": display_name,
+            "joined_at": None,
+            "first_joined_at": None,
+            "last_left_at": None,
+            "longest_streak": 0,
+            "total_seconds": 0,
+            "joins": 0,
+        },
     )
     record["display_name"] = display_name
     if record.get("joined_at"):
         return False
     record["joined_at"] = as_iso(joined_at)
+    if not record.get("first_joined_at"):
+        record["first_joined_at"] = as_iso(joined_at)
     record["joins"] = int(record.get("joins", 0)) + 1
     session["updated_at"] = as_iso(joined_at)
     session["peak_members"] = max(int(session.get("peak_members", 0)), len(active_member_ids(session)))
@@ -111,6 +123,8 @@ def record_member_leave(session: dict, member_id: int, left_at: datetime) -> flo
         return 0
     elapsed = max(0, (left_at - joined_at).total_seconds())
     record["total_seconds"] = float(record.get("total_seconds", 0)) + elapsed
+    record["longest_streak"] = max(float(record.get("longest_streak", 0)), elapsed)
+    record["last_left_at"] = as_iso(left_at)
     record["joined_at"] = None
     session["updated_at"] = as_iso(left_at)
     return elapsed
@@ -156,14 +170,71 @@ def participant_lines(session: dict) -> list[str]:
     return [row[1] for row in rows]
 
 
-def full_participant_lines(session: dict) -> list[str]:
+def member_activity_rows(session: dict) -> list[dict]:
     rows = []
     for member_id, record in session.get("members", {}).items():
-        duration = human_duration(record.get("total_seconds", 0))
-        joins = int(record.get("joins", 0))
+        total = float(record.get("total_seconds", 0))
+        longest = float(record.get("longest_streak") or total)
+        first_joined = parse_time(record.get("first_joined_at"))
+        last_left = parse_time(record.get("last_left_at"))
+        rows.append(
+            {
+                "member_id": member_id,
+                "display_name": record.get("display_name", "Unknown"),
+                "total_seconds": total,
+                "joins": int(record.get("joins", 0)),
+                "longest_streak": longest,
+                "first_joined_at": first_joined,
+                "last_left_at": last_left,
+            }
+        )
+    rows.sort(key=lambda row: (-row["total_seconds"], str(row["display_name"]).lower()))
+    return rows
+
+
+def session_highlights(session: dict) -> str:
+    rows = member_activity_rows(session)
+    if not rows:
+        return "No member activity was recorded."
+
+    most_active = rows[0]
+    longest = max(rows, key=lambda row: (row["longest_streak"], row["total_seconds"]))
+    first = min(
+        (row for row in rows if row["first_joined_at"]),
+        key=lambda row: row["first_joined_at"],
+        default=None,
+    )
+    last = max(
+        (row for row in rows if row["last_left_at"]),
+        key=lambda row: row["last_left_at"],
+        default=None,
+    )
+
+    lines = [
+        f"Most active: <@{most_active['member_id']}> - `{human_duration(most_active['total_seconds'])}`",
+        f"Longest stay: <@{longest['member_id']}> - `{human_duration(longest['longest_streak'])}` continuous",
+    ]
+    if first:
+        lines.append(f"First joined: <@{first['member_id']}> - {discord.utils.format_dt(first['first_joined_at'], 't')}")
+    if last:
+        lines.append(f"Last left: <@{last['member_id']}> - {discord.utils.format_dt(last['last_left_at'], 't')}")
+    return "\n".join(lines)
+
+
+def full_participant_lines(session: dict) -> list[str]:
+    rows = []
+    for row in member_activity_rows(session):
+        duration = human_duration(row["total_seconds"])
+        joins = row["joins"]
         join_note = "entry" if joins == 1 else f"{joins} entries"
-        rows.append((float(record.get("total_seconds", 0)), f"{record.get('display_name', 'Unknown')} ({member_id}) - {duration} ({join_note})"))
-    return [line for _, line in sorted(rows, key=lambda row: (-row[0], row[1].lower()))]
+        longest = human_duration(row["longest_streak"])
+        rows.append(
+            (
+                row["total_seconds"],
+                f"{row['display_name']} ({row['member_id']}) - {duration} ({join_note}, longest {longest})",
+            )
+        )
+    return [line for _, line in sorted(rows, key=lambda item: (-item[0], item[1].lower()))]
 
 
 def csv_escape(value) -> str:
@@ -176,20 +247,23 @@ def report_export_text(report: dict, *, csv: bool = False) -> str:
     ended_at = parse_time(report.get("ended_at")) or now_utc()
     started_at = parse_time(session.get("started_at")) or ended_at
     rows = []
-    for member_id, record in session.get("members", {}).items():
+    for row in member_activity_rows(session):
         rows.append(
             (
-                float(record.get("total_seconds", 0)),
-                member_id,
-                record.get("display_name", "Unknown"),
-                int(record.get("joins", 0)),
+                row["total_seconds"],
+                row["member_id"],
+                row["display_name"],
+                row["joins"],
+                row["longest_streak"],
+                row["first_joined_at"],
+                row["last_left_at"],
             )
         )
     rows.sort(key=lambda row: (-row[0], str(row[2]).lower()))
 
     if csv:
-        lines = ["member_id,display_name,total_seconds,duration,entries"]
-        for total, member_id, display_name, joins in rows:
+        lines = ["member_id,display_name,total_seconds,duration,entries,longest_streak,first_joined_at,last_left_at"]
+        for total, member_id, display_name, joins, longest, first_joined, last_left in rows:
             lines.append(
                 ",".join(
                     [
@@ -198,6 +272,9 @@ def report_export_text(report: dict, *, csv: bool = False) -> str:
                         str(round(total, 3)),
                         csv_escape(human_duration(total)),
                         str(joins),
+                        csv_escape(human_duration(longest)),
+                        csv_escape(first_joined.isoformat() if first_joined else ""),
+                        csv_escape(last_left.isoformat() if last_left else ""),
                     ]
                 )
             )
@@ -215,8 +292,11 @@ def report_export_text(report: dict, *, csv: bool = False) -> str:
             "",
             "Participant activity:",
             *[
-                f"{display_name} ({member_id}) - {human_duration(total)} ({joins} {'entry' if joins == 1 else 'entries'})"
-                for total, member_id, display_name, joins in rows
+                (
+                    f"{display_name} ({member_id}) - {human_duration(total)} "
+                    f"({joins} {'entry' if joins == 1 else 'entries'}, longest {human_duration(longest)})"
+                )
+                for total, member_id, display_name, joins, longest, _, _ in rows
             ],
         ]
     )
@@ -320,6 +400,7 @@ def build_report_embed(session: dict, channel: discord.abc.GuildChannel, ended_a
         ),
         inline=False,
     )
+    embed.add_field(name="Highlights", value=session_highlights(session), inline=False)
     for index, chunk in enumerate(shown_chunks, 1):
         name = "Member activity" if index == 1 else "Member activity (continued)"
         embed.add_field(name=name, value=chunk, inline=False)
@@ -353,11 +434,13 @@ class VoiceReports(commands.Cog):
         self.sessions: dict[str, dict[str, dict]] = {}
         self.pending_reports: dict[str, dict[str, dict]] = {}
         self.report_history: dict[str, list[dict]] = {}
+        self._send_queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue(maxsize=REPORT_SEND_QUEUE_MAXSIZE)
         self._persist_lock = asyncio.Lock()
         self._pending_lock = asyncio.Lock()
         self._history_lock = asyncio.Lock()
         self._restore_task: asyncio.Task | None = None
         self._retry_task: asyncio.Task | None = None
+        self._send_task: asyncio.Task | None = None
 
     async def cog_load(self):
         raw_sessions = await asyncio.to_thread(load_data, "voice_sessions", {})
@@ -368,12 +451,15 @@ class VoiceReports(commands.Cog):
         self.report_history = raw_history if isinstance(raw_history, dict) else {}
         self._restore_task = asyncio.create_task(self._restore_sessions_after_ready())
         self._retry_task = asyncio.create_task(self._retry_pending_reports())
+        self._send_task = asyncio.create_task(self._send_queued_reports())
 
     async def cog_unload(self):
         if self._restore_task and not self._restore_task.done():
             self._restore_task.cancel()
         if self._retry_task and not self._retry_task.done():
             self._retry_task.cancel()
+        if self._send_task and not self._send_task.done():
+            self._send_task.cancel()
 
     async def _persist(self):
         async with self._persist_lock:
@@ -430,6 +516,12 @@ class VoiceReports(commands.Cog):
         report["last_error"] = repr(error)
         report["last_attempt_at"] = as_iso(now_utc())
         await self._persist_pending()
+
+    def _enqueue_pending_send(self, guild_id: int, report_id: str):
+        try:
+            self._send_queue.put_nowait((guild_id, report_id))
+        except asyncio.QueueFull:
+            print(f"Voice session report queued for retry later: send queue is full for #{report_id}")
 
     async def _remember_sent_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime, report_id: str | None = None):
         guild_history = self.report_history.setdefault(str(guild.id), [])
@@ -512,19 +604,11 @@ class VoiceReports(commands.Cog):
             return
 
         report_id = await self._queue_pending_report(member.guild, channel, session, ended_at)
-        sent = await self._send_pending_report(member.guild, report_id)
-        if sent:
-            guild_sessions.pop(str(channel.id), None)
-            if not guild_sessions:
-                self.sessions.pop(str(member.guild.id), None)
-            await self._persist()
-        else:
-            # Keep the completed session out of active tracking, but preserve the
-            # report payload in voice_pending_reports for retry/manual recovery.
-            guild_sessions.pop(str(channel.id), None)
-            if not guild_sessions:
-                self.sessions.pop(str(member.guild.id), None)
-            await self._persist()
+        self._enqueue_pending_send(member.guild.id, report_id)
+        guild_sessions.pop(str(channel.id), None)
+        if not guild_sessions:
+            self.sessions.pop(str(member.guild.id), None)
+        await self._persist()
 
     async def _send_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime, *, remember: bool = True, report_id: str | None = None):
         report_channel = await self._report_channel(guild)
@@ -587,6 +671,18 @@ class VoiceReports(commands.Cog):
                     await self._send_pending_report(guild, report_id)
                     await asyncio.sleep(1)
             await asyncio.sleep(REPORT_RETRY_SECONDS)
+
+    async def _send_queued_reports(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            guild_id, report_id = await self._send_queue.get()
+            try:
+                guild = self.bot.get_guild(guild_id)
+                if guild is not None:
+                    await self._send_pending_report(guild, report_id)
+                    await asyncio.sleep(REPORT_SEND_SPACING_SECONDS)
+            finally:
+                self._send_queue.task_done()
 
     async def _restore_sessions_after_ready(self):
         await self.bot.wait_until_ready()
