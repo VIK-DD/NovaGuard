@@ -1,5 +1,7 @@
 """📋 Logs category — a clean audit trail for messages, members and moderation."""
 
+import asyncio
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -7,6 +9,10 @@ from discord.ext import commands
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
+
+
+LOG_SEND_TIMEOUT_SECONDS = 10
+LOG_QUEUE_MAXSIZE = 100
 
 
 class Logs(commands.Cog):
@@ -25,20 +31,56 @@ class Logs(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self._queue: asyncio.Queue[tuple[int, int, discord.Embed]] = asyncio.Queue(maxsize=LOG_QUEUE_MAXSIZE)
+        self._worker_task: asyncio.Task | None = None
+
+    async def cog_load(self):
+        self._worker_task = asyncio.create_task(self._log_worker())
+
+    async def cog_unload(self):
+        if self._worker_task and not self._worker_task.done():
+            self._worker_task.cancel()
 
     async def send_log(self, guild, embed):
         if guild is None:
             return
-        settings = get_guild_settings(guild.id)
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
         channel_id = settings.get("log_channel")
         if not channel_id:
             return
-        channel = guild.get_channel(channel_id)
-        if channel is None:
-            return
+
         try:
-            await channel.send(embed=embed)
-        except discord.HTTPException:
+            channel_id = int(channel_id)
+        except (TypeError, ValueError):
+            return
+
+        try:
+            self._queue.put_nowait((guild.id, channel_id, embed))
+        except asyncio.QueueFull:
+            print(f"Server log skipped for guild #{guild.id}: log queue is full")
+
+    async def _log_worker(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            guild_id, channel_id, embed = await self._queue.get()
+            try:
+                guild = self.bot.get_guild(guild_id)
+                channel = guild.get_channel(channel_id) if guild else None
+                if channel is None:
+                    continue
+                await asyncio.wait_for(
+                    channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none()),
+                    timeout=LOG_SEND_TIMEOUT_SECONDS,
+                )
+            except (discord.HTTPException, asyncio.TimeoutError) as error:
+                print(f"Server log skipped for channel #{channel_id}: {error!r}")
+            finally:
+                self._queue.task_done()
+
+    async def _flush_logs(self):
+        try:
+            await asyncio.wait_for(self._queue.join(), timeout=LOG_SEND_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
             pass
 
     @logs.command(name="set", description="Choose the channel where logs are posted")
