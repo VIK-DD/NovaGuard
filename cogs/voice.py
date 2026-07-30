@@ -13,7 +13,7 @@ from discord.ext import commands
 
 from core.storage import get_guild_settings, load_data, save_data, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
-from core.utils import respond
+from core.utils import defer_interaction, respond
 
 
 VOICE_REPORT_CHANNEL_KEY = "voice_report_channel"
@@ -21,6 +21,9 @@ MIN_SESSION_SECONDS = 60 * 60
 MAX_ACTIVITY_FIELDS = 3
 MAX_FIELD_LENGTH = 1000
 ACTIVITY_BAR_SLOTS = 12
+VOICE_PENDING_REPORTS_STORE = "voice_pending_reports"
+REPORT_RETRY_SECONDS = 90
+REPORT_SEND_TIMEOUT_SECONDS = 15
 
 
 def now_utc():
@@ -70,6 +73,14 @@ def new_session(channel_id: int, channel_name: str, started_at: datetime) -> dic
         "peak_members": 0,
         "members": {},
     }
+
+
+class StoredVoiceChannel:
+    def __init__(self, guild: discord.Guild, channel_id: int | str, channel_name: str):
+        self.guild = guild
+        self.id = int(channel_id)
+        self.name = channel_name or f"Voice #{channel_id}"
+        self.mention = f"<#{self.id}>"
 
 
 def record_member_join(session: dict, member_id: int, display_name: str, joined_at: datetime) -> bool:
@@ -248,22 +259,71 @@ class VoiceReports(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.sessions: dict[str, dict[str, dict]] = {}
+        self.pending_reports: dict[str, dict[str, dict]] = {}
         self._persist_lock = asyncio.Lock()
+        self._pending_lock = asyncio.Lock()
         self._restore_task: asyncio.Task | None = None
+        self._retry_task: asyncio.Task | None = None
 
     async def cog_load(self):
         raw_sessions = await asyncio.to_thread(load_data, "voice_sessions", {})
         self.sessions = raw_sessions if isinstance(raw_sessions, dict) else {}
+        raw_pending = await asyncio.to_thread(load_data, VOICE_PENDING_REPORTS_STORE, {})
+        self.pending_reports = raw_pending if isinstance(raw_pending, dict) else {}
         self._restore_task = asyncio.create_task(self._restore_sessions_after_ready())
+        self._retry_task = asyncio.create_task(self._retry_pending_reports())
 
     async def cog_unload(self):
         if self._restore_task and not self._restore_task.done():
             self._restore_task.cancel()
+        if self._retry_task and not self._retry_task.done():
+            self._retry_task.cancel()
 
     async def _persist(self):
         async with self._persist_lock:
             snapshot = copy.deepcopy(self.sessions)
             await asyncio.to_thread(save_data, "voice_sessions", snapshot)
+
+    async def _persist_pending(self):
+        async with self._pending_lock:
+            snapshot = copy.deepcopy(self.pending_reports)
+            await asyncio.to_thread(save_data, VOICE_PENDING_REPORTS_STORE, snapshot)
+
+    def _pending_guild_reports(self, guild_id: int) -> dict[str, dict]:
+        return self.pending_reports.setdefault(str(guild_id), {})
+
+    async def _queue_pending_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime) -> str:
+        report_id = f"{voice_channel.id}-{int(ended_at.timestamp())}"
+        guild_reports = self._pending_guild_reports(guild.id)
+        guild_reports[report_id] = {
+            "id": report_id,
+            "guild_id": str(guild.id),
+            "channel_id": str(voice_channel.id),
+            "channel_name": getattr(voice_channel, "name", f"Voice #{voice_channel.id}"),
+            "ended_at": as_iso(ended_at),
+            "session": copy.deepcopy(session),
+            "attempts": int(guild_reports.get(report_id, {}).get("attempts", 0)),
+            "last_error": guild_reports.get(report_id, {}).get("last_error"),
+        }
+        await self._persist_pending()
+        return report_id
+
+    async def _mark_pending_sent(self, guild_id: int, report_id: str):
+        guild_reports = self.pending_reports.get(str(guild_id), {})
+        guild_reports.pop(report_id, None)
+        if not guild_reports:
+            self.pending_reports.pop(str(guild_id), None)
+        await self._persist_pending()
+
+    async def _mark_pending_failed(self, guild_id: int, report_id: str, error: BaseException):
+        guild_reports = self.pending_reports.get(str(guild_id), {})
+        report = guild_reports.get(report_id)
+        if not report:
+            return
+        report["attempts"] = int(report.get("attempts", 0)) + 1
+        report["last_error"] = repr(error)
+        report["last_attempt_at"] = as_iso(now_utc())
+        await self._persist_pending()
 
     @staticmethod
     def _voice_channel(channel):
@@ -325,19 +385,32 @@ class VoiceReports(commands.Cog):
             await self._persist()
             return
 
-        guild_sessions.pop(str(channel.id), None)
-        if not guild_sessions:
-            self.sessions.pop(str(member.guild.id), None)
-        await self._persist()
-
         if session_duration(session, ended_at) < MIN_SESSION_SECONDS:
+            guild_sessions.pop(str(channel.id), None)
+            if not guild_sessions:
+                self.sessions.pop(str(member.guild.id), None)
+            await self._persist()
             return
-        await self._send_report(member.guild, channel, session, ended_at)
+
+        report_id = await self._queue_pending_report(member.guild, channel, session, ended_at)
+        sent = await self._send_pending_report(member.guild, report_id)
+        if sent:
+            guild_sessions.pop(str(channel.id), None)
+            if not guild_sessions:
+                self.sessions.pop(str(member.guild.id), None)
+            await self._persist()
+        else:
+            # Keep the completed session out of active tracking, but preserve the
+            # report payload in voice_pending_reports for retry/manual recovery.
+            guild_sessions.pop(str(channel.id), None)
+            if not guild_sessions:
+                self.sessions.pop(str(member.guild.id), None)
+            await self._persist()
 
     async def _send_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime):
         report_channel = await self._report_channel(guild)
         if report_channel is None:
-            return
+            return False
 
         embed, needs_attachment = build_report_embed(session, voice_channel, ended_at)
         file = None
@@ -361,9 +434,50 @@ class VoiceReports(commands.Cog):
                 filename=f"voice-session-{voice_channel.id}-{ended_at:%Y%m%d-%H%M}.txt",
             )
         try:
-            await asyncio.wait_for(report_channel.send(embed=embed, file=file), timeout=8)
+            await asyncio.wait_for(
+                report_channel.send(embed=embed, file=file),
+                timeout=REPORT_SEND_TIMEOUT_SECONDS,
+            )
+            return True
         except (discord.HTTPException, asyncio.TimeoutError) as error:
             print(f"Voice session report skipped for #{voice_channel.id}: {error!r}")
+            return False
+
+    async def _send_pending_report(self, guild: discord.Guild, report_id: str) -> bool:
+        report = self.pending_reports.get(str(guild.id), {}).get(report_id)
+        if not report:
+            return True
+
+        ended_at = parse_time(report.get("ended_at")) or now_utc()
+        voice_channel = guild.get_channel(int(report.get("channel_id", 0) or 0))
+        if not isinstance(voice_channel, (discord.VoiceChannel, discord.StageChannel)):
+            voice_channel = StoredVoiceChannel(guild, report.get("channel_id", 0), report.get("channel_name", "Voice session"))
+
+        try:
+            sent = await self._send_report(guild, voice_channel, report.get("session", {}), ended_at)
+        except Exception as error:
+            await self._mark_pending_failed(guild.id, report_id, error)
+            print(f"Voice session report retry failed for #{report.get('channel_id')}: {error!r}")
+            return False
+
+        if sent:
+            await self._mark_pending_sent(guild.id, report_id)
+            return True
+
+        await self._mark_pending_failed(guild.id, report_id, asyncio.TimeoutError())
+        return False
+
+    async def _retry_pending_reports(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            for guild_id, reports in list(self.pending_reports.items()):
+                guild = self.bot.get_guild(int(guild_id))
+                if guild is None:
+                    continue
+                for report_id in list(reports):
+                    await self._send_pending_report(guild, report_id)
+                    await asyncio.sleep(1)
+            await asyncio.sleep(REPORT_RETRY_SECONDS)
 
     async def _restore_sessions_after_ready(self):
         await self.bot.wait_until_ready()
@@ -455,6 +569,7 @@ class VoiceReports(commands.Cog):
     async def voice_status(self, interaction: discord.Interaction):
         report_channel = await self._report_channel(interaction.guild)
         active_sessions = self.sessions.get(str(interaction.guild_id), {})
+        pending_reports = self.pending_reports.get(str(interaction.guild_id), {})
         if report_channel is None:
             description = "No report channel is configured. Use `/voice set` to enable tracking."
             color = Palette.WARNING
@@ -462,10 +577,39 @@ class VoiceReports(commands.Cog):
             description = (
                 f"Reports: {report_channel.mention}\n"
                 f"Minimum session: `1h`\n"
-                f"Active tracked rooms: `{len(active_sessions)}`"
+                f"Active tracked rooms: `{len(active_sessions)}`\n"
+                f"Pending reports: `{len(pending_reports)}`"
             )
             color = Palette.TEAL
         embed = make_embed("Voice report status", description, color=color)
+        brand_footer(embed, "Voice session reports")
+        await respond(interaction, embed, ephemeral=True)
+
+    @voice.command(name="retry", description="Retry any voice reports that failed to send")
+    async def voice_retry(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True, thinking=True)
+        pending_reports = list(self.pending_reports.get(str(interaction.guild_id), {}))
+        if not pending_reports:
+            embed = make_embed(
+                "No pending voice reports",
+                "Every completed voice session report has already been sent.",
+                color=Palette.SUCCESS,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        sent = 0
+        for report_id in pending_reports:
+            if await self._send_pending_report(interaction.guild, report_id):
+                sent += 1
+            await asyncio.sleep(1)
+
+        remaining = len(self.pending_reports.get(str(interaction.guild_id), {}))
+        embed = make_embed(
+            "Voice report retry complete",
+            f"Sent `{sent}` pending report(s). `{remaining}` still pending.",
+            color=Palette.SUCCESS if remaining == 0 else Palette.WARNING,
+        )
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
 
