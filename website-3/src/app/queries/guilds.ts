@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/api/client";
-import { GuildConfigSchema, GuildsSchema } from "../../lib/api/schemas";
+import { DashboardSchema, GuildConfigSchema, GuildsSchema } from "../../lib/api/schemas";
 
 export function useGuilds() {
   return useQuery(guildsQuery());
@@ -25,5 +25,19 @@ export function guildConfigQuery(guildId: string) {
     queryFn: () => apiFetch(`/guilds/${guildId}/config`, GuildConfigSchema),
     staleTime: 2 * 60_000,
     gcTime: 3 * 60_000,
+  };
+}
+
+export function useGuildDashboard(guildId: string) {
+  return useQuery(guildDashboardQuery(guildId));
+}
+
+export function guildDashboardQuery(guildId: string) {
+  return {
+    queryKey: ["guild", guildId, "dashboard"] as const,
+    queryFn: () => apiFetch(`/guilds/${guildId}/dashboard`, DashboardSchema),
+    staleTime: 20_000,
+    gcTime: 2 * 60_000,
+    refetchInterval: 30_000,
   };
 }

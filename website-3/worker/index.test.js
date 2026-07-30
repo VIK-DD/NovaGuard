@@ -149,6 +149,19 @@ describe("password session", () => {
     expect(expired.headers.get("Location")).toContain("/login/?next=%2Fdashboard%2F");
   });
 
+  it("serves the dashboard shell for nested client routes", async () => {
+    const login = await worker.fetch(loginRequest(), env);
+    const cookie = login.headers.get("Set-Cookie").split(";", 1)[0];
+
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/dashboard/g/1001/settings", { headers: { Cookie: cookie } }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("/dashboard/");
+  });
+
   it("serves maintenance over private routes when enabled", async () => {
     const login = await worker.fetch(loginRequest(), env);
     const cookie = login.headers.get("Set-Cookie").split(";", 1)[0];

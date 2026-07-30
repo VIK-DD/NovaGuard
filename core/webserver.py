@@ -45,10 +45,11 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
+from .backups import inspect_backup, list_backups
 from .config import BOT_CODENAME, BOT_VERSION, github_config
-from .database import connect
+from .database import connect, load_levels_data
 from .levels_settings import resolve_levels, validate_levels
-from .storage import get_guild_settings, update_guild_settings
+from .storage import get_guild_settings, load_data, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
 
@@ -143,6 +144,10 @@ ROLE_KEYS = ("autorole", "ticket_staff_role")
 AUTOMOD_DEFAULTS = {"invites": True, "spam": True, "badwords": []}
 MAX_BADWORDS = 100
 MAX_BADWORD_LENGTH = 40
+DASHBOARD_XP_PER_LEVEL = 118
+DASHBOARD_MAX_LEVEL = 169
+DASHBOARD_VOICE_HISTORY_LIMIT = 5
+DASHBOARD_LEADERBOARD_LIMIT = 5
 
 _DB_LOCK = threading.Lock()
 
@@ -446,6 +451,7 @@ class WebServer:
             ("GET", "/guilds", self.handle_guilds),
             ("GET", "/guilds/{guild_id}/config", self.handle_config_get),
             ("PUT", "/guilds/{guild_id}/config", self.handle_config_put),
+            ("GET", "/guilds/{guild_id}/dashboard", self.handle_dashboard),
             ("GET", "/guilds/{guild_id}/audit", self.handle_audit),
         ]
         for method, path, handler in routes:
@@ -1026,10 +1032,167 @@ class WebServer:
             ],
         }
 
+    @staticmethod
+    def _dashboard_level_from_xp(total_xp):
+        total_xp = max(int(total_xp or 0), 0)
+        return min(total_xp // DASHBOARD_XP_PER_LEVEL, DASHBOARD_MAX_LEVEL)
+
+    @staticmethod
+    def _dashboard_seconds_between(started_at, ended_at):
+        if not started_at or not ended_at:
+            return 0
+        try:
+            start = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+            end = datetime.fromisoformat(str(ended_at).replace("Z", "+00:00"))
+        except ValueError:
+            return 0
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=UTC)
+        return max(int((end.astimezone(UTC) - start.astimezone(UTC)).total_seconds()), 0)
+
+    async def _dashboard_payload(self, guild):
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        levels_settings = resolve_levels(settings)
+        launched_at = getattr(self.bot, "launched_at", None)
+        uptime = int((datetime.now(UTC) - launched_at).total_seconds()) if launched_at else 0
+
+        configured_channels = sum(1 for key in CHANNEL_KEYS if settings.get(key))
+        recommended_keys = ["update_channel", "error_log_channel", "log_channel", "welcome_channel"]
+        if github_config.watch_repos or github_config.primary_repo:
+            recommended_keys.append("github_event_channel")
+        recommended_done = sum(1 for key in recommended_keys if settings.get(key))
+
+        levels_data = await asyncio.to_thread(load_levels_data)
+        guild_levels = levels_data.get(str(guild.id), {})
+        leaderboard = []
+        for position, (user_id, record) in enumerate(
+            sorted(guild_levels.items(), key=lambda item: item[1].get("xp", 0), reverse=True)[
+                :DASHBOARD_LEADERBOARD_LIMIT
+            ],
+            start=1,
+        ):
+            member = guild.get_member(int(user_id)) if str(user_id).isdigit() else None
+            xp = int(record.get("xp", 0) or 0)
+            leaderboard.append(
+                {
+                    "position": position,
+                    "user_id": str(user_id),
+                    "display_name": member.display_name if member else f"User {user_id}",
+                    "xp": xp,
+                    "messages": int(record.get("messages", 0) or 0),
+                    "level": self._dashboard_level_from_xp(xp),
+                }
+            )
+
+        voice_history = await asyncio.to_thread(load_data, "voice_report_history", {})
+        voice_pending = await asyncio.to_thread(load_data, "voice_pending_reports", {})
+        guild_voice_history = voice_history.get(str(guild.id), []) if isinstance(voice_history, dict) else []
+        guild_voice_pending = voice_pending.get(str(guild.id), {}) if isinstance(voice_pending, dict) else {}
+        voice_reports = []
+        for report in guild_voice_history[:DASHBOARD_VOICE_HISTORY_LIMIT]:
+            session = report.get("session") or {}
+            members = session.get("members") if isinstance(session, dict) else {}
+            started_at = session.get("started_at") if isinstance(session, dict) else None
+            ended_at = report.get("ended_at")
+            voice_reports.append(
+                {
+                    "id": str(report.get("id") or ""),
+                    "channel_id": str(report.get("channel_id") or ""),
+                    "channel_name": report.get("channel_name") or "Voice session",
+                    "started_at": started_at,
+                    "ended_at": ended_at,
+                    "sent_at": report.get("sent_at"),
+                    "duration_seconds": self._dashboard_seconds_between(started_at, ended_at),
+                    "unique_members": len(members) if isinstance(members, dict) else 0,
+                    "peak_members": int(session.get("peak_members", 0) or 0) if isinstance(session, dict) else 0,
+                }
+            )
+
+        backups = await asyncio.to_thread(list_backups, 1)
+        newest_backup = backups[0] if backups else None
+        backup_report = await asyncio.to_thread(inspect_backup, newest_backup["path"]) if newest_backup else None
+
+        update_state = load_update_state()
+        update_feed = merged_update_feed(
+            limit=5,
+            history=update_state.get("history"),
+            latest=update_state.get("latest"),
+        )
+
+        automod = dict(AUTOMOD_DEFAULTS)
+        automod.update(settings.get("automod") or {})
+        modules = [
+            {"key": "welcome", "label": "Welcome", "enabled": bool(settings.get("welcome_channel"))},
+            {"key": "logs", "label": "Server logs", "enabled": bool(settings.get("log_channel"))},
+            {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
+            {"key": "automod", "label": "AutoMod", "enabled": bool(automod.get("invites") or automod.get("spam") or automod.get("badwords"))},
+            {"key": "levels", "label": "Levels", "enabled": bool(levels_settings.get("enabled"))},
+            {"key": "updates", "label": "Updates", "enabled": bool(settings.get("update_channel"))},
+        ]
+
+        return {
+            "status": {
+                "ready": self.bot.is_ready(),
+                "version": BOT_VERSION,
+                "codename": BOT_CODENAME,
+                "uptime_seconds": uptime,
+                "commands": len(list(self.bot.tree.walk_commands())),
+                "guilds": len(self.bot.guilds),
+                "members": sum(g.member_count or 0 for g in self.bot.guilds),
+            },
+            "guild": {
+                "id": str(guild.id),
+                "name": guild.name,
+                "icon": str(guild.icon) if guild.icon else None,
+                "member_count": guild.member_count or 0,
+            },
+            "setup": {
+                "configured_channels": configured_channels,
+                "total_channels": len(CHANNEL_KEYS),
+                "recommended_done": recommended_done,
+                "recommended_total": len(recommended_keys),
+            },
+            "modules": modules,
+            "automod": {
+                "invites": bool(automod.get("invites")),
+                "spam": bool(automod.get("spam")),
+                "badwords_count": len(automod.get("badwords") or []),
+            },
+            "levels": {
+                "enabled": bool(levels_settings.get("enabled")),
+                "tracked_members": len(guild_levels),
+                "leaderboard": leaderboard,
+            },
+            "voice": {
+                "configured": bool(settings.get("voice_report_channel")),
+                "report_channel_id": str(settings.get("voice_report_channel")) if settings.get("voice_report_channel") else None,
+                "pending_count": len(guild_voice_pending) if isinstance(guild_voice_pending, dict) else 0,
+                "recent_reports": voice_reports,
+            },
+            "backup": {
+                "available": bool(newest_backup),
+                "latest_name": newest_backup["name"] if newest_backup else None,
+                "latest_size": newest_backup["size"] if newest_backup else 0,
+                "latest_size_text": newest_backup["size_text"] if newest_backup else None,
+                "latest_at": newest_backup["mtime"].isoformat() if newest_backup else None,
+                "ok": bool(backup_report and backup_report.get("ok")),
+                "warnings": backup_report.get("warnings", []) if backup_report else [],
+                "errors": backup_report.get("errors", []) if backup_report else [],
+            },
+            "updates": update_feed[:5],
+        }
+
     async def handle_config_get(self, request):
         self._rate_limit(request, "read")
         _, _, guild = await self._authorized_guild(request)
         return web.json_response(await self._config_payload(guild))
+
+    async def handle_dashboard(self, request):
+        self._rate_limit(request, "read")
+        _, _, guild = await self._authorized_guild(request)
+        return web.json_response(await self._dashboard_payload(guild))
 
     async def handle_audit(self, request):
         self._rate_limit(request, "read")

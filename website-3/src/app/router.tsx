@@ -12,6 +12,7 @@ import AuthGate from "./components/AuthGate";
 import Shell from "./components/Shell";
 
 const GuildPicker = lazy(() => import("./screens/GuildPicker"));
+const GuildOverview = lazy(() => import("./screens/GuildOverview"));
 const GuildConfig = lazy(() => import("./screens/GuildConfig"));
 const AuditLog = lazy(() => import("./screens/AuditLog"));
 
@@ -43,7 +44,15 @@ function GuildLayout() {
             activeProps={{ className: `${tab} border-primary text-ink` }}
             inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
           >
-            Configuration
+            Overview
+          </Link>
+          <Link
+            to="/g/$guildId/settings"
+            params={{ guildId }}
+            activeProps={{ className: `${tab} border-primary text-ink` }}
+            inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
+          >
+            Settings
           </Link>
           <Link
             to="/g/$guildId/audit"
@@ -89,6 +98,12 @@ const guildRoute = createRoute({
 const guildConfigRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "/",
+  component: GuildOverview,
+});
+
+const guildSettingsRoute = createRoute({
+  getParentRoute: () => guildRoute,
+  path: "/settings",
   component: GuildConfig,
 });
 
@@ -100,7 +115,7 @@ const guildAuditRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  guildRoute.addChildren([guildConfigRoute, guildAuditRoute]),
+  guildRoute.addChildren([guildConfigRoute, guildSettingsRoute, guildAuditRoute]),
 ]);
 
 export const router = createRouter({ routeTree, basepath: "/dashboard" });

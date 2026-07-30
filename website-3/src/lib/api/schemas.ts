@@ -110,6 +110,92 @@ export const AuditSchema = z.object({
 });
 export type AuditEntry = z.infer<typeof AuditSchema>["audit"][number];
 
+export const DashboardSchema = z.object({
+  status: z.object({
+    ready: z.boolean(),
+    version: z.string(),
+    codename: z.string(),
+    uptime_seconds: z.number(),
+    commands: z.number(),
+    guilds: z.number(),
+    members: z.number(),
+  }),
+  guild: z.object({
+    id: z.string(),
+    name: z.string(),
+    icon: z.string().nullable(),
+    member_count: z.number(),
+  }),
+  setup: z.object({
+    configured_channels: z.number(),
+    total_channels: z.number(),
+    recommended_done: z.number(),
+    recommended_total: z.number(),
+  }),
+  modules: z.array(z.object({ key: z.string(), label: z.string(), enabled: z.boolean() })),
+  automod: z.object({
+    invites: z.boolean(),
+    spam: z.boolean(),
+    badwords_count: z.number(),
+  }),
+  levels: z.object({
+    enabled: z.boolean(),
+    tracked_members: z.number(),
+    leaderboard: z.array(
+      z.object({
+        position: z.number(),
+        user_id: z.string(),
+        display_name: z.string(),
+        xp: z.number(),
+        messages: z.number(),
+        level: z.number(),
+      }),
+    ),
+  }),
+  voice: z.object({
+    configured: z.boolean(),
+    report_channel_id: z.string().nullable(),
+    pending_count: z.number(),
+    recent_reports: z.array(
+      z.object({
+        id: z.string(),
+        channel_id: z.string(),
+        channel_name: z.string(),
+        started_at: z.string().nullable(),
+        ended_at: z.string().nullable(),
+        sent_at: z.string().nullable().optional(),
+        duration_seconds: z.number(),
+        unique_members: z.number(),
+        peak_members: z.number(),
+      }),
+    ),
+  }),
+  backup: z.object({
+    available: z.boolean(),
+    latest_name: z.string().nullable(),
+    latest_size: z.number(),
+    latest_size_text: z.string().nullable(),
+    latest_at: z.string().nullable(),
+    ok: z.boolean(),
+    warnings: z.array(z.string()),
+    errors: z.array(z.string()),
+  }),
+  updates: z.array(
+    z.object({
+      build: z.number().optional(),
+      version: z.string().optional(),
+      codename: z.string().optional(),
+      created_at: z.string(),
+      highlights: z.array(z.string()).optional(),
+      changes: z.array(z.string()).optional(),
+      added_lines: z.number().optional(),
+      removed_lines: z.number().optional(),
+      changed_files: z.number().optional(),
+    }),
+  ),
+});
+export type Dashboard = z.infer<typeof DashboardSchema>;
+
 export const OkSchema = z.object({ ok: z.boolean() });
 
 /** Partial body for PUT /guilds/{id}/config — only changed keys are sent. */

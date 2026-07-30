@@ -103,7 +103,7 @@ const settingsByGuild: Record<string, Settings> = {
     welcome_channel: "c1",
     goodbye_channel: null,
     log_channel: "c7",
-    voice_report_channel: null,
+    voice_report_channel: "c8",
     update_channel: "c3",
     github_event_channel: "c9",
     error_log_channel: "c10",
@@ -202,6 +202,119 @@ function configPayload(id: string): Json | null {
   };
 }
 
+function dashboardPayload(id: string): Json | null {
+  const meta = guildMeta[id];
+  const settings = settingsByGuild[id];
+  if (!meta || !settings) return null;
+
+  const configuredChannels = [
+    settings.welcome_channel,
+    settings.goodbye_channel,
+    settings.log_channel,
+    settings.voice_report_channel,
+    settings.update_channel,
+    settings.github_event_channel,
+    settings.error_log_channel,
+  ].filter(Boolean).length;
+
+  return {
+    status: {
+      ready: true,
+      version: "3.1.0",
+      codename: "Nova",
+      uptime_seconds: 142_331,
+      commands: 70,
+      guilds: 5,
+      members: 6132,
+    },
+    guild: { id, name: meta.name, icon: null, member_count: meta.member_count },
+    setup: {
+      configured_channels: configuredChannels,
+      total_channels: 7,
+      recommended_done: [
+        settings.update_channel,
+        settings.error_log_channel,
+        settings.log_channel,
+        settings.welcome_channel,
+      ].filter(Boolean).length,
+      recommended_total: 4,
+    },
+    modules: [
+      { key: "welcome", label: "Welcome", enabled: Boolean(settings.welcome_channel) },
+      { key: "logs", label: "Server logs", enabled: Boolean(settings.log_channel) },
+      { key: "voice", label: "Voice reports", enabled: Boolean(settings.voice_report_channel) },
+      {
+        key: "automod",
+        label: "AutoMod",
+        enabled: Boolean(settings.automod.invites || settings.automod.spam || settings.automod.badwords.length),
+      },
+      { key: "levels", label: "Levels", enabled: settings.levels.enabled },
+      { key: "updates", label: "Updates", enabled: Boolean(settings.update_channel) },
+    ],
+    automod: {
+      invites: settings.automod.invites,
+      spam: settings.automod.spam,
+      badwords_count: settings.automod.badwords.length,
+    },
+    levels: {
+      enabled: settings.levels.enabled,
+      tracked_members: 139,
+      leaderboard: [
+        { position: 1, user_id: "1", display_name: "Razban", xp: 4400, messages: 2200, level: 37 },
+        { position: 2, user_id: "2", display_name: "Sorin", xp: 4240, messages: 2120, level: 35 },
+        { position: 3, user_id: "3", display_name: "KingPtVoi", xp: 4000, messages: 2000, level: 33 },
+        { position: 4, user_id: "4", display_name: "Denwer", xp: 3820, messages: 1910, level: 32 },
+        { position: 5, user_id: "5", display_name: "Victor", xp: 3210, messages: 1605, level: 27 },
+      ],
+    },
+    voice: {
+      configured: Boolean(settings.voice_report_channel),
+      report_channel_id: settings.voice_report_channel,
+      pending_count: 0,
+      recent_reports: [
+        {
+          id: "voice-1",
+          channel_id: "v1",
+          channel_name: "staff-voice",
+          started_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+          ended_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+          sent_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+          duration_seconds: 10_800,
+          unique_members: 7,
+          peak_members: 5,
+        },
+      ],
+    },
+    backup: {
+      available: true,
+      latest_name: "novaguard-backup-20260731-010000-auto.zip",
+      latest_size: 812_440,
+      latest_size_text: "793.4 KB",
+      latest_at: new Date(Date.now() - 1000 * 60 * 34).toISOString(),
+      ok: true,
+      warnings: [],
+      errors: [],
+    },
+    updates: [
+      {
+        build: 39,
+        version: "3.1.0",
+        codename: "Nova",
+        created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+        highlights: ["Dashboard overview and backup safety checks"],
+        added_lines: 438,
+        removed_lines: 12,
+        changed_files: 7,
+      },
+      {
+        build: 38,
+        created_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
+        changes: ["Voice report history, retry queue and CSV export"],
+      },
+    ],
+  };
+}
+
 function applyPatch(
   id: string,
   patch: Partial<Settings> & {
@@ -256,6 +369,14 @@ function route(pathname: string, method: string, body: Json | null): { status: n
     const id = cfg[1];
     if (method === "PUT" && body) applyPatch(id, body as Partial<Settings>);
     const payload = configPayload(id);
+    return payload
+      ? { status: 200, data: payload }
+      : { status: 404, data: { error: "NovaGuard is not in this server.", code: "guild_not_found" } };
+  }
+
+  const dash = p.match(/^\/guilds\/([^/]+)\/dashboard$/);
+  if (dash) {
+    const payload = dashboardPayload(dash[1]);
     return payload
       ? { status: 200, data: payload }
       : { status: 404, data: { error: "NovaGuard is not in this server.", code: "guild_not_found" } };
