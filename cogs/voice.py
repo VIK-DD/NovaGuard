@@ -435,6 +435,8 @@ class VoiceReports(commands.Cog):
         self.pending_reports: dict[str, dict[str, dict]] = {}
         self.report_history: dict[str, list[dict]] = {}
         self._send_queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue(maxsize=REPORT_SEND_QUEUE_MAXSIZE)
+        self._sending_reports: set[str] = set()
+        self._sending_lock = asyncio.Lock()
         self._persist_lock = asyncio.Lock()
         self._pending_lock = asyncio.Lock()
         self._history_lock = asyncio.Lock()
@@ -631,6 +633,18 @@ class VoiceReports(commands.Cog):
             return False
 
     async def _send_pending_report(self, guild: discord.Guild, report_id: str) -> bool:
+        async with self._sending_lock:
+            if report_id in self._sending_reports:
+                return False
+            self._sending_reports.add(report_id)
+
+        try:
+            return await self._send_pending_report_once(guild, report_id)
+        finally:
+            async with self._sending_lock:
+                self._sending_reports.discard(report_id)
+
+    async def _send_pending_report_once(self, guild: discord.Guild, report_id: str) -> bool:
         report = self.pending_reports.get(str(guild.id), {}).get(report_id)
         if not report:
             return True

@@ -1,14 +1,17 @@
 """Unit tests for voice session accumulation without connecting to Discord."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 
 # Keep this standalone test runnable with `python tests/test_voice.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cogs.voice import (
+    VoiceReports,
     MIN_SESSION_SECONDS,
     active_member_ids,
     build_report_embed,
@@ -79,6 +82,44 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertEqual(str(embed.image.url), "https://example.com/banner.png")
         self.assertIn("Room activity", [field.name for field in embed.fields])
         self.assertEqual(session_activity(self.session, ended_at), (62, 1.25))
+
+    def test_parallel_pending_sends_do_not_duplicate_the_report(self):
+        async def run_check():
+            cog = VoiceReports(SimpleNamespace())
+            cog.pending_reports = {
+                "42": {
+                    "report-1": {
+                        "id": "report-1",
+                        "channel_id": "123",
+                        "channel_name": "Late-night",
+                        "ended_at": self.started_at.isoformat(),
+                        "session": self.session,
+                    }
+                }
+            }
+            cog._mark_pending_sent = lambda guild_id, report_id: asyncio.sleep(0)
+            cog._mark_pending_failed = lambda guild_id, report_id, error: asyncio.sleep(0)
+            calls = 0
+
+            async def fake_send(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                await asyncio.sleep(0.05)
+                return True
+
+            cog._send_report = fake_send
+            guild = SimpleNamespace(id=42, get_channel=lambda channel_id: None)
+            results = await asyncio.gather(
+                cog._send_pending_report(guild, "report-1"),
+                cog._send_pending_report(guild, "report-1"),
+            )
+            return calls, results
+
+        calls, results = asyncio.run(run_check())
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 1)
 
 
 if __name__ == "__main__":
