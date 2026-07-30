@@ -173,5 +173,9 @@ from `setup_score`.
 
 ## Deployment
 
-Website only — `npm run deploy` from `website-3`. No bot changes, so nothing to
-pull on the Pi.
+Not website-only: implementation added `github_watch_configured` to
+`core/webserver.py`'s config payload, and the website's Zod schema now
+requires that field. Deploy the bot first — `git pull` + `pm2 restart
+pythonbot` on the Pi — then `npm run deploy` from `website-3`. In the wrong
+order, a newer website would fail to parse the config response from an older
+bot entirely.

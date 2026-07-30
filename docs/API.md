@@ -114,9 +114,15 @@ Auth required. Guilds the user can manage, bot-present first.
 
 ### `GET /guilds/{guild_id}/config`
 Auth + Manage Server. Current settings plus the pickers the UI needs.
+
+`github_watch_configured` is instance-wide, not a per-guild setting — it's the
+same value on every guild this bot serves, derived from the bot's
+`GITHUB_WATCH_REPOS`/`GITHUB_PRIMARY_REPO` env config.
+
 ```json
 {
   "guild": { "id": "…", "name": "…", "icon": "…|null", "member_count": 42 },
+  "github_watch_configured": true,
   "settings": {
     "welcome_channel": "…|null", "goodbye_channel": "…|null",
     "log_channel": "…|null", "voice_report_channel": "…|null", "update_channel": "…|null",
