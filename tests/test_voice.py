@@ -20,8 +20,10 @@ from cogs.voice import (
     participant_lines,
     record_member_join,
     record_member_leave,
+    report_export_text,
     session_activity,
     session_duration,
+    session_highlights,
     split_lines,
 )
 
@@ -82,6 +84,41 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertEqual(str(embed.image.url), "https://example.com/banner.png")
         self.assertIn("Room activity", [field.name for field in embed.fields])
         self.assertEqual(session_activity(self.session, ended_at), (62, 1.25))
+
+    def test_report_highlights_track_first_last_and_longest_stay(self):
+        record_member_join(self.session, 1, "Victor", self.started_at)
+        record_member_join(self.session, 2, "Mira", self.started_at + timedelta(minutes=10))
+        record_member_leave(self.session, 2, self.started_at + timedelta(minutes=40))
+        record_member_join(self.session, 2, "Mira", self.started_at + timedelta(minutes=50))
+        record_member_leave(self.session, 2, self.started_at + timedelta(minutes=70))
+        record_member_leave(self.session, 1, self.started_at + timedelta(hours=2))
+
+        highlights = session_highlights(self.session)
+
+        self.assertIn("Most active: <@1> - `2h 0m 0s`", highlights)
+        self.assertIn("Longest stay: <@1> - `2h 0m 0s` continuous", highlights)
+        self.assertIn("First joined: <@1>", highlights)
+        self.assertIn("Last left: <@1>", highlights)
+        self.assertEqual(self.session["members"]["2"]["longest_streak"], 30 * 60)
+
+    def test_report_exports_text_and_csv_with_continuous_stay_details(self):
+        record_member_join(self.session, 1, "Victor", self.started_at)
+        ended_at = self.started_at + timedelta(hours=2)
+        record_member_leave(self.session, 1, ended_at)
+        report = {
+            "channel_id": "123",
+            "channel_name": "Late-night",
+            "ended_at": ended_at.isoformat(),
+            "session": self.session,
+        }
+
+        text_export = report_export_text(report)
+        csv_export = report_export_text(report, csv=True)
+
+        self.assertIn("Voice session: Late-night", text_export)
+        self.assertIn("Victor (1) - 2h 0m 0s (1 entry, longest 2h 0m 0s)", text_export)
+        self.assertIn("member_id,display_name,total_seconds,duration,entries,longest_streak", csv_export)
+        self.assertIn('"1","Victor",7200.0,"2h 0m 0s",1,"2h 0m 0s"', csv_export)
 
     def test_parallel_pending_sends_do_not_duplicate_the_report(self):
         async def run_check():
