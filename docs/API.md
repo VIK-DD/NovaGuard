@@ -26,16 +26,22 @@ Success bodies are endpoint-specific (below). **Every error** shares one shape:
 | `bad_request` | 400 | Malformed input / invalid guild id / bad JSON body |
 | `validation_failed` | 400 | Config values rejected — see `details[]` |
 | `nothing_to_update` | 400 | PUT body contained no recognised keys |
+| `voice_not_configured` | 400 | Voice test requested before a voice report channel was set |
+| `update_channel_not_configured` | 400 | Update preview requested before this guild has an update channel |
+| `update_preview_unavailable` | 400 | No saved update exists to preview |
 | `invalid_state` | 400 | OAuth `state` mismatch — restart login |
 | `unauthorized` | 401 | No / expired session cookie |
 | `session_expired` | 401 | Discord token could not be refreshed |
 | `forbidden` | 403 | Lacks Manage Server on the guild |
 | `bad_origin` | 403 | Cross-origin mutation blocked (CSRF guard) |
+| `backup_not_found` | 404 | Backup check requested before any archive exists |
 | `guild_not_found` | 404 | Bot is not in that guild |
 | `not_found` | 404 | Unknown route |
 | `rate_limited` | 429 | Per-IP rate limit hit (`Retry-After`) |
 | `upstream_rate_limited` | 429 | Discord is rate-limiting the bot |
 | `upstream_error` | 502 | Discord API failure |
+| `voice_test_failed` | 502 | Discord did not accept the voice preview in time |
+| `update_preview_failed` | 502 | Discord did not accept the update preview in time |
 | `bot_starting` | 503 | Bot not ready yet — retry shortly |
 | `oauth_unavailable` | 503 | OAuth not configured on the bot |
 | `internal_error` | 500 | Unexpected server error (details logged, not returned) |
@@ -45,8 +51,8 @@ Success bodies are endpoint-specific (below). **Every error** shares one shape:
 | scope | limit | endpoints |
 |-------|-------|-----------|
 | auth | 10 / min | `/auth/login`, `/auth/callback` |
-| read | 120 / min | `/stats`, `/me`, `/guilds`, `/guilds/*/config` (GET), `/guilds/*/audit` |
-| write | 30 / min | `/guilds/*/config` (PUT) |
+| read | 120 / min | `/stats`, `/me`, `/guilds`, `/guilds/*/config` (GET), `/guilds/*/dashboard`, `/guilds/*/audit` |
+| write | 30 / min | `/guilds/*/config` (PUT), `/guilds/*/actions/*` (POST) |
 
 ## Endpoints
 
@@ -165,6 +171,52 @@ only the keys present are changed. Returns the same payload as GET on success.
 { "welcome_channel": "123", "autorole": "456",
   "automod": { "invites": false, "badwords": ["spoiler"] },
   "levels": { "xp_min": 3, "xp_max": 30, "announce": "channel", "announce_channel": "789" } }
+```
+
+### `GET /guilds/{guild_id}/dashboard`
+Auth + Manage Server. Compact control-center payload for the dashboard overview:
+live bot status, module state, backup health, level leaderboard, recent voice
+reports and newest update-feed entries.
+
+```json
+{
+  "status": { "ready": true, "version": "3.1.0", "codename": "Nova",
+    "uptime_seconds": 1200, "commands": 66, "guilds": 5, "members": 132 },
+  "guild": { "id": "…", "name": "…", "icon": "…|null", "member_count": 42 },
+  "setup": { "configured_channels": 6, "total_channels": 7,
+    "recommended_done": 4, "recommended_total": 4 },
+  "modules": [ { "key": "voice", "label": "Voice reports", "enabled": true } ],
+  "automod": { "invites": true, "spam": true, "badwords_count": 3 },
+  "levels": { "enabled": true, "tracked_members": 139,
+    "leaderboard": [ { "position": 1, "user_id": "…", "display_name": "…",
+      "xp": 4400, "messages": 2200, "level": 37 } ] },
+  "voice": { "configured": true, "report_channel_id": "…", "pending_count": 0,
+    "recent_reports": [ { "id": "…", "channel_id": "…", "channel_name": "staff",
+      "started_at": "…", "ended_at": "…", "sent_at": "…",
+      "duration_seconds": 10800, "unique_members": 7, "peak_members": 5 } ] },
+  "backup": { "available": true, "latest_name": "novaguard-backup-…zip",
+    "latest_size": 812440, "latest_size_text": "793.4 KB", "latest_at": "…",
+    "ok": true, "warnings": [], "errors": [] },
+  "updates": [ { "build": 39, "created_at": "…", "highlights": ["…"] } ]
+}
+```
+
+### `POST /guilds/{guild_id}/actions/{action}`
+Auth + Manage Server + Origin-guarded. Runs one audited dashboard action. Valid
+actions:
+
+- `backup_check`: extracts and verifies the newest backup archive without
+  touching live data.
+- `voice_test`: sends a preview voice report to this guild's configured voice
+  report channel.
+- `update_preview`: sends the latest saved update embed to this guild's
+  configured update channel only.
+
+```json
+{ "ok": true, "action": "backup_check",
+  "message": "Latest backup passed the restore check.",
+  "backup": { "name": "novaguard-backup-…zip", "size_text": "793.4 KB",
+    "ok": true, "warnings": [], "errors": [] } }
 ```
 
 ### `GET /guilds/{guild_id}/audit?limit=50`

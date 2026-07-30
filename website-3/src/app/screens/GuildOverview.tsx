@@ -1,9 +1,10 @@
 import { Link, useParams } from "@tanstack/react-router";
-import type { ReactNode } from "react";
-import { ApiError } from "../../lib/api/client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type ReactNode } from "react";
+import { ApiError, inviteUrl } from "../../lib/api/client";
 import type { Dashboard } from "../../lib/api/schemas";
 import Icon from "../components/Icon";
-import { useGuildDashboard } from "../queries/guilds";
+import { runGuildAction, useGuildDashboard } from "../queries/guilds";
 
 const timeFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -93,6 +94,59 @@ function Progress({ value }: { value: number }) {
   );
 }
 
+function ActionToast(props: { tone: "good" | "warn"; message: string; onClose: () => void }) {
+  return (
+    <div className="fixed right-4 bottom-4 z-30 max-w-[calc(100vw-2rem)] sm:right-6 sm:bottom-6">
+      <div
+        role="status"
+        className={`flex w-full max-w-sm items-start gap-3 rounded-[var(--radius-card)] border bg-card px-4 py-3 text-sm shadow-[0_18px_50px_rgb(0_0_0/0.16)] ${
+          props.tone === "good" ? "border-good/35" : "border-primary/35"
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className={`mt-1 h-2 w-2 shrink-0 rounded-full ${props.tone === "good" ? "bg-good" : "bg-primary"}`}
+        />
+        <p className="min-w-0 flex-1 text-ink">{props.message}</p>
+        <button
+          type="button"
+          onClick={props.onClose}
+          aria-label="Dismiss notification"
+          className="ng-touch-target -my-2 -mr-2 grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-muted hover:text-ink"
+        >
+          <Icon name="x" size={16} flat />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ActionButton(props: {
+  label: string;
+  description: string;
+  icon: "shield-check" | "users-three" | "hash" | "list";
+  disabled?: boolean;
+  busy?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={props.disabled || props.busy}
+      onClick={props.onClick}
+      className="ng-pressable group flex min-h-[5rem] items-center gap-3 rounded-[var(--radius-card)] border border-line bg-card p-4 text-left transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-55"
+    >
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] border border-line bg-bg-subtle text-ink">
+        <Icon name={props.busy ? "list" : props.icon} size={20} flat={props.busy} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{props.busy ? "Working..." : props.label}</span>
+        <span className="mt-1 block text-xs leading-5 text-ink-muted">{props.description}</span>
+      </span>
+    </button>
+  );
+}
+
 function GuildHero({ data }: { data: Dashboard }) {
   const setupPercent = pct(data.setup.recommended_done, data.setup.recommended_total);
   return (
@@ -148,7 +202,28 @@ function GuildHero({ data }: { data: Dashboard }) {
 
 export default function GuildOverview() {
   const { guildId } = useParams({ strict: false }) as { guildId: string };
+  const qc = useQueryClient();
   const dashboard = useGuildDashboard(guildId);
+  const [toast, setToast] = useState<{ tone: "good" | "warn"; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const action = useMutation({
+    mutationFn: (name: string) => runGuildAction(guildId, name),
+    onSuccess: (data) => {
+      setToast({ tone: data.ok ? "good" : "warn", message: data.message });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "audit"] });
+    },
+    onError: (err) => {
+      const message = err instanceof ApiError ? err.message : "Dashboard action failed.";
+      setToast({ tone: "warn", message });
+    },
+  });
 
   if (dashboard.isPending) {
     return (
@@ -182,11 +257,60 @@ export default function GuildOverview() {
 
   const data = dashboard.data;
   const backupTone = data.backup.ok ? "good" : data.backup.available ? "warn" : "muted";
+  const runningAction = action.variables;
+  const actionBusy = action.isPending;
+  const runAction = (name: string) => action.mutate(name);
 
   return (
     <>
       <GuildHero data={data} />
       <main className="mx-auto max-w-6xl px-4 py-6 pb-24 sm:px-6">
+        {toast && <ActionToast tone={toast.tone} message={toast.message} onClose={() => setToast(null)} />}
+        <section className="mb-4 rounded-[var(--radius-card)] border border-line bg-bg-subtle/55 p-4 sm:p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs tracking-[0.2em] text-primary uppercase">Quick actions</p>
+              <h2 className="font-display mt-1 text-xl font-semibold tracking-tight">Run checks without Discord commands</h2>
+            </div>
+            <p className="max-w-xl text-sm text-ink-muted">
+              Actions are audited and use the same server permissions as the rest of the dashboard.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <ActionButton
+              label="Test voice report"
+              description={data.voice.configured ? "Post a preview in the voice report channel." : "Configure a voice channel first."}
+              icon="users-three"
+              disabled={!data.voice.configured || actionBusy}
+              busy={actionBusy && runningAction === "voice_test"}
+              onClick={() => runAction("voice_test")}
+            />
+            <ActionButton
+              label="Run backup check"
+              description={data.backup.available ? "Verify the newest archive safely." : "No backup archive yet."}
+              icon="shield-check"
+              disabled={!data.backup.available || actionBusy}
+              busy={actionBusy && runningAction === "backup_check"}
+              onClick={() => runAction("backup_check")}
+            />
+            <ActionButton
+              label="Send latest update"
+              description="Post the newest saved update to Discord."
+              icon="hash"
+              disabled={actionBusy}
+              busy={actionBusy && runningAction === "update_preview"}
+              onClick={() => runAction("update_preview")}
+            />
+            <ActionButton
+              label="Open invite"
+              description="Open the bot install flow in a new tab."
+              icon="list"
+              disabled={actionBusy}
+              onClick={() => window.open(inviteUrl(), "_blank", "noopener,noreferrer")}
+            />
+          </div>
+        </section>
+
         <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
           <Card
             title="Modules"

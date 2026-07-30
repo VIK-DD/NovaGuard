@@ -382,6 +382,25 @@ function route(pathname: string, method: string, body: Json | null): { status: n
       : { status: 404, data: { error: "NovaGuard is not in this server.", code: "guild_not_found" } };
   }
 
+  const action = p.match(/^\/guilds\/([^/]+)\/actions\/([^/]+)$/);
+  if (action) {
+    const id = action[1];
+    const settings = settingsByGuild[id];
+    if (!settings) return { status: 404, data: { error: "NovaGuard is not in this server.", code: "guild_not_found" } };
+    const actionName = action[2].replace(/-/g, "_");
+    if (actionName === "voice_test" && !settings.voice_report_channel) {
+      return { status: 400, data: { error: "Voice reports are not configured.", code: "voice_not_configured" } };
+    }
+    const messages: Record<string, string> = {
+      backup_check: "Latest backup passed the restore check.",
+      voice_test: "Voice report preview sent to #voice-reports.",
+      update_preview: "Latest update was sent to the configured update channel.",
+    };
+    return messages[actionName]
+      ? { status: 200, data: { ok: true, action: actionName, message: messages[actionName] } }
+      : { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
+  }
+
   const aud = p.match(/^\/guilds\/([^/]+)\/audit$/);
   if (aud) return { status: 200, data: { audit: auditByGuild[aud[1]] ?? [] } };
 

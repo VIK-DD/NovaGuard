@@ -39,7 +39,7 @@ import secrets
 import threading
 import time
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import aiohttp
@@ -452,6 +452,7 @@ class WebServer:
             ("GET", "/guilds/{guild_id}/config", self.handle_config_get),
             ("PUT", "/guilds/{guild_id}/config", self.handle_config_put),
             ("GET", "/guilds/{guild_id}/dashboard", self.handle_dashboard),
+            ("POST", "/guilds/{guild_id}/actions/{action}", self.handle_guild_action),
             ("GET", "/guilds/{guild_id}/audit", self.handle_audit),
         ]
         for method, path, handler in routes:
@@ -1193,6 +1194,162 @@ class WebServer:
         self._rate_limit(request, "read")
         _, _, guild = await self._authorized_guild(request)
         return web.json_response(await self._dashboard_payload(guild))
+
+    async def _audit_dashboard_action(self, request, guild, entry, action, changes=None):
+        await asyncio.to_thread(
+            db_add_audit,
+            guild.id,
+            entry["user"],
+            action,
+            changes or {},
+            self._client_ip(request),
+        )
+
+    async def _handle_backup_check_action(self):
+        backups = await asyncio.to_thread(list_backups, 1)
+        latest = backups[0] if backups else None
+        if latest is None:
+            raise ApiError(404, "No backup archive exists yet.", code="backup_not_found")
+
+        report = await asyncio.to_thread(inspect_backup, latest["path"], extract=True)
+        if not report.get("ok"):
+            return {
+                "ok": False,
+                "action": "backup_check",
+                "message": f"Backup check finished with {len(report.get('errors', []))} error(s).",
+                "backup": {
+                    "name": latest["name"],
+                    "size_text": latest["size_text"],
+                    "ok": False,
+                    "warnings": report.get("warnings", []),
+                    "errors": report.get("errors", []),
+                },
+            }
+
+        warnings = report.get("warnings", [])
+        return {
+            "ok": True,
+            "action": "backup_check",
+            "message": "Latest backup passed the restore check.",
+            "backup": {
+                "name": latest["name"],
+                "size_text": latest["size_text"],
+                "ok": True,
+                "warnings": warnings,
+                "errors": [],
+            },
+        }
+
+    async def _handle_voice_test_action(self, guild, entry):
+        import discord
+
+        from cogs.voice import build_report_embed, new_session, now_utc, record_member_join, record_member_leave
+
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        channel_id = settings.get("voice_report_channel")
+        channel = guild.get_channel(int(channel_id)) if channel_id else None
+        if channel is None:
+            raise ApiError(400, "Voice reports are not configured.", code="voice_not_configured")
+
+        ended_at = now_utc()
+        started_at = ended_at - timedelta(hours=1, minutes=27, seconds=18)
+        session = new_session(0, "Voice report preview", started_at)
+        user_id = int(entry["user"].get("id") or 0)
+        username = entry["user"].get("username") or "Dashboard user"
+        record_member_join(session, user_id, username, started_at)
+        record_member_leave(session, user_id, ended_at)
+
+        class PreviewVoiceChannel:
+            id = 0
+            name = "Voice report preview"
+            mention = "Voice report preview"
+
+        embed, _ = build_report_embed(session, PreviewVoiceChannel(), ended_at)
+        embed.title = "Voice session preview"
+        try:
+            await asyncio.wait_for(
+                channel.send(content=f"Test requested from the dashboard by **{username}**", embed=embed),
+                timeout=8,
+            )
+        except (discord.HTTPException, asyncio.TimeoutError) as error:
+            log.warning("Dashboard voice test failed for #%s", channel.id, exc_info=True)
+            raise ApiError(
+                502,
+                "Discord did not accept the voice test report in time.",
+                code="voice_test_failed",
+                details=[type(error).__name__],
+            ) from error
+
+        return {
+            "ok": True,
+            "action": "voice_test",
+            "message": f"Voice report preview sent to #{channel.name}.",
+            "channel_id": str(channel.id),
+        }
+
+    async def _handle_update_preview_action(self, guild):
+        from .guild_config import resolve_channel
+        from .updates import (
+            build_code_update_embed,
+            build_restart_update_embed,
+            build_update_buttons,
+            normalize_update_history,
+            safe_send_embed,
+        )
+
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        channel = await resolve_channel(self.bot, settings.get("update_channel") or github_config.update_channel_id)
+        if channel is None or getattr(channel, "guild", None) != guild:
+            raise ApiError(
+                400,
+                "No update channel is configured for this server.",
+                code="update_channel_not_configured",
+            )
+
+        saved_state = await asyncio.to_thread(load_update_state)
+        latest_update = saved_state.get("latest")
+        if not latest_update:
+            raise ApiError(400, "No saved update is available.", code="update_preview_unavailable")
+
+        history = normalize_update_history(saved_state.get("history", []))
+        pending_fingerprint = saved_state.get("pending_announcement")
+        latest_fingerprint = latest_update.get("fingerprint")
+        embed = (
+            build_code_update_embed(latest_update, history)
+            if pending_fingerprint and pending_fingerprint == latest_fingerprint
+            else build_restart_update_embed(latest_update, history)
+        )
+        sent = await safe_send_embed(channel, embed, build_update_buttons())
+        if not sent:
+            raise ApiError(
+                502,
+                "Discord did not accept the update preview in time.",
+                code="update_preview_failed",
+            )
+        return {
+            "ok": True,
+            "action": "update_preview",
+            "message": f"Latest update was sent to #{channel.name}.",
+            "channel_id": str(channel.id),
+        }
+
+    async def handle_guild_action(self, request):
+        self._rate_limit(request, "write")
+        self._check_origin(request)
+        _, entry, guild = await self._authorized_guild(request)
+        action = request.match_info["action"].replace("-", "_")
+
+        if action == "backup_check":
+            payload = await self._handle_backup_check_action()
+        elif action == "voice_test":
+            payload = await self._handle_voice_test_action(guild, entry)
+        elif action == "update_preview":
+            payload = await self._handle_update_preview_action(guild)
+        else:
+            raise ApiError(404, "Unknown dashboard action.", code="unknown_action")
+
+        await self._audit_dashboard_action(request, guild, entry, f"dashboard_{action}", {"ok": payload.get("ok")})
+        return web.json_response(payload)
 
     async def handle_audit(self, request):
         self._rate_limit(request, "read")

@@ -196,6 +196,23 @@ export const DashboardSchema = z.object({
 });
 export type Dashboard = z.infer<typeof DashboardSchema>;
 
+export const DashboardActionSchema = z.object({
+  ok: z.boolean(),
+  action: z.string(),
+  message: z.string(),
+  channel_id: z.string().optional(),
+  backup: z
+    .object({
+      name: z.string(),
+      size_text: z.string(),
+      ok: z.boolean(),
+      warnings: z.array(z.string()),
+      errors: z.array(z.string()),
+    })
+    .optional(),
+});
+export type DashboardAction = z.infer<typeof DashboardActionSchema>;
+
 export const OkSchema = z.object({ ok: z.boolean() });
 
 /** Partial body for PUT /guilds/{id}/config — only changed keys are sent. */
