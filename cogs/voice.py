@@ -179,6 +179,30 @@ def split_lines(lines: list[str], limit: int = MAX_FIELD_LENGTH) -> list[str]:
     return chunks or ["No member activity was recorded."]
 
 
+def pending_report_lines(reports: dict[str, dict]) -> list[str]:
+    rows = []
+    for report_id, report in reports.items():
+        ended_at = parse_time(report.get("ended_at"))
+        ended = discord.utils.format_dt(ended_at, "R") if ended_at else "unknown end"
+        attempts = int(report.get("attempts", 0))
+        error = str(report.get("last_error") or "none")
+        if len(error) > 120:
+            error = f"{error[:117]}..."
+        rows.append(
+            (
+                ended_at or datetime.min.replace(tzinfo=UTC),
+                (
+                    f"`{report_id}`\n"
+                    f"{report.get('channel_name', 'Unknown channel')} (`{report.get('channel_id', 'unknown')}`) • "
+                    f"ended {ended} • attempts `{attempts}`\n"
+                    f"last error: `{error}`"
+                ),
+            )
+        )
+    rows.sort(key=lambda row: row[0], reverse=True)
+    return [line for _, line in rows]
+
+
 def build_report_embed(session: dict, channel: discord.abc.GuildChannel, ended_at: datetime):
     started_at = parse_time(session.get("started_at")) or ended_at
     duration = session_duration(session, ended_at)
@@ -610,6 +634,39 @@ class VoiceReports(commands.Cog):
             f"Sent `{sent}` pending report(s). `{remaining}` still pending.",
             color=Palette.SUCCESS if remaining == 0 else Palette.WARNING,
         )
+        brand_footer(embed, "Voice session reports")
+        await respond(interaction, embed, ephemeral=True)
+
+    @voice.command(name="pending", description="List voice reports waiting to be sent")
+    async def voice_pending(self, interaction: discord.Interaction):
+        reports = self.pending_reports.get(str(interaction.guild_id), {})
+        if not reports:
+            embed = make_embed(
+                "No pending voice reports",
+                "Every completed voice session report has already been sent.",
+                color=Palette.SUCCESS,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        chunks = split_lines(pending_report_lines(reports), limit=950)
+        embed = make_embed(
+            "Pending voice reports",
+            f"`{len(reports)}` report(s) are waiting for delivery. Use `/voice retry` to send them again.",
+            color=Palette.WARNING,
+        )
+        for index, chunk in enumerate(chunks[:5], 1):
+            embed.add_field(
+                name="Reports" if index == 1 else "Reports (continued)",
+                value=chunk,
+                inline=False,
+            )
+        if len(chunks) > 5:
+            embed.add_field(
+                name="More reports",
+                value="Only the first entries fit in Discord's embed limit. Retry or inspect `data/voice_pending_reports.json` for the full list.",
+                inline=False,
+            )
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
 
