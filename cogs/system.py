@@ -14,7 +14,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core import updates
-from core.backups import BACKUP_DIR, create_backup
+from core.backups import BACKUP_DIR, create_backup, inspect_backup, latest_backup
 from core.config import (
     BOT_CODENAME,
     BOT_VERSION,
@@ -179,7 +179,22 @@ def storage_health_lines():
         lines.append(ok_line("feature data", f"{len(data_files)} JSON file(s) valid"))
 
     backup_count = len(list(BACKUP_DIR.glob("novaguard-backup-*.zip"))) if BACKUP_DIR.exists() else 0
-    lines.append(ok_line("backups", f"{backup_count} archive(s), auto every {BACKUP_INTERVAL_HOURS}h"))
+    newest_backup = latest_backup()
+    if newest_backup:
+        age = datetime.now(UTC) - newest_backup["mtime"]
+        integrity = inspect_backup(newest_backup["path"])
+        details = (
+            f"{backup_count} archive(s), latest {format_timedelta(age)} ago, "
+            f"{newest_backup['size_text']}, auto every {BACKUP_INTERVAL_HOURS}h"
+        )
+        if not integrity["ok"]:
+            lines.append(fail_line("backups", details + " — integrity check failed"))
+        elif age.total_seconds() > BACKUP_INTERVAL_HOURS * 2 * 3600:
+            lines.append(warn_line("backups", details + " — latest backup is older than expected"))
+        else:
+            lines.append(ok_line("backups", details))
+    else:
+        lines.append(warn_line("backups", f"none yet, auto every {BACKUP_INTERVAL_HOURS}h"))
     return lines
 
 

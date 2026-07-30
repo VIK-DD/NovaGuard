@@ -289,7 +289,9 @@ That means the bot can tell your server what changed without you writing a manua
 - `/status` gives members a clean public summary without exposing admin details.
 - Admin error digests can be routed into a private channel.
 - Automatic backups run every 6 hours and keep the newest 10 archives in `backups/`.
-- `/config backup` creates an immediate manual archive.
+- `/config backup` and `/backup create` create immediate manual archives.
+- `/backup status`, `/backup list` and `/backup test` verify that the latest archive can be opened, parsed and restored into a safe temporary folder.
+- See `docs/RESTORE.md` before restoring live data or setting up an off-site copy.
 
 If the Raspberry Pi stalls briefly, NovaGuard can detect that and report it without falling apart.
 

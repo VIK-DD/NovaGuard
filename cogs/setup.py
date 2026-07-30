@@ -1,5 +1,6 @@
 """🚀 Setup category — one-command onboarding and server configuration."""
 
+import asyncio
 import io
 import json
 
@@ -7,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.backups import create_backup
+from core.backups import create_backup, inspect_backup, latest_backup, list_backups
 from core.config import github_config
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -159,6 +160,105 @@ def export_config_file(guild):
     return discord.File(io.BytesIO(data), filename=f"novaguard-config-{guild.id}.json")
 
 
+def backup_integrity_line(report):
+    if not report:
+        return "Not checked"
+    if report["ok"]:
+        return "✅ Ready to restore"
+    return "⚠️ Needs attention"
+
+
+def backup_errors_text(report):
+    if not report:
+        return "No integrity report available."
+    if report["errors"]:
+        return "\n".join(f"• {error}" for error in report["errors"][:5])
+    if report["warnings"]:
+        return "\n".join(f"• {warning}" for warning in report["warnings"][:5])
+    return "No issues found."
+
+
+def backup_status_embed(latest, report=None):
+    if not latest:
+        embed = make_embed(
+            "🧳 Backup status",
+            "No backup archives exist yet. Run `/backup create` or wait for the automatic 6h backup loop.",
+            color=Palette.WARNING,
+        )
+        brand_footer(embed, "Backup status")
+        return embed
+
+    checked_report = report or {}
+    embed = make_embed(
+        "🧳 Backup status",
+        f"Latest backup: `{latest['name']}`",
+        color=Palette.SUCCESS if checked_report.get("ok") else Palette.WARNING,
+    )
+    embed.add_field(
+        name="Archive",
+        value=(
+            f"Size: `{latest['size_text']}`\n"
+            f"Created: {discord.utils.format_dt(latest['mtime'], 'F')} "
+            f"({discord.utils.format_dt(latest['mtime'], 'R')})"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Integrity",
+        value=(
+            f"{backup_integrity_line(checked_report)}\n"
+            f"SQLite: `{checked_report.get('sqlite') or 'not included'}`\n"
+            f"Files: `{len(checked_report.get('included', []))}` total • "
+            f"`{len(checked_report.get('json_files', []))}` JSON checked"
+        ),
+        inline=False,
+    )
+    embed.add_field(name="Notes", value=backup_errors_text(checked_report), inline=False)
+    brand_footer(embed, "Backup status")
+    return embed
+
+
+def backup_list_embed(backups):
+    embed = make_embed(
+        "🧳 Backup archives",
+        f"Showing newest `{len(backups)}` archive(s). Automatic pruning keeps the newest backups on disk.",
+        color=Palette.INFO,
+    )
+    if not backups:
+        embed.description = "No backup archives exist yet."
+    else:
+        lines = []
+        for index, backup in enumerate(backups, start=1):
+            lines.append(
+                f"`#{index}` `{backup['name']}`\n"
+                f"Size `{backup['size_text']}` • {discord.utils.format_dt(backup['mtime'], 'R')}"
+            )
+        embed.add_field(name="Latest first", value="\n\n".join(lines), inline=False)
+    brand_footer(embed, "Backup list")
+    return embed
+
+
+def backup_test_embed(latest, report):
+    color = Palette.SUCCESS if report["ok"] else Palette.DANGER
+    embed = make_embed(
+        "🧪 Backup restore test",
+        f"Checked `{latest['name']}` without touching live data.",
+        color=color,
+    )
+    embed.add_field(
+        name="Result",
+        value=(
+            f"{backup_integrity_line(report)}\n"
+            f"SQLite: `{report.get('sqlite') or 'not included'}`\n"
+            f"Extracted to: `{report.get('extract_path') or 'not extracted'}`"
+        ),
+        inline=False,
+    )
+    embed.add_field(name="Notes", value=backup_errors_text(report), inline=False)
+    brand_footer(embed, "Backup restore test")
+    return embed
+
+
 class SetupTargetSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -281,6 +381,12 @@ class Setup(commands.Cog):
         default_permissions=discord.Permissions(manage_guild=True),
         guild_only=True,
     )
+    backup = app_commands.Group(
+        name="backup",
+        description="NovaGuard backup safety tools",
+        default_permissions=discord.Permissions(manage_guild=True),
+        guild_only=True,
+    )
 
     def __init__(self, bot):
         self.bot = bot
@@ -323,6 +429,45 @@ class Setup(commands.Cog):
         )
         brand_footer(embed, "Manual backup")
         await respond(interaction, embed, ephemeral=True)
+
+    @backup.command(name="create", description="Create and verify a manual backup archive now")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_create(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        backup = await asyncio.to_thread(create_backup, "manual")
+        latest = {
+            "name": backup["name"],
+            "size_text": backup["size_text"],
+            "mtime": discord.utils.utcnow(),
+        }
+        embed = backup_status_embed(latest, backup["integrity"])
+        embed.title = "🧳 Backup created"
+        await respond(interaction, embed, ephemeral=True)
+
+    @backup.command(name="status", description="Check the newest backup archive and restore readiness")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_status(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        latest = latest_backup()
+        report = await asyncio.to_thread(inspect_backup, latest["path"]) if latest else None
+        await respond(interaction, backup_status_embed(latest, report), ephemeral=True)
+
+    @backup.command(name="list", description="List the newest backup archives")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_list(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        backups = await asyncio.to_thread(list_backups, 8)
+        await respond(interaction, backup_list_embed(backups), ephemeral=True)
+
+    @backup.command(name="test", description="Extract and verify the newest backup without touching live data")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_test(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        latest = latest_backup()
+        if not latest:
+            return await respond(interaction, backup_status_embed(None), ephemeral=True)
+        report = await asyncio.to_thread(inspect_backup, latest["path"], extract=True)
+        await respond(interaction, backup_test_embed(latest, report), ephemeral=True)
 
     @config.command(name="reset", description="Reset NovaGuard setup/config for this server")
     @app_commands.describe(confirm="Set to true to confirm the reset")

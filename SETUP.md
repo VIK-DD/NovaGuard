@@ -183,7 +183,8 @@ Tip: `/help` opens an interactive hub with a category menu.
 - `data/novaguard.sqlite3` stores server setup/config, XP levels and economy wallets.
 - Old `data/settings.json`, `data/levels.json` and `data/economy.json` are migrated automatically once and kept as safety backups.
 - Automatic backups run every 6 hours and keep the newest 10 zip archives in `backups/`.
-- `/config backup` creates a manual backup immediately.
+- `/config backup` and `/backup create` create a manual backup immediately.
+- `/backup status`, `/backup list` and `/backup test` inspect backup health without touching live data.
 - `/doctor` checks database, JSON files, GitHub API, permissions, latency, uptime, backup status and event-loop lag.
 - The health monitor sends admin error embeds if the event loop lag becomes dangerously high.
 
