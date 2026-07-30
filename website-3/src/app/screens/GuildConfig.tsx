@@ -150,11 +150,22 @@ export default function GuildConfig() {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<GuildSettings | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [justSaved, setJustSaved] = useState(false);
 
   // Reseed the draft whenever fresh server state arrives (fetch or save).
   useEffect(() => {
     if (config.data) setDraft(structuredClone(config.data.settings));
   }, [config.dataUpdatedAt]);
+
+  // The "Saved" toast times out on its own rather than waiting for the next
+  // save to clear it — SaveBar already gives `visible` (a new edit) priority
+  // over `saved` in what it displays, so this timer only controls how long
+  // the toast lingers when the visitor does nothing else.
+  useEffect(() => {
+    if (!justSaved) return;
+    const id = setTimeout(() => setJustSaved(false), 2400);
+    return () => clearTimeout(id);
+  }, [justSaved]);
 
   const save = useMutation({
     mutationFn: (patch: SettingsPatch) =>
@@ -165,6 +176,7 @@ export default function GuildConfig() {
     onSuccess: (data) => {
       qc.setQueryData(["guild", guildId, "config"], data);
       setFieldErrors({});
+      setJustSaved(true);
     },
     onError: (err) => {
       if (err instanceof ApiError && err.code === "validation_failed") {
@@ -433,6 +445,7 @@ export default function GuildConfig() {
       <SaveBar
         visible={dirty}
         saving={save.isPending}
+        saved={justSaved}
         error={saveError}
         onSave={() => save.mutate(diffSettings(settings, draft))}
         onDiscard={() => {
