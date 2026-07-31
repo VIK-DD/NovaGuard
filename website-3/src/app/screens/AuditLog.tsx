@@ -142,7 +142,7 @@ export default function AuditLog() {
           disabled={audit.isFetching}
           className="ng-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-line bg-card px-4 text-sm hover:border-line-strong disabled:opacity-60"
         >
-          <Icon name="list" size={17} flat />
+          <Icon name="arrows-clockwise" size={17} flat />
           {audit.isFetching ? "Refreshing..." : "Refresh"}
         </button>
       </div>

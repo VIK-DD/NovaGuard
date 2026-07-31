@@ -153,7 +153,7 @@ function GuildHero({ data }: { data: Dashboard }) {
   const setupPercent = pct(data.setup.recommended_done, data.setup.recommended_total);
   return (
     <section className="border-b border-line bg-bg-subtle/55">
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:py-10">
+      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-start lg:py-10">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             {data.guild.icon ? (
@@ -177,7 +177,7 @@ function GuildHero({ data }: { data: Dashboard }) {
             <Stat label="Tracked XP" value={compactNumber(data.levels.tracked_members)} />
           </div>
         </div>
-        <Card title="System" className="lg:self-start">
+        <Card title="System" className="lg:self-start lg:p-4">
           <div className="flex items-center justify-between gap-3">
             <Pill tone={data.status.ready ? "good" : "warn"}>
               {data.status.ready ? "Online" : "Starting"}
@@ -443,14 +443,14 @@ export default function GuildOverview() {
             params={{ guildId }}
             className="ng-pressable flex min-h-12 items-center justify-between rounded-[var(--radius-card)] border border-line bg-card px-4 text-sm hover:border-line-strong"
           >
-            Review audit log <Icon name="hash" size={18} />
+            Review audit log <Icon name="clipboard-text" size={18} />
           </Link>
           <button
             type="button"
             onClick={() => void dashboard.refetch()}
             className="ng-pressable flex min-h-12 items-center justify-between rounded-[var(--radius-card)] border border-line bg-card px-4 text-left text-sm hover:border-line-strong"
           >
-            Refresh dashboard <Icon name="list" size={18} flat />
+            Refresh dashboard <Icon name="arrows-clockwise" size={18} flat />
           </button>
         </div>
       </main>

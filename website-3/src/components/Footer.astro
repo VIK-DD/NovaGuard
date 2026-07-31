@@ -1,32 +1,35 @@
-<footer data-site-footer class="bg-bg-subtle">
+<footer data-site-footer class="border-t border-line bg-bg-subtle">
   <div
-    class="mx-auto flex max-w-6xl flex-col items-center gap-6 px-5 py-9 text-sm sm:px-6 sm:py-10 sm:flex-row sm:items-end sm:justify-between"
+    class="mx-auto grid max-w-6xl gap-8 px-5 py-9 text-sm sm:px-6 sm:py-11 lg:grid-cols-[1fr_auto]"
   >
-    <div class="text-center sm:text-left">
+    <div>
       <p class="font-display text-lg font-semibold">NovaGuard</p>
-      <p class="mt-1 text-xs tracking-wide text-ink-faint">
-        Developed by VIK &amp; CloudMedia
+      <p class="mt-2 max-w-md text-sm leading-6 text-ink-muted">
+        A quiet control layer for Discord servers: setup, logs, levels, voice reports and updates from one place.
       </p>
+      <p class="mt-4 text-xs tracking-wide text-ink-faint">Developed by VIK &amp; CloudMedia</p>
       <a
         data-heartbeat
         href="/status"
         hidden
-        class="mt-2 inline-flex items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
+        class="mt-3 inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-2.5 py-1 text-xs text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
       >
         <span class="h-1.5 w-1.5 rounded-full bg-good"></span>
         <span data-heartbeat-text></span>
       </a>
     </div>
-    <nav class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-ink-muted">
-      <a href="/commands" class="transition-colors hover:text-ink">Commands</a>
-      <a href="/setup" class="transition-colors hover:text-ink">Setup</a>
-      <a href="/updates" class="transition-colors hover:text-ink">Updates</a>
-      <a href="/status" class="transition-colors hover:text-ink">Status</a>
-      <a href="/dashboard" class="transition-colors hover:text-ink">Dashboard</a>
-      <a href="/coming-soon/" class="transition-colors hover:text-ink">Classic page</a>
-      <a href="/privacy" class="transition-colors hover:text-ink">Privacy</a>
-      <a href="/terms" class="transition-colors hover:text-ink">Terms</a>
-    </nav>
+    <div class="grid gap-5 sm:grid-cols-2 lg:min-w-72">
+      <nav aria-label="Resources" class="grid gap-2 text-ink-muted">
+        <p class="text-xs tracking-[0.18em] text-ink-faint uppercase">Resources</p>
+        <a href="https://github.com/VIK-DD/NovaGuard" class="transition-colors hover:text-ink">GitHub</a>
+        <a href="/status" class="transition-colors hover:text-ink">System status</a>
+      </nav>
+      <nav aria-label="Legal" class="grid gap-2 text-ink-muted">
+        <p class="text-xs tracking-[0.18em] text-ink-faint uppercase">Legal</p>
+        <a href="/privacy" class="transition-colors hover:text-ink">Privacy</a>
+        <a href="/terms" class="transition-colors hover:text-ink">Terms</a>
+      </nav>
+    </div>
   </div>
 </footer>
 <script is:inline>
