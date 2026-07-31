@@ -105,28 +105,43 @@ function Progress({ value }: { value: number }) {
 function SystemStatusPanel({ data, setupPercent }: { data: Dashboard; setupPercent: number }) {
   const ready = data.status.ready;
   return (
-    <aside className="rounded-[var(--radius-card)] border border-line bg-card px-4 py-3 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] lg:self-start">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${ready ? "bg-good" : "bg-primary"}`} />
-          <span className="truncate text-sm font-semibold">{ready ? "Online" : "Starting"}</span>
-        </div>
-        <span className="shrink-0 rounded-full border border-line bg-bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink-muted">
-          v{data.status.version}
-        </span>
-      </div>
-      <p className="mt-1 truncate text-xs text-ink-muted">{data.status.codename} runtime</p>
-      <div className="mt-3">
-        <div className="mb-2 flex items-end justify-between gap-3">
+    <aside className="rounded-[var(--radius-card)] border border-line bg-card p-4 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+        <div className="flex min-w-0 items-center gap-3 lg:w-60">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] border border-line bg-bg-subtle text-primary">
+            <Icon name="shield-check" size={20} flat />
+          </span>
           <div className="min-w-0">
-            <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Setup</p>
-            <p className="truncate text-xs text-ink-muted">
-              {data.setup.recommended_done}/{data.setup.recommended_total} complete
+            <p className="font-display text-base font-semibold tracking-tight">System</p>
+            <p className="truncate text-xs text-ink-muted">{data.status.codename} runtime</p>
+          </div>
+        </div>
+
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-[10rem_10rem_minmax(16rem,1fr)]">
+          <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2">
+            <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Status</p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${ready ? "bg-good" : "bg-primary"}`} />
+              <span className="truncate text-sm font-semibold">{ready ? "Online" : "Starting"}</span>
+            </div>
+          </div>
+
+          <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2">
+            <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Version</p>
+            <p className="mt-1 truncate text-sm font-semibold">v{data.status.version}</p>
+          </div>
+
+          <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2 sm:col-span-2 lg:col-span-1">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Setup</p>
+              <span className="text-xs font-semibold tabular-nums text-primary">{setupPercent}%</span>
+            </div>
+            <Progress value={setupPercent} />
+            <p className="mt-2 truncate text-xs text-ink-muted">
+              {data.setup.recommended_done}/{data.setup.recommended_total} recommended items complete
             </p>
           </div>
-          <span className="text-sm font-semibold tabular-nums">{setupPercent}%</span>
         </div>
-        <Progress value={setupPercent} />
       </div>
     </aside>
   );
@@ -189,7 +204,7 @@ function GuildHero({ data }: { data: Dashboard }) {
   const setupPercent = pct(data.setup.recommended_done, data.setup.recommended_total);
   return (
     <section className="border-b border-line bg-bg-subtle/55">
-      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_13rem] lg:items-start lg:py-10">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             {data.guild.icon ? (
@@ -213,7 +228,9 @@ function GuildHero({ data }: { data: Dashboard }) {
             <Stat label="Tracked XP" value={compactNumber(data.levels.tracked_members)} />
           </div>
         </div>
-        <SystemStatusPanel data={data} setupPercent={setupPercent} />
+        <div className="mt-3">
+          <SystemStatusPanel data={data} setupPercent={setupPercent} />
+        </div>
       </div>
     </section>
   );
@@ -377,21 +394,20 @@ export default function GuildOverview() {
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <Card
-            title="Levels leaderboard"
-            titleClassName="font-sans text-sm font-semibold tracking-normal text-ink"
-          >
+          <Card title="Levels leaderboard">
             {data.levels.leaderboard.length ? (
               <ol className="divide-y divide-line">
                 {data.levels.leaderboard.map((row) => (
                   <li key={row.user_id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
+                      <p className="font-display truncate text-sm font-semibold tracking-tight">
                         #{row.position} {row.display_name}
                       </p>
                       <p className="text-xs text-ink-muted">Level {row.level} - {row.messages.toLocaleString("en")} messages</p>
                     </div>
-                    <span className="shrink-0 text-sm text-primary">{row.xp.toLocaleString("en")} XP</span>
+                    <span className="font-display shrink-0 text-sm font-semibold tracking-tight text-primary">
+                      {row.xp.toLocaleString("en")} XP
+                    </span>
                   </li>
                 ))}
               </ol>
