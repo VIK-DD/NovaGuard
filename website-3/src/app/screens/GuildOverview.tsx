@@ -34,6 +34,10 @@ function pct(done: number, total: number) {
   return total > 0 ? Math.round((done / total) * 100) : 0;
 }
 
+function plainDisplayName(name: string) {
+  return name.normalize("NFKC").replace(/\s+/g, " ").trim() || "Member";
+}
+
 function Card(props: {
   title: string;
   action?: ReactNode;
@@ -394,18 +398,18 @@ export default function GuildOverview() {
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <Card title="Levels leaderboard">
+          <Card title="Levels leaderboard" titleClassName="font-sans text-lg font-bold tracking-normal text-ink">
             {data.levels.leaderboard.length ? (
               <ol className="divide-y divide-line">
                 {data.levels.leaderboard.map((row) => (
                   <li key={row.user_id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div className="min-w-0">
-                      <p className="font-display truncate text-sm font-semibold tracking-tight">
-                        #{row.position} {row.display_name}
+                      <p className="truncate text-sm font-bold tracking-normal text-ink">
+                        #{row.position} {plainDisplayName(row.display_name)}
                       </p>
                       <p className="text-xs text-ink-muted">Level {row.level} - {row.messages.toLocaleString("en")} messages</p>
                     </div>
-                    <span className="font-display shrink-0 text-sm font-semibold tracking-tight text-primary">
+                    <span className="shrink-0 text-sm font-bold tracking-normal text-primary">
                       {row.xp.toLocaleString("en")} XP
                     </span>
                   </li>
