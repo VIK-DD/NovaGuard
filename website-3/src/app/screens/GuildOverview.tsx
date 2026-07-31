@@ -34,13 +34,19 @@ function pct(done: number, total: number) {
   return total > 0 ? Math.round((done / total) * 100) : 0;
 }
 
-function Card(props: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
+function Card(props: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  titleClassName?: string;
+}) {
   return (
     <section
       className={`rounded-[var(--radius-card)] border border-line bg-card p-4 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] sm:p-5 ${props.className ?? ""}`}
     >
       <div className="flex items-start justify-between gap-4">
-        <h2 className="font-display text-base font-semibold">{props.title}</h2>
+        <h2 className={props.titleClassName ?? "font-display text-base font-semibold"}>{props.title}</h2>
         {props.action}
       </div>
       <div className="mt-4">{props.children}</div>
@@ -93,6 +99,36 @@ function Progress({ value }: { value: number }) {
     <div className="h-2 overflow-hidden rounded-full bg-bg-subtle">
       <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(Math.max(value, 0), 100)}%` }} />
     </div>
+  );
+}
+
+function SystemStatusPanel({ data, setupPercent }: { data: Dashboard; setupPercent: number }) {
+  const ready = data.status.ready;
+  return (
+    <aside className="rounded-[var(--radius-card)] border border-line bg-card px-4 py-3 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] lg:self-start">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${ready ? "bg-good" : "bg-primary"}`} />
+          <span className="truncate text-sm font-semibold">{ready ? "Online" : "Starting"}</span>
+        </div>
+        <span className="shrink-0 rounded-full border border-line bg-bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink-muted">
+          v{data.status.version}
+        </span>
+      </div>
+      <p className="mt-1 truncate text-xs text-ink-muted">{data.status.codename} runtime</p>
+      <div className="mt-3">
+        <div className="mb-2 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Setup</p>
+            <p className="truncate text-xs text-ink-muted">
+              {data.setup.recommended_done}/{data.setup.recommended_total} complete
+            </p>
+          </div>
+          <span className="text-sm font-semibold tabular-nums">{setupPercent}%</span>
+        </div>
+        <Progress value={setupPercent} />
+      </div>
+    </aside>
   );
 }
 
@@ -153,7 +189,7 @@ function GuildHero({ data }: { data: Dashboard }) {
   const setupPercent = pct(data.setup.recommended_done, data.setup.recommended_total);
   return (
     <section className="border-b border-line bg-bg-subtle/55">
-      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-start lg:py-10">
+      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_13rem] lg:items-start lg:py-10">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             {data.guild.icon ? (
@@ -177,26 +213,7 @@ function GuildHero({ data }: { data: Dashboard }) {
             <Stat label="Tracked XP" value={compactNumber(data.levels.tracked_members)} />
           </div>
         </div>
-        <Card title="System" className="lg:self-start lg:p-4">
-          <div className="flex items-center justify-between gap-3">
-            <Pill tone={data.status.ready ? "good" : "warn"}>
-              {data.status.ready ? "Online" : "Starting"}
-            </Pill>
-            <span className="text-sm text-ink-muted">
-              v{data.status.version} "{data.status.codename}"
-            </span>
-          </div>
-          <div className="mt-4">
-            <div className="mb-2 flex items-center justify-between text-xs text-ink-muted">
-              <span>Setup</span>
-              <span>{setupPercent}%</span>
-            </div>
-            <Progress value={setupPercent} />
-            <p className="mt-2 text-xs text-ink-muted">
-              {data.setup.recommended_done}/{data.setup.recommended_total} recommended items complete
-            </p>
-          </div>
-        </Card>
+        <SystemStatusPanel data={data} setupPercent={setupPercent} />
       </div>
     </section>
   );
@@ -360,7 +377,10 @@ export default function GuildOverview() {
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          <Card title="Levels leaderboard">
+          <Card
+            title="Levels leaderboard"
+            titleClassName="font-sans text-sm font-semibold tracking-normal text-ink"
+          >
             {data.levels.leaderboard.length ? (
               <ol className="divide-y divide-line">
                 {data.levels.leaderboard.map((row) => (
