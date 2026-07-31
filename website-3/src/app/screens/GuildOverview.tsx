@@ -34,9 +34,11 @@ function pct(done: number, total: number) {
   return total > 0 ? Math.round((done / total) * 100) : 0;
 }
 
-function Card(props: { title: string; action?: ReactNode; children: ReactNode }) {
+function Card(props: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className="rounded-[var(--radius-card)] border border-line bg-card p-4 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] sm:p-5">
+    <section
+      className={`rounded-[var(--radius-card)] border border-line bg-card p-4 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] sm:p-5 ${props.className ?? ""}`}
+    >
       <div className="flex items-start justify-between gap-4">
         <h2 className="font-display text-base font-semibold">{props.title}</h2>
         {props.action}
@@ -151,7 +153,7 @@ function GuildHero({ data }: { data: Dashboard }) {
   const setupPercent = pct(data.setup.recommended_done, data.setup.recommended_total);
   return (
     <section className="border-b border-line bg-bg-subtle/55">
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_22rem] lg:py-10">
+      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:py-10">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             {data.guild.icon ? (
@@ -175,7 +177,7 @@ function GuildHero({ data }: { data: Dashboard }) {
             <Stat label="Tracked XP" value={compactNumber(data.levels.tracked_members)} />
           </div>
         </div>
-        <Card title="System">
+        <Card title="System" className="lg:self-start">
           <div className="flex items-center justify-between gap-3">
             <Pill tone={data.status.ready ? "good" : "warn"}>
               {data.status.ready ? "Online" : "Starting"}
@@ -184,14 +186,14 @@ function GuildHero({ data }: { data: Dashboard }) {
               v{data.status.version} "{data.status.codename}"
             </span>
           </div>
-          <div className="mt-5">
+          <div className="mt-4">
             <div className="mb-2 flex items-center justify-between text-xs text-ink-muted">
-              <span>Recommended setup</span>
+              <span>Setup</span>
               <span>{setupPercent}%</span>
             </div>
             <Progress value={setupPercent} />
             <p className="mt-2 text-xs text-ink-muted">
-              {data.setup.recommended_done}/{data.setup.recommended_total} recommended items complete.
+              {data.setup.recommended_done}/{data.setup.recommended_total} recommended items complete
             </p>
           </div>
         </Card>

@@ -10,7 +10,8 @@ export function auditQuery(guildId: string) {
   return {
     queryKey: ["guild", guildId, "audit"] as const,
     queryFn: () => apiFetch(`/guilds/${guildId}/audit?limit=50`, AuditSchema),
-    staleTime: 30_000,
+    staleTime: 10_000,
     gcTime: 2 * 60_000,
+    refetchInterval: 15_000,
   };
 }

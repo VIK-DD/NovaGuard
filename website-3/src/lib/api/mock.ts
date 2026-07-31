@@ -396,9 +396,15 @@ function route(pathname: string, method: string, body: Json | null): { status: n
       voice_test: "Voice report preview sent to #voice-reports.",
       update_preview: "Latest update was sent to the configured update channel.",
     };
-    return messages[actionName]
-      ? { status: 200, data: { ok: true, action: actionName, message: messages[actionName] } }
-      : { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
+    if (!messages[actionName]) return { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
+    (auditByGuild[id] ??= []).unshift({
+      username: me.user.username,
+      user_id: me.user.id,
+      action: `dashboard_${actionName}`,
+      changes: { ok: true },
+      created_at: now(),
+    });
+    return { status: 200, data: { ok: true, action: actionName, message: messages[actionName] } };
   }
 
   const aud = p.match(/^\/guilds\/([^/]+)\/audit$/);
