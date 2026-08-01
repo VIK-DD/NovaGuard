@@ -9,7 +9,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.backups import create_backup, inspect_backup, latest_backup, list_backups, remote_backup_status
+from core.backups import (
+    backup_max_expected_age_seconds,
+    backup_schedule_label,
+    create_backup,
+    human_size,
+    inspect_backup,
+    latest_backup,
+    list_backups,
+    refresh_latest_remote_check,
+    remote_backup_status,
+)
 from core.config import github_config
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -207,6 +217,7 @@ def backup_remote_text(status):
 
     latest = status.get("latest") or {}
     guild_exports = status.get("latest_guild_exports") or {}
+    remote_check = status.get("latest_remote_check") or latest.get("check") or {}
     destination = status.get("destination") or "remote storage"
     guild_line = ""
     if guild_exports:
@@ -214,6 +225,12 @@ def backup_remote_text(status):
             f"\nServer exports: `{guild_exports.get('uploaded', 0)}` uploaded • "
             f"`{guild_exports.get('failed', 0)}` failed"
         )
+    check_line = ""
+    if remote_check:
+        if remote_check.get("ok"):
+            check_line = f"\nRemote check: ✅ exists • `{human_size(remote_check.get('bytes', 0))}`"
+        else:
+            check_line = f"\nRemote check: ⚠️ `{(remote_check.get('message') or 'not verified')[:120]}`"
     if not latest:
         return f"Configured for `{destination}`, but no full upload has been recorded yet.{guild_line}"
 
@@ -228,22 +245,93 @@ def backup_remote_text(status):
             except ValueError:
                 uploaded = ""
         stale = "" if status.get("matches_backup") else "\n⚠️ Latest local backup has not been confirmed off-site yet."
-        return f"✅ `{backup_name}` uploaded to `{destination}`.{uploaded}{stale}{guild_line}"
+        return f"✅ `{backup_name}` uploaded to `{destination}`.{uploaded}{stale}{check_line}{guild_line}"
 
     message = latest.get("message") or "Upload failed."
-    return f"⚠️ Last upload failed for `{backup_name}` to `{destination}`.\n`{message[:180]}`{guild_line}"
+    return f"⚠️ Last upload failed for `{backup_name}` to `{destination}`.\n`{message[:180]}`{check_line}{guild_line}"
+
+
+def backup_health_summary(latest, report=None, remote_status=None):
+    report = report or {}
+    remote_status = remote_status or {}
+    score = 0
+    lines = []
+
+    if latest:
+        score += 20
+        lines.append("✅ Local archive exists")
+    else:
+        lines.append("⚠️ No local archive found")
+
+    if report.get("ok") and report.get("sqlite") == "ok":
+        score += 25
+        lines.append("✅ Zip + SQLite integrity passed")
+    elif report.get("ok"):
+        score += 15
+        lines.append("⚠️ Archive opens, SQLite not fully confirmed")
+    elif report:
+        lines.append("⚠️ Integrity check needs attention")
+    else:
+        lines.append("⚠️ Integrity check has not run yet")
+
+    if latest:
+        age_seconds = max((discord.utils.utcnow() - latest["mtime"]).total_seconds(), 0)
+        if age_seconds <= backup_max_expected_age_seconds():
+            score += 15
+            lines.append(f"✅ Fresh for schedule `{backup_schedule_label()}`")
+        else:
+            lines.append(f"⚠️ Older than expected for `{backup_schedule_label()}`")
+
+    if remote_status.get("configured"):
+        latest_remote = remote_status.get("latest") or {}
+        if latest_remote.get("ok") and remote_status.get("matches_backup"):
+            score += 15
+            lines.append("✅ Latest local backup matches Drive upload")
+        elif latest_remote.get("ok"):
+            lines.append("⚠️ Drive has an upload, but not the latest local archive")
+        else:
+            lines.append("⚠️ Latest Drive upload failed or is missing")
+
+        remote_check = remote_status.get("latest_remote_check") or latest_remote.get("check") or {}
+        if remote_check.get("ok"):
+            score += 15
+            lines.append("✅ Drive file existence check passed")
+        else:
+            lines.append("⚠️ Drive file existence check is not clean")
+
+        guild_exports = remote_status.get("latest_guild_exports") or {}
+        if guild_exports.get("uploaded", 0) and not guild_exports.get("failed", 0):
+            score += 10
+            lines.append("✅ Per-server exports uploaded")
+        elif guild_exports:
+            lines.append("⚠️ Per-server exports need attention")
+        else:
+            lines.append("⚠️ No per-server export batch recorded yet")
+    else:
+        lines.append("⚠️ Off-site Drive backup is not configured")
+
+    if score >= 90:
+        label = "Healthy"
+    elif score >= 70:
+        label = "Watch"
+    else:
+        label = "Risk"
+    return min(score, 100), label, lines[:6]
 
 
 def backup_remote_embed(status):
     configured = bool(status and status.get("configured"))
     latest = (status or {}).get("latest") or {}
     guild_exports = (status or {}).get("latest_guild_exports") or {}
+    remote_check = (status or {}).get("latest_remote_check") or latest.get("check") or {}
+    retention = (status or {}).get("latest_retention") or {}
     embed = make_embed(
         "☁️ Backup remote",
         (
             f"Destination: `{status.get('destination')}`\n"
             f"Full prefix: `{status.get('full_prefix')}`\n"
-            f"Guild prefix: `{status.get('guild_prefix')}`"
+            f"Guild prefix: `{status.get('guild_prefix')}`\n"
+            f"Retention: full `{status.get('full_keep_days')}` days • guild `{status.get('guild_keep_days')}` days"
             if configured
             else "Remote backup is not configured. Set `BACKUP_REMOTE_DEST` after configuring `rclone`."
         ),
@@ -257,6 +345,39 @@ def backup_remote_embed(status):
                 f"Status: `{'ok' if latest.get('ok') else 'failed'}`\n"
                 f"Remote path: `{latest.get('remote_path') or '-'}`\n"
                 f"Message: `{(latest.get('message') or '-')[:180]}`"
+            ),
+            inline=False,
+        )
+    if remote_check:
+        checked_at = remote_check.get("checked_at")
+        checked_text = ""
+        if checked_at:
+            try:
+                checked_dt = datetime.fromisoformat(checked_at)
+                checked_text = f"\nChecked: {discord.utils.format_dt(checked_dt, 'R')}"
+            except ValueError:
+                checked_text = ""
+        embed.add_field(
+            name="Remote existence check",
+            value=(
+                f"Status: `{'ok' if remote_check.get('ok') else 'failed'}`\n"
+                f"Exists: `{'yes' if remote_check.get('exists') else 'no'}`\n"
+                f"Size: `{human_size(remote_check.get('bytes', 0))}`"
+                f"{checked_text}\n"
+                f"Message: `{(remote_check.get('message') or '-')[:180]}`"
+            ),
+            inline=False,
+        )
+    if retention:
+        targets = retention.get("targets") or []
+        failed = [target for target in targets if isinstance(target, dict) and not target.get("ok")]
+        embed.add_field(
+            name="Retention",
+            value=(
+                f"Enabled: `{'yes' if retention.get('enabled') else 'no'}`\n"
+                f"Status: `{'ok' if retention.get('ok') else 'failed'}`\n"
+                f"Targets: `{len(targets)}` checked • `{len(failed)}` failed\n"
+                f"Message: `{(retention.get('message') or '-')[:180]}`"
             ),
             inline=False,
         )
@@ -291,10 +412,12 @@ def backup_status_embed(latest, report=None):
         return embed
 
     checked_report = report or {}
+    remote_status = remote_backup_status(latest["name"])
+    health_score, health_label, health_lines = backup_health_summary(latest, checked_report, remote_status)
     embed = make_embed(
         "🧳 Backup status",
         f"Latest backup: `{latest['name']}`",
-        color=Palette.SUCCESS if checked_report.get("ok") else Palette.WARNING,
+        color=Palette.SUCCESS if health_score >= 90 else Palette.WARNING,
     )
     embed.add_field(
         name="Archive",
@@ -316,8 +439,13 @@ def backup_status_embed(latest, report=None):
         inline=False,
     )
     embed.add_field(
+        name="Health score",
+        value=f"`{health_score}/100` • **{health_label}**\n" + "\n".join(health_lines),
+        inline=False,
+    )
+    embed.add_field(
         name="Off-site copy",
-        value=backup_remote_text(remote_backup_status(latest["name"])),
+        value=backup_remote_text(remote_status),
         inline=False,
     )
     embed.add_field(name="Notes", value=backup_errors_text(checked_report), inline=False)
@@ -617,7 +745,11 @@ class Setup(commands.Cog):
     async def backup_remote(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
         latest = latest_backup()
-        status = await asyncio.to_thread(remote_backup_status, latest["name"] if latest else None)
+        current_status = remote_backup_status(latest["name"] if latest else None)
+        if current_status.get("configured") and current_status.get("latest"):
+            status = await asyncio.to_thread(refresh_latest_remote_check, latest["name"] if latest else None)
+        else:
+            status = current_status
         await respond(interaction, backup_remote_embed(status), ephemeral=True)
 
     @backup.command(name="list", description="List the newest backup archives")

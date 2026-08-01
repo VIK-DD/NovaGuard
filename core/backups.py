@@ -10,6 +10,7 @@ import tempfile
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import BASE_DIR, GITHUB_STATE_FILE, UPDATE_STATE_FILE
 from .database import DB_PATH, VOICE_STORE_FILES, init_database, load_voice_store
@@ -21,6 +22,7 @@ MAX_BACKUPS = 10
 MIN_BACKUP_BYTES = 200
 RESTORE_CHECK_DIR = BACKUP_DIR / "restore-check"
 BACKUP_PATTERNS = ("novaguard-backup-*.zip", "novaguard-full-*.zip")
+DEFAULT_BACKUP_SCHEDULE = ((7, 0), (19, 0))
 
 
 def env_int(name, default):
@@ -33,6 +35,13 @@ def env_int(name, default):
         return default
 
 
+def env_bool(name, default=False):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def remote_backup_config():
     destination = os.getenv("BACKUP_REMOTE_DEST", "").strip()
     return {
@@ -40,9 +49,61 @@ def remote_backup_config():
         "destination": destination,
         "full_prefix": os.getenv("BACKUP_REMOTE_FULL_PREFIX", "full").strip().strip("/"),
         "guild_prefix": os.getenv("BACKUP_REMOTE_GUILD_PREFIX", "guilds").strip().strip("/"),
+        "full_keep_days": max(env_int("BACKUP_REMOTE_FULL_KEEP_DAYS", 90), 1),
+        "guild_keep_days": max(env_int("BACKUP_REMOTE_GUILD_KEEP_DAYS", 60), 1),
+        "retention_enabled": env_bool("BACKUP_REMOTE_RETENTION_ENABLED", True),
         "rclone_bin": os.getenv("BACKUP_RCLONE_BIN", "rclone").strip() or "rclone",
         "timeout_seconds": max(env_int("BACKUP_REMOTE_TIMEOUT_SECONDS", 300), 30),
     }
+
+
+def parse_backup_schedule(raw_value):
+    slots = []
+    for item in (raw_value or "").split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        hour_text, minute_text = item.split(":", 1)
+        try:
+            hour = int(hour_text)
+            minute = int(minute_text)
+        except ValueError:
+            continue
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            slots.append((hour, minute))
+    return tuple(sorted(set(slots))) or DEFAULT_BACKUP_SCHEDULE
+
+
+def backup_schedule():
+    return parse_backup_schedule(os.getenv("BACKUP_SCHEDULE", "07:00,19:00"))
+
+
+def backup_timezone_name():
+    return os.getenv("BACKUP_TIMEZONE", "Europe/Chisinau").strip() or "Europe/Chisinau"
+
+
+def backup_timezone():
+    try:
+        return ZoneInfo(backup_timezone_name())
+    except ZoneInfoNotFoundError:
+        return UTC
+
+
+def backup_schedule_label():
+    times = ", ".join(f"{hour:02d}:{minute:02d}" for hour, minute in backup_schedule())
+    return f"{times} {backup_timezone_name()}"
+
+
+def backup_max_expected_age_seconds():
+    minutes = sorted(hour * 60 + minute for hour, minute in backup_schedule())
+    if len(minutes) == 1:
+        return 26 * 3600
+    gaps = []
+    for index, minute in enumerate(minutes):
+        next_minute = minutes[(index + 1) % len(minutes)]
+        gap = (next_minute - minute) % (24 * 60)
+        gaps.append(gap or 24 * 60)
+    return (max(gaps) * 60) + (2 * 3600)
 
 
 def backup_timestamp(when=None):
@@ -160,8 +221,13 @@ def remote_backup_status(backup_name=None):
         "destination": config["destination"],
         "full_prefix": config["full_prefix"],
         "guild_prefix": config["guild_prefix"],
+        "full_keep_days": config["full_keep_days"],
+        "guild_keep_days": config["guild_keep_days"],
+        "retention_enabled": config["retention_enabled"],
         "latest": latest,
         "latest_guild_exports": latest_guild_exports,
+        "latest_retention": state.get("latest_retention") if isinstance(state.get("latest_retention"), dict) else {},
+        "latest_remote_check": state.get("latest_remote_check") if isinstance(state.get("latest_remote_check"), dict) else {},
         "matches_backup": bool(backup_name and latest.get("backup_name") == backup_name),
     }
 
@@ -219,6 +285,40 @@ def _empty_remote_result(name, *, remote_relative_path=None):
     }
 
 
+def _run_rclone(args, *, action, timeout_seconds=None):
+    config = remote_backup_config()
+    result = {
+        "action": action,
+        "ok": False,
+        "message": "",
+        "returncode": None,
+        "stdout": "",
+        "stderr": "",
+    }
+    command = [config["rclone_bin"], *args]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds or config["timeout_seconds"],
+            check=False,
+        )
+    except FileNotFoundError:
+        result["message"] = f"{config['rclone_bin']} was not found."
+        return result
+    except subprocess.TimeoutExpired:
+        result["message"] = f"{action} timed out after {timeout_seconds or config['timeout_seconds']}s."
+        return result
+
+    result["returncode"] = completed.returncode
+    result["stdout"] = (completed.stdout or "").strip()[-1000:]
+    result["stderr"] = (completed.stderr or "").strip()[-1000:]
+    result["ok"] = completed.returncode == 0
+    result["message"] = "ok" if result["ok"] else (result["stderr"] or f"rclone {action} failed.")
+    return result
+
+
 def upload_file_to_remote(source_path, remote_relative_path=None):
     config = remote_backup_config()
     source_path = Path(source_path)
@@ -234,39 +334,26 @@ def upload_file_to_remote(source_path, remote_relative_path=None):
         return result
 
     remote_path = result["remote_path"]
-    command = [
-        config["rclone_bin"],
-        "copyto",
-        str(source_path),
-        remote_path,
-        "--checksum",
-        "--retries",
-        "3",
-        "--low-level-retries",
-        "10",
-    ]
+    completed = _run_rclone(
+        [
+            "copyto",
+            str(source_path),
+            remote_path,
+            "--checksum",
+            "--retries",
+            "3",
+            "--low-level-retries",
+            "10",
+        ],
+        action="upload",
+    )
 
-    try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=config["timeout_seconds"],
-            check=False,
-        )
-    except FileNotFoundError:
-        result["message"] = f"{config['rclone_bin']} was not found."
-        return result
-    except subprocess.TimeoutExpired:
-        result["message"] = f"Upload timed out after {config['timeout_seconds']}s."
-        return result
-
-    result["returncode"] = completed.returncode
-    result["stdout"] = (completed.stdout or "").strip()[-500:]
-    result["stderr"] = (completed.stderr or "").strip()[-500:]
-    result["ok"] = completed.returncode == 0
+    result["returncode"] = completed["returncode"]
+    result["stdout"] = completed["stdout"]
+    result["stderr"] = completed["stderr"]
+    result["ok"] = completed["ok"]
     result["uploaded_at"] = datetime.now(UTC).isoformat() if result["ok"] else None
-    result["message"] = "Uploaded to off-site storage." if result["ok"] else (result["stderr"] or "rclone upload failed.")
+    result["message"] = "Uploaded to off-site storage." if result["ok"] else completed["message"]
     return result
 
 
@@ -288,6 +375,117 @@ def upload_json_to_remote(payload, remote_relative_path):
         export_path = Path(temp_dir) / name
         export_path.write_bytes(json.dumps(payload, indent=2, ensure_ascii=True).encode("utf-8"))
         return upload_file_to_remote(export_path, remote_relative_path)
+
+
+def check_remote_file(remote_path):
+    config = remote_backup_config()
+    result = {
+        "configured": config["configured"],
+        "ok": False,
+        "exists": False,
+        "remote_path": remote_path,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "bytes": 0,
+        "count": 0,
+        "message": "",
+        "returncode": None,
+        "stdout": "",
+        "stderr": "",
+    }
+    if not config["configured"]:
+        result["message"] = "BACKUP_REMOTE_DEST is not configured."
+        return result
+    if not remote_path:
+        result["message"] = "No remote path is recorded for the latest backup."
+        return result
+
+    completed = _run_rclone(["size", remote_path, "--json"], action="remote check")
+    result["returncode"] = completed["returncode"]
+    result["stdout"] = completed["stdout"]
+    result["stderr"] = completed["stderr"]
+    if not completed["ok"]:
+        result["message"] = completed["message"]
+        return result
+
+    try:
+        payload = json.loads(completed["stdout"] or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    result["bytes"] = int(payload.get("bytes", 0) or 0)
+    result["count"] = int(payload.get("count", 0) or 0)
+    result["exists"] = result["count"] >= 1
+    result["ok"] = result["exists"]
+    result["message"] = "Remote file exists." if result["exists"] else "Remote file was not found."
+    return result
+
+
+def refresh_latest_remote_check(backup_name=None):
+    state = load_remote_backup_state()
+    latest = state.get("latest") if isinstance(state.get("latest"), dict) else {}
+    check = check_remote_file(latest.get("remote_path"))
+    if latest:
+        latest["check"] = check
+    update_remote_backup_state(latest=latest, latest_remote_check=check)
+    return remote_backup_status(backup_name or (latest.get("backup_name") if latest else None))
+
+
+def prune_remote_backups():
+    config = remote_backup_config()
+    summary = {
+        "configured": config["configured"],
+        "enabled": config["retention_enabled"],
+        "ok": False,
+        "ran_at": datetime.now(UTC).isoformat(),
+        "full_keep_days": config["full_keep_days"],
+        "guild_keep_days": config["guild_keep_days"],
+        "targets": [],
+        "message": "",
+    }
+    if not config["configured"]:
+        summary["message"] = "BACKUP_REMOTE_DEST is not configured."
+        return summary
+    if not config["retention_enabled"]:
+        summary["ok"] = True
+        summary["message"] = "Remote retention is disabled."
+        return summary
+
+    targets = [
+        (config["full_prefix"], "*.zip", config["full_keep_days"]),
+        (config["guild_prefix"], "*.json", config["guild_keep_days"]),
+    ]
+    all_ok = True
+    for prefix, pattern, keep_days in targets:
+        if not prefix:
+            continue
+        remote_path = remote_join(config["destination"], prefix)
+        completed = _run_rclone(
+            [
+                "delete",
+                remote_path,
+                "--min-age",
+                f"{keep_days}d",
+                "--include",
+                pattern,
+            ],
+            action=f"retention {prefix}",
+        )
+        target = {
+            "prefix": prefix,
+            "pattern": pattern,
+            "keep_days": keep_days,
+            "remote_path": remote_path,
+            "ok": completed["ok"],
+            "message": completed["message"],
+            "returncode": completed["returncode"],
+            "stdout": completed["stdout"],
+            "stderr": completed["stderr"],
+        }
+        summary["targets"].append(target)
+        all_ok = all_ok and completed["ok"]
+    summary["ok"] = all_ok
+    summary["message"] = "Remote retention completed." if all_ok else "Remote retention finished with errors."
+    update_remote_backup_state(latest_retention=summary)
+    return summary
 
 
 def _safe_extract(zip_file, target_dir):
@@ -422,6 +620,8 @@ def create_backup(label="auto"):
     integrity = inspect_backup(backup_path)
     if integrity["ok"]:
         remote = upload_backup_to_remote(backup_path, created_at)
+        if remote.get("ok"):
+            remote["check"] = check_remote_file(remote.get("remote_path"))
     else:
         config = remote_backup_config()
         remote = {
@@ -437,7 +637,14 @@ def create_backup(label="auto"):
             "stdout": "",
             "stderr": "",
         }
-    update_remote_backup_state(configured=remote["configured"], destination=remote["destination"], latest=remote)
+    retention = prune_remote_backups() if remote.get("configured") else {}
+    update_remote_backup_state(
+        configured=remote["configured"],
+        destination=remote["destination"],
+        latest=remote,
+        latest_remote_check=remote.get("check") or {},
+        latest_retention=retention,
+    )
     return {
         "path": str(backup_path),
         "name": backup_path.name,
@@ -447,6 +654,7 @@ def create_backup(label="auto"):
         "included": included,
         "integrity": integrity,
         "remote": remote,
+        "retention": retention,
     }
 
 

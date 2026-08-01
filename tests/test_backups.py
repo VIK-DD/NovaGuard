@@ -27,8 +27,13 @@ class BackupIntegrityTests(unittest.TestCase):
                 "BACKUP_REMOTE_DEST",
                 "BACKUP_REMOTE_FULL_PREFIX",
                 "BACKUP_REMOTE_GUILD_PREFIX",
+                "BACKUP_REMOTE_FULL_KEEP_DAYS",
+                "BACKUP_REMOTE_GUILD_KEEP_DAYS",
+                "BACKUP_REMOTE_RETENTION_ENABLED",
                 "BACKUP_RCLONE_BIN",
                 "BACKUP_REMOTE_TIMEOUT_SECONDS",
+                "BACKUP_SCHEDULE",
+                "BACKUP_TIMEZONE",
             )
         }
         self.db_counter = 0
@@ -149,6 +154,64 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertIn("gdrive:NovaGuard/backups/full/", args)
         self.assertEqual(status["latest"]["backup_name"], backup_path.name)
         self.assertTrue(status["matches_backup"])
+
+    def test_remote_check_uses_rclone_size_json(self):
+        fake_rclone = self.root / "rclone"
+        fake_rclone.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"size\" ]; then\n"
+            "  printf '{\"count\":1,\"bytes\":152701}\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_rclone.chmod(0o755)
+        os.environ["BACKUP_REMOTE_DEST"] = "gdrive:NovaGuard/backups"
+        os.environ["BACKUP_RCLONE_BIN"] = str(fake_rclone)
+
+        result = backups.check_remote_file("gdrive:NovaGuard/backups/full/backup.zip")
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["exists"])
+        self.assertEqual(result["bytes"], 152701)
+
+    def test_remote_retention_deletes_old_full_and_guild_files(self):
+        fake_rclone = self.root / "rclone"
+        args_file = self.root / "rclone-args.txt"
+        fake_rclone.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$@\" >> {args_file}\n"
+            "printf -- '---\\n' >> "
+            f"{args_file}\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        fake_rclone.chmod(0o755)
+        os.environ["BACKUP_REMOTE_DEST"] = "gdrive:NovaGuard/backups"
+        os.environ["BACKUP_RCLONE_BIN"] = str(fake_rclone)
+        os.environ["BACKUP_REMOTE_FULL_KEEP_DAYS"] = "91"
+        os.environ["BACKUP_REMOTE_GUILD_KEEP_DAYS"] = "45"
+
+        result = backups.prune_remote_backups()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["targets"]), 2)
+        args = args_file.read_text(encoding="utf-8")
+        self.assertIn("gdrive:NovaGuard/backups/full", args)
+        self.assertIn("gdrive:NovaGuard/backups/guilds", args)
+        self.assertIn("91d", args)
+        self.assertIn("45d", args)
+        self.assertIn("*.zip", args)
+        self.assertIn("*.json", args)
+
+    def test_backup_schedule_is_configurable(self):
+        os.environ["BACKUP_SCHEDULE"] = "19:00,07:00,bad,25:10"
+        os.environ["BACKUP_TIMEZONE"] = "Europe/Chisinau"
+
+        self.assertEqual(backups.backup_schedule(), ((7, 0), (19, 0)))
+        self.assertEqual(backups.backup_schedule_label(), "07:00, 19:00 Europe/Chisinau")
+        self.assertEqual(backups.backup_max_expected_age_seconds(), 14 * 3600)
 
 
 if __name__ == "__main__":

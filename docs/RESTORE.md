@@ -66,6 +66,9 @@ BACKUP_TIMEZONE=Europe/Chisinau
 BACKUP_REMOTE_DEST=gdrive:NovaGuard/backups
 BACKUP_REMOTE_FULL_PREFIX=full
 BACKUP_REMOTE_GUILD_PREFIX=guilds
+BACKUP_REMOTE_FULL_KEEP_DAYS=90
+BACKUP_REMOTE_GUILD_KEEP_DAYS=60
+BACKUP_REMOTE_RETENTION_ENABLED=true
 BACKUP_REMOTE_TIMEOUT_SECONDS=300
 ```
 
@@ -87,8 +90,10 @@ In Discord, run:
 ```
 
 `/backup status` reports whether the latest local backup was also uploaded
-off-site. If the local zip is created but the Google Drive upload fails, the bot
-sends an admin error digest.
+off-site, shows a health score, and includes the latest remote check state.
+`/backup remote` runs a live `rclone size` check against the last uploaded file.
+If the local zip is created but Google Drive upload, remote verification or
+retention fails, the bot sends an admin error digest.
 
 Google Drive layout:
 

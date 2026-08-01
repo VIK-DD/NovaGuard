@@ -7,7 +7,6 @@ import platform
 import time
 from collections import deque
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 import discord
@@ -17,10 +16,15 @@ from discord.ext import commands, tasks
 from core import updates
 from core.backups import (
     BACKUP_DIR,
+    backup_max_expected_age_seconds,
+    backup_schedule,
+    backup_schedule_label,
+    backup_timezone,
     create_backup,
     guild_export_relative_path,
     inspect_backup,
     latest_backup,
+    list_backups,
     remote_backup_config,
     update_remote_backup_state,
     upload_json_to_remote,
@@ -53,8 +57,8 @@ from core.utils import build_link_view, defer_interaction, format_timedelta, res
 
 LAG_MONITOR_SECONDS = 5
 BACKUP_STARTUP_DELAY_SECONDS = 120
-BACKUP_TIMEZONE_NAME = os.getenv("BACKUP_TIMEZONE", "Europe/Chisinau").strip() or "Europe/Chisinau"
-BACKUP_SCHEDULE_RAW = os.getenv("BACKUP_SCHEDULE", "07:00,19:00")
+BACKUP_HEALTH_CHECK_SECONDS = 30 * 60
+BACKUP_STALE_ALERT_COOLDOWN_SECONDS = 6 * 3600
 HEALTH_ALERT_COOLDOWN_SECONDS = 900
 HIGH_LAG_ALERT_MS = 3000
 HIGH_LAG_STREAK_REQUIRED = 2
@@ -64,50 +68,6 @@ PRESENCE_UPDATE_TIMEOUT_SECONDS = 5
 STARTUP_UPDATE_INITIAL_DELAY_SECONDS = 12
 STARTUP_UPDATE_RETRY_DELAY_SECONDS = 20
 STARTUP_UPDATE_MAX_ATTEMPTS = 6
-
-
-def parse_backup_schedule(raw_value):
-    slots = []
-    for item in (raw_value or "").split(","):
-        item = item.strip()
-        if not item or ":" not in item:
-            continue
-        hour_text, minute_text = item.split(":", 1)
-        try:
-            hour = int(hour_text)
-            minute = int(minute_text)
-        except ValueError:
-            continue
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            slots.append((hour, minute))
-    return tuple(sorted(set(slots))) or ((7, 0), (19, 0))
-
-
-BACKUP_SCHEDULE = parse_backup_schedule(BACKUP_SCHEDULE_RAW)
-
-
-def backup_timezone():
-    try:
-        return ZoneInfo(BACKUP_TIMEZONE_NAME)
-    except ZoneInfoNotFoundError:
-        return UTC
-
-
-def backup_schedule_label():
-    times = ", ".join(f"{hour:02d}:{minute:02d}" for hour, minute in BACKUP_SCHEDULE)
-    return f"{times} {BACKUP_TIMEZONE_NAME}"
-
-
-def backup_max_expected_age_seconds():
-    minutes = sorted(hour * 60 + minute for hour, minute in BACKUP_SCHEDULE)
-    if len(minutes) == 1:
-        return 26 * 3600
-    gaps = []
-    for index, minute in enumerate(minutes):
-        next_minute = minutes[(index + 1) % len(minutes)]
-        gap = (next_minute - minute) % (24 * 60)
-        gaps.append(gap or 24 * 60)
-    return (max(gaps) * 60) + (2 * 3600)
 
 
 def command_line_entries(command, prefix=""):
@@ -233,7 +193,7 @@ def storage_health_lines():
     else:
         lines.append(ok_line("feature data", f"{len(data_files)} JSON file(s) valid"))
 
-    backup_count = len(list(BACKUP_DIR.glob("novaguard-backup-*.zip"))) if BACKUP_DIR.exists() else 0
+    backup_count = len(list_backups()) if BACKUP_DIR.exists() else 0
     newest_backup = latest_backup()
     if newest_backup:
         age = datetime.now(UTC) - newest_backup["mtime"]
@@ -343,6 +303,7 @@ class System(commands.Cog):
         self.last_lag_alert_at = 0
         self.last_reconnect_alert_at = 0
         self.last_presence_error_log_at = 0
+        self.last_backup_stale_alert_at = 0
         self.last_backup_slot = None
         self.backup_running = False
 
@@ -350,11 +311,13 @@ class System(commands.Cog):
         self.rotate_stream_status.start()
         self.monitor_event_loop.start()
         self.backup_loop.start()
+        self.backup_health_loop.start()
 
     async def cog_unload(self):
         self.rotate_stream_status.cancel()
         self.monitor_event_loop.cancel()
         self.backup_loop.cancel()
+        self.backup_health_loop.cancel()
         if self.startup_update_task and not self.startup_update_task.done():
             self.startup_update_task.cancel()
 
@@ -585,9 +548,15 @@ class System(commands.Cog):
     def _scheduled_backup_slot(self, checked_at=None):
         local_now = (checked_at or datetime.now(UTC)).astimezone(backup_timezone())
         current = (local_now.hour, local_now.minute)
-        if current not in BACKUP_SCHEDULE:
+        if current not in backup_schedule():
             return None
         return local_now.strftime("%Y-%m-%d %H:%M")
+
+    def _latest_backup_age(self):
+        newest_backup = latest_backup()
+        if not newest_backup:
+            return None, None
+        return newest_backup, datetime.now(UTC) - newest_backup["mtime"]
 
     @staticmethod
     def _filter_guild_entries(value, guild_id):
@@ -689,6 +658,17 @@ class System(commands.Cog):
             if remote.get("configured"):
                 if remote.get("ok"):
                     print(f"Automatic backup uploaded off-site: {backup['name']} -> {remote.get('remote_path')}")
+                    check = remote.get("check") or {}
+                    if check and not check.get("ok"):
+                        await send_error_digest(
+                            self.bot,
+                            "Remote Backup Check Error",
+                            RuntimeError(check.get("message") or "Remote file check failed"),
+                            context=(
+                                f"Backup `{backup['name']}` uploaded, but NovaGuard could not confirm "
+                                "the file exists in remote storage."
+                            ),
+                        )
                 else:
                     message = remote.get("message") or "off-site upload failed"
                     print(f"Automatic backup off-site upload failed: {message}")
@@ -701,6 +681,14 @@ class System(commands.Cog):
                             f"to `{remote.get('destination')}`."
                         ),
                     )
+            retention = backup.get("retention") or {}
+            if retention.get("configured") and retention.get("enabled") and not retention.get("ok"):
+                await send_error_digest(
+                    self.bot,
+                    "Remote Backup Retention Error",
+                    RuntimeError(retention.get("message") or "Remote retention failed"),
+                    context="NovaGuard could not prune old Google Drive backup files after the scheduled backup.",
+                )
             guild_exports = await self._upload_guild_exports(backup, created_at)
             if guild_exports.get("configured"):
                 print(
@@ -737,6 +725,33 @@ class System(commands.Cog):
     async def before_backup_loop(self):
         await self.bot.wait_until_ready()
         await asyncio.sleep(BACKUP_STARTUP_DELAY_SECONDS)
+
+    @tasks.loop(seconds=BACKUP_HEALTH_CHECK_SECONDS)
+    async def backup_health_loop(self):
+        newest_backup, age = self._latest_backup_age()
+        if not newest_backup or age is None:
+            return
+        if age.total_seconds() <= backup_max_expected_age_seconds():
+            return
+
+        now = time.perf_counter()
+        if now - self.last_backup_stale_alert_at < BACKUP_STALE_ALERT_COOLDOWN_SECONDS:
+            return
+        self.last_backup_stale_alert_at = now
+        await send_error_digest(
+            self.bot,
+            "Backup Schedule Alert",
+            RuntimeError(f"Latest backup is older than expected: {format_timedelta(age)}"),
+            context=(
+                f"Latest backup `{newest_backup['name']}` is {format_timedelta(age)} old. "
+                f"Expected schedule: {backup_schedule_label()}."
+            ),
+        )
+
+    @backup_health_loop.before_loop
+    async def before_backup_health_loop(self):
+        await self.bot.wait_until_ready()
+        await asyncio.sleep(BACKUP_STARTUP_DELAY_SECONDS + 60)
 
     @tasks.loop(seconds=stream_status_interval_seconds)
     async def rotate_stream_status(self):

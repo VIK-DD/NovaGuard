@@ -190,8 +190,9 @@ Tip: `/help` opens an interactive hub with a category menu.
 - Set `BACKUP_SCHEDULE=07:00,19:00` and `BACKUP_TIMEZONE=Europe/Chisinau` if you want to make the schedule explicit.
 - Set `BACKUP_REMOTE_DEST=gdrive:NovaGuard/backups` after configuring `rclone` to upload every verified full backup off-server under `full/YYYY/MM/`.
 - Scheduled backups also export each Discord server to `guilds/<server-name>-<guild-id>/YYYY/MM/`.
+- Remote uploads are checked with `rclone size`; old remote files are pruned by `BACKUP_REMOTE_FULL_KEEP_DAYS` and `BACKUP_REMOTE_GUILD_KEEP_DAYS`.
 - `/config backup` and `/backup create` create a manual backup immediately.
-- `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` inspect backup health, restore readiness and off-site upload status without touching live data.
+- `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` inspect backup health score, restore readiness and off-site upload status without touching live data.
 - `/doctor` checks database, JSON files, GitHub API, permissions, latency, uptime, backup status and event-loop lag.
 - The health monitor sends admin error embeds if the event loop lag becomes dangerously high.
 
