@@ -130,6 +130,52 @@ def record_member_leave(session: dict, member_id: int, left_at: datetime) -> flo
     return elapsed
 
 
+def recover_active_members(session: dict, members, started_at: datetime) -> int:
+    """Seed currently connected members as active since ``started_at``.
+
+    Discord does not expose when a member joined an already-active room after the
+    bot restarts, so this is intentionally a manual recovery helper.
+    """
+    seeded = 0
+    for member in members:
+        if getattr(member, "bot", False):
+            continue
+        member_key = str(member.id)
+        records = session.setdefault("members", {})
+        record = records.setdefault(
+            member_key,
+            {
+                "display_name": member.display_name,
+                "joined_at": None,
+                "first_joined_at": None,
+                "last_left_at": None,
+                "longest_streak": 0,
+                "total_seconds": 0,
+                "joins": 0,
+            },
+        )
+        record["display_name"] = member.display_name
+        current_joined_at = parse_time(record.get("joined_at"))
+        if current_joined_at is None:
+            record["joined_at"] = as_iso(started_at)
+            record["joins"] = int(record.get("joins", 0)) + 1
+            seeded += 1
+        elif current_joined_at > started_at:
+            record["joined_at"] = as_iso(started_at)
+            seeded += 1
+
+        first_joined_at = parse_time(record.get("first_joined_at"))
+        if first_joined_at is None or first_joined_at > started_at:
+            record["first_joined_at"] = as_iso(started_at)
+        if int(record.get("joins", 0)) <= 0:
+            record["joins"] = 1
+
+    if seeded:
+        session["updated_at"] = as_iso(started_at)
+        session["peak_members"] = max(int(session.get("peak_members", 0)), len(active_member_ids(session)))
+    return seeded
+
+
 def session_duration(session: dict, ended_at: datetime) -> float:
     started_at = parse_time(session.get("started_at"))
     if started_at is None:
@@ -575,6 +621,31 @@ class VoiceReports(commands.Cog):
             record_member_join(session, member.id, member.display_name, started_at)
         return session
 
+    async def _recover_active_sessions(self, guild: discord.Guild, started_at: datetime) -> tuple[int, int]:
+        guild_sessions = self._guild_sessions(guild.id)
+        recovered_rooms = 0
+        recovered_members = 0
+        for voice_channel in [*guild.voice_channels, *guild.stage_channels]:
+            human_members = [member for member in voice_channel.members if not member.bot]
+            if not human_members:
+                continue
+            session = guild_sessions.get(str(voice_channel.id))
+            if session is None:
+                session = new_session(voice_channel.id, voice_channel.name, started_at)
+                guild_sessions[str(voice_channel.id)] = session
+            else:
+                session["channel_name"] = voice_channel.name
+                existing_started_at = parse_time(session.get("started_at"))
+                if existing_started_at is None or existing_started_at > started_at:
+                    session["started_at"] = as_iso(started_at)
+            seeded = recover_active_members(session, human_members, started_at)
+            if seeded:
+                recovered_rooms += 1
+                recovered_members += seeded
+        if recovered_rooms:
+            await self._persist()
+        return recovered_rooms, recovered_members
+
     async def _handle_join(self, member: discord.Member, channel):
         guild_sessions = self._guild_sessions(member.guild.id)
         session = guild_sessions.get(str(channel.id))
@@ -801,6 +872,58 @@ class VoiceReports(commands.Cog):
             )
             color = Palette.TEAL
         embed = make_embed("Voice report status", description, color=color)
+        brand_footer(embed, "Voice session reports")
+        await respond(interaction, embed, ephemeral=True)
+
+    @voice.command(name="recover", description="Recover active voice rooms with a manual elapsed duration")
+    @app_commands.describe(
+        hours="How many full hours the active voice session has already been running",
+        minutes="Extra minutes to add to the recovered duration",
+    )
+    async def voice_recover(
+        self,
+        interaction: discord.Interaction,
+        hours: app_commands.Range[int, 0, 168],
+        minutes: app_commands.Range[int, 0, 59] = 0,
+    ):
+        report_channel = await self._report_channel(interaction.guild)
+        if report_channel is None:
+            embed = make_embed(
+                "Voice reports are not configured",
+                "Choose a report channel first with `/voice set`.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        elapsed = timedelta(hours=int(hours), minutes=int(minutes or 0))
+        if elapsed.total_seconds() <= 0:
+            embed = make_embed(
+                "Nothing to recover",
+                "Set at least `1` minute or `1` hour so I know how far back to start tracking.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Voice session reports")
+            return await respond(interaction, embed, ephemeral=True)
+
+        started_at = now_utc() - elapsed
+        rooms, members = await self._recover_active_sessions(interaction.guild, started_at)
+        if rooms == 0:
+            embed = make_embed(
+                "No active voice rooms",
+                "I did not find any active voice or stage room with human members.",
+                color=Palette.WARNING,
+            )
+        else:
+            embed = make_embed(
+                "Active voice recovered",
+                (
+                    f"Recovered `{rooms}` active room(s) and `{members}` member(s).\n"
+                    f"Current connected members are now tracked from `{human_duration(elapsed.total_seconds())}` ago.\n"
+                    "The report will be sent when the last human leaves."
+                ),
+                color=Palette.SUCCESS,
+            )
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
 

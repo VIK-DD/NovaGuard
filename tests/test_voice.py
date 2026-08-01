@@ -20,6 +20,7 @@ from cogs.voice import (
     participant_lines,
     record_member_join,
     record_member_leave,
+    recover_active_members,
     report_export_text,
     session_activity,
     session_duration,
@@ -119,6 +120,18 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertIn("Victor (1) - 2h 0m 0s (1 entry, longest 2h 0m 0s)", text_export)
         self.assertIn("member_id,display_name,total_seconds,duration,entries,longest_streak", csv_export)
         self.assertIn('"1","Victor",7200.0,"2h 0m 0s",1,"2h 0m 0s"', csv_export)
+
+    def test_recover_active_members_moves_join_time_back(self):
+        member = SimpleNamespace(id=1, display_name="Victor", bot=False)
+        recovered_at = self.started_at - timedelta(hours=13)
+
+        seeded = recover_active_members(self.session, [member], recovered_at)
+
+        self.assertEqual(seeded, 1)
+        self.assertEqual(self.session["members"]["1"]["joined_at"], recovered_at.isoformat())
+        self.assertEqual(self.session["members"]["1"]["first_joined_at"], recovered_at.isoformat())
+        self.assertEqual(self.session["members"]["1"]["joins"], 1)
+        self.assertEqual(self.session["peak_members"], 1)
 
     def test_parallel_pending_sends_do_not_duplicate_the_report(self):
         async def run_check():
