@@ -397,6 +397,27 @@ def pending_report_lines(reports: dict[str, dict]) -> list[str]:
     return [line for _, line in rows]
 
 
+def active_session_status_lines(guild, sessions: dict[str, dict], checked_at: datetime) -> list[str]:
+    rows = []
+    for channel_id, session in sorted(sessions.items(), key=lambda item: item[1].get("started_at") or ""):
+        try:
+            channel = guild.get_channel(int(channel_id))
+        except (TypeError, ValueError):
+            channel = None
+        channel_label = getattr(channel, "mention", None) or f"<#{channel_id}>"
+        started_at = parse_time(session.get("started_at"))
+        started_text = discord.utils.format_dt(started_at, "R") if started_at else "unknown start"
+        duration = human_duration(session_duration(session, checked_at))
+        active = len(active_member_ids(session))
+        unique = len(session.get("members", {}))
+        peak = int(session.get("peak_members", 0) or 0)
+        rows.append(
+            f"{channel_label} - `{duration}` running\n"
+            f"`{active}` active • `{unique}` unique • peak `{peak}` • started {started_text}"
+        )
+    return rows
+
+
 def build_report_embed(session: dict, channel: discord.abc.GuildChannel, ended_at: datetime):
     started_at = parse_time(session.get("started_at")) or ended_at
     duration = session_duration(session, ended_at)
@@ -860,6 +881,7 @@ class VoiceReports(commands.Cog):
         report_channel = await self._report_channel(interaction.guild)
         active_sessions = self.sessions.get(str(interaction.guild_id), {})
         pending_reports = self.pending_reports.get(str(interaction.guild_id), {})
+        history = self.report_history.get(str(interaction.guild_id), [])
         if report_channel is None:
             description = "No report channel is configured. Use `/voice set` to enable tracking."
             color = Palette.WARNING
@@ -868,10 +890,48 @@ class VoiceReports(commands.Cog):
                 f"Reports: {report_channel.mention}\n"
                 f"Minimum session: `1h`\n"
                 f"Active tracked rooms: `{len(active_sessions)}`\n"
-                f"Pending reports: `{len(pending_reports)}`"
+                f"Pending reports: `{len(pending_reports)}`\n"
+                f"Saved reports: `{len(history)}/{REPORT_HISTORY_LIMIT}`"
             )
             color = Palette.TEAL
         embed = make_embed("Voice report status", description, color=color)
+        checked_at = now_utc()
+        active_lines = active_session_status_lines(interaction.guild, active_sessions, checked_at)
+        for index, chunk in enumerate(split_lines(active_lines, limit=950)[:3], 1):
+            embed.add_field(
+                name="Active rooms" if index == 1 else "Active rooms (continued)",
+                value=chunk,
+                inline=False,
+            )
+        if not active_lines:
+            embed.add_field(name="Active rooms", value="No active voice rooms are being tracked right now.", inline=False)
+
+        if pending_reports:
+            for index, chunk in enumerate(split_lines(pending_report_lines(pending_reports), limit=950)[:2], 1):
+                embed.add_field(
+                    name="Pending reports" if index == 1 else "Pending reports (continued)",
+                    value=chunk,
+                    inline=False,
+                )
+        else:
+            embed.add_field(name="Pending reports", value="No failed reports waiting for retry.", inline=False)
+
+        latest = self._last_report(interaction.guild_id)
+        if latest:
+            session = latest.get("session") or {}
+            ended_at = parse_time(latest.get("ended_at"))
+            ended_text = discord.utils.format_dt(ended_at, "R") if ended_at else "unknown end"
+            embed.add_field(
+                name="Latest saved report",
+                value=(
+                    f"{latest.get('channel_name', 'Voice session')} • ended {ended_text}\n"
+                    f"`{human_duration(session_duration(session, ended_at or checked_at))}` duration • "
+                    f"`{len(session.get('members', {}))}` unique • peak `{session.get('peak_members', 0)}`"
+                ),
+                inline=False,
+            )
+        else:
+            embed.add_field(name="Latest saved report", value="No report has been saved on this host yet.", inline=False)
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
 

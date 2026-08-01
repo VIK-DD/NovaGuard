@@ -14,6 +14,7 @@ from cogs.voice import (
     VoiceReports,
     MIN_SESSION_SECONDS,
     active_member_ids,
+    active_session_status_lines,
     build_report_embed,
     human_duration,
     new_session,
@@ -132,6 +133,19 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertEqual(self.session["members"]["1"]["first_joined_at"], recovered_at.isoformat())
         self.assertEqual(self.session["members"]["1"]["joins"], 1)
         self.assertEqual(self.session["peak_members"], 1)
+
+    def test_active_session_status_lines_show_runtime_counts(self):
+        member = SimpleNamespace(id=1, display_name="Victor", bot=False)
+        recover_active_members(self.session, [member], self.started_at)
+        guild = SimpleNamespace(get_channel=lambda channel_id: SimpleNamespace(mention="#Late-night"))
+
+        lines = active_session_status_lines(guild, {"123": self.session}, self.started_at + timedelta(hours=13))
+
+        self.assertEqual(len(lines), 1)
+        self.assertIn("#Late-night", lines[0])
+        self.assertIn("13h 0m 0s", lines[0])
+        self.assertIn("`1` active", lines[0])
+        self.assertIn("peak `1`", lines[0])
 
     def test_parallel_pending_sends_do_not_duplicate_the_report(self):
         async def run_check():
