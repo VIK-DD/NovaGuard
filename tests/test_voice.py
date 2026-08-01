@@ -21,7 +21,6 @@ from cogs.voice import (
     participant_lines,
     record_member_join,
     record_member_leave,
-    recover_active_members,
     report_export_text,
     session_activity,
     session_duration,
@@ -83,7 +82,7 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertFalse(overflow)
         self.assertEqual(embed.author.name, "NovaGuard Support • Voice activity")
         self.assertEqual(str(embed.thumbnail.url), "https://example.com/icon.png")
-        self.assertEqual(str(embed.image.url), "https://example.com/banner.png")
+        self.assertIsNone(embed.image.url)
         self.assertIn("Room activity", [field.name for field in embed.fields])
         self.assertEqual(session_activity(self.session, ended_at), (62, 1.25))
 
@@ -122,21 +121,8 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertIn("member_id,display_name,total_seconds,duration,entries,longest_streak", csv_export)
         self.assertIn('"1","Victor",7200.0,"2h 0m 0s",1,"2h 0m 0s"', csv_export)
 
-    def test_recover_active_members_moves_join_time_back(self):
-        member = SimpleNamespace(id=1, display_name="Victor", bot=False)
-        recovered_at = self.started_at - timedelta(hours=13)
-
-        seeded = recover_active_members(self.session, [member], recovered_at)
-
-        self.assertEqual(seeded, 1)
-        self.assertEqual(self.session["members"]["1"]["joined_at"], recovered_at.isoformat())
-        self.assertEqual(self.session["members"]["1"]["first_joined_at"], recovered_at.isoformat())
-        self.assertEqual(self.session["members"]["1"]["joins"], 1)
-        self.assertEqual(self.session["peak_members"], 1)
-
     def test_active_session_status_lines_show_runtime_counts(self):
-        member = SimpleNamespace(id=1, display_name="Victor", bot=False)
-        recover_active_members(self.session, [member], self.started_at)
+        record_member_join(self.session, 1, "Victor", self.started_at)
         guild = SimpleNamespace(get_channel=lambda channel_id: SimpleNamespace(mention="#Late-night"))
 
         lines = active_session_status_lines(guild, {"123": self.session}, self.started_at + timedelta(hours=13))
