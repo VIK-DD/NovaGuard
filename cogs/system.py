@@ -7,6 +7,7 @@ import platform
 import time
 from collections import deque
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 import discord
@@ -14,7 +15,16 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core import updates
-from core.backups import BACKUP_DIR, create_backup, inspect_backup, latest_backup
+from core.backups import (
+    BACKUP_DIR,
+    create_backup,
+    guild_export_relative_path,
+    inspect_backup,
+    latest_backup,
+    remote_backup_config,
+    update_remote_backup_state,
+    upload_json_to_remote,
+)
 from core.config import (
     BOT_CODENAME,
     BOT_VERSION,
@@ -24,12 +34,11 @@ from core.config import (
     GUILD_ID,
     STREAM_URL,
     UPDATE_STATE_FILE,
-    env_int,
     github_config,
     stream_status_interval_seconds,
     stream_statuses,
 )
-from core.database import DB_PATH
+from core.database import DB_PATH, load_economy_data, load_levels_data
 from core.error_digest import send_error_digest
 from core.github_api import github_api
 from core.maintenance import (
@@ -38,13 +47,14 @@ from core.maintenance import (
     save_maintenance_state,
     user_can_bypass_maintenance,
 )
-from core.storage import DATA_DIR, get_guild_settings
+from core.storage import DATA_DIR, get_guild_settings, load_data
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
 
 LAG_MONITOR_SECONDS = 5
-BACKUP_INTERVAL_HOURS = max(env_int("BACKUP_INTERVAL_HOURS", 6), 1)
 BACKUP_STARTUP_DELAY_SECONDS = 120
+BACKUP_TIMEZONE_NAME = os.getenv("BACKUP_TIMEZONE", "Europe/Chisinau").strip() or "Europe/Chisinau"
+BACKUP_SCHEDULE_RAW = os.getenv("BACKUP_SCHEDULE", "07:00,19:00")
 HEALTH_ALERT_COOLDOWN_SECONDS = 900
 HIGH_LAG_ALERT_MS = 3000
 HIGH_LAG_STREAK_REQUIRED = 2
@@ -54,6 +64,50 @@ PRESENCE_UPDATE_TIMEOUT_SECONDS = 5
 STARTUP_UPDATE_INITIAL_DELAY_SECONDS = 12
 STARTUP_UPDATE_RETRY_DELAY_SECONDS = 20
 STARTUP_UPDATE_MAX_ATTEMPTS = 6
+
+
+def parse_backup_schedule(raw_value):
+    slots = []
+    for item in (raw_value or "").split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        hour_text, minute_text = item.split(":", 1)
+        try:
+            hour = int(hour_text)
+            minute = int(minute_text)
+        except ValueError:
+            continue
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            slots.append((hour, minute))
+    return tuple(sorted(set(slots))) or ((7, 0), (19, 0))
+
+
+BACKUP_SCHEDULE = parse_backup_schedule(BACKUP_SCHEDULE_RAW)
+
+
+def backup_timezone():
+    try:
+        return ZoneInfo(BACKUP_TIMEZONE_NAME)
+    except ZoneInfoNotFoundError:
+        return UTC
+
+
+def backup_schedule_label():
+    times = ", ".join(f"{hour:02d}:{minute:02d}" for hour, minute in BACKUP_SCHEDULE)
+    return f"{times} {BACKUP_TIMEZONE_NAME}"
+
+
+def backup_max_expected_age_seconds():
+    minutes = sorted(hour * 60 + minute for hour, minute in BACKUP_SCHEDULE)
+    if len(minutes) == 1:
+        return 26 * 3600
+    gaps = []
+    for index, minute in enumerate(minutes):
+        next_minute = minutes[(index + 1) % len(minutes)]
+        gap = (next_minute - minute) % (24 * 60)
+        gaps.append(gap or 24 * 60)
+    return (max(gaps) * 60) + (2 * 3600)
 
 
 def command_line_entries(command, prefix=""):
@@ -186,16 +240,16 @@ def storage_health_lines():
         integrity = inspect_backup(newest_backup["path"])
         details = (
             f"{backup_count} archive(s), latest {format_timedelta(age)} ago, "
-            f"{newest_backup['size_text']}, auto every {BACKUP_INTERVAL_HOURS}h"
+            f"{newest_backup['size_text']}, scheduled {backup_schedule_label()}"
         )
         if not integrity["ok"]:
             lines.append(fail_line("backups", details + " — integrity check failed"))
-        elif age.total_seconds() > BACKUP_INTERVAL_HOURS * 2 * 3600:
+        elif age.total_seconds() > backup_max_expected_age_seconds():
             lines.append(warn_line("backups", details + " — latest backup is older than expected"))
         else:
             lines.append(ok_line("backups", details))
     else:
-        lines.append(warn_line("backups", f"none yet, auto every {BACKUP_INTERVAL_HOURS}h"))
+        lines.append(warn_line("backups", f"none yet, scheduled {backup_schedule_label()}"))
     return lines
 
 
@@ -289,6 +343,8 @@ class System(commands.Cog):
         self.last_lag_alert_at = 0
         self.last_reconnect_alert_at = 0
         self.last_presence_error_log_at = 0
+        self.last_backup_slot = None
+        self.backup_running = False
 
     async def cog_load(self):
         self.rotate_stream_status.start()
@@ -526,15 +582,113 @@ class System(commands.Cog):
         await self.bot.wait_until_ready()
         self.loop_lag_last_tick = time.perf_counter()
 
-    @tasks.loop(hours=BACKUP_INTERVAL_HOURS)
-    async def backup_loop(self):
+    def _scheduled_backup_slot(self, checked_at=None):
+        local_now = (checked_at or datetime.now(UTC)).astimezone(backup_timezone())
+        current = (local_now.hour, local_now.minute)
+        if current not in BACKUP_SCHEDULE:
+            return None
+        return local_now.strftime("%Y-%m-%d %H:%M")
+
+    @staticmethod
+    def _filter_guild_entries(value, guild_id):
+        if isinstance(value, dict):
+            if str(guild_id) in value:
+                return value.get(str(guild_id))
+            return [
+                item for item in value.values()
+                if isinstance(item, dict) and str(item.get("guild_id")) == str(guild_id)
+            ]
+        if isinstance(value, list):
+            return [
+                item for item in value
+                if isinstance(item, dict) and str(item.get("guild_id")) == str(guild_id)
+            ]
+        return [] if value is None else value
+
+    async def _guild_export_sources(self):
+        return await asyncio.to_thread(
+            lambda: {
+                "levels": load_levels_data(),
+                "economy": load_economy_data(),
+                "voice_sessions": load_data("voice_sessions", {}),
+                "voice_pending_reports": load_data("voice_pending_reports", {}),
+                "voice_report_history": load_data("voice_report_history", {}),
+                "giveaways": load_data("giveaways", []),
+                "reminders": load_data("reminders", []),
+                "warns": load_data("warns", {}),
+            }
+        )
+
+    async def _guild_export_payload(self, guild, backup, created_at, sources):
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        guild_id = str(guild.id)
+        return {
+            "exported_at": created_at.isoformat(),
+            "source_backup": backup.get("name"),
+            "guild": {
+                "id": guild_id,
+                "name": guild.name,
+                "member_count": guild.member_count or 0,
+                "owner_id": str(guild.owner_id) if guild.owner_id else None,
+                "icon": str(guild.icon) if guild.icon else None,
+            },
+            "settings": settings,
+            "levels": sources["levels"].get(guild_id, {}),
+            "economy": sources["economy"].get(guild_id, {}),
+            "voice": {
+                "sessions": sources["voice_sessions"].get(guild_id, {}) if isinstance(sources["voice_sessions"], dict) else {},
+                "pending_reports": sources["voice_pending_reports"].get(guild_id, {}) if isinstance(sources["voice_pending_reports"], dict) else {},
+                "report_history": sources["voice_report_history"].get(guild_id, []) if isinstance(sources["voice_report_history"], dict) else [],
+            },
+            "giveaways": self._filter_guild_entries(sources["giveaways"], guild_id),
+            "reminders": self._filter_guild_entries(sources["reminders"], guild_id),
+            "warns": self._filter_guild_entries(sources["warns"], guild_id),
+        }
+
+    async def _upload_guild_exports(self, backup, created_at):
+        config = remote_backup_config()
+        summary = {
+            "configured": config["configured"],
+            "destination": config["destination"],
+            "uploaded": 0,
+            "failed": 0,
+            "skipped": 0,
+            "exports": [],
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        if not config["configured"]:
+            summary["skipped"] = len(self.bot.guilds)
+            return summary
+
+        sources = await self._guild_export_sources()
+        for guild in self.bot.guilds:
+            payload = await self._guild_export_payload(guild, backup, created_at, sources)
+            remote_path = guild_export_relative_path(guild.id, guild.name, created_at)
+            result = await asyncio.to_thread(upload_json_to_remote, payload, remote_path)
+            export = {
+                "guild_id": str(guild.id),
+                "guild_name": guild.name,
+                "ok": bool(result.get("ok")),
+                "remote_path": result.get("remote_path"),
+                "message": result.get("message"),
+            }
+            summary["exports"].append(export)
+            if result.get("ok"):
+                summary["uploaded"] += 1
+            else:
+                summary["failed"] += 1
+        update_remote_backup_state(latest_guild_exports=summary)
+        return summary
+
+    async def _run_automatic_backup(self):
         try:
             backup = await asyncio.to_thread(create_backup, "auto")
+            created_at = datetime.fromisoformat(backup.get("created_at")) if backup.get("created_at") else datetime.now(UTC)
             print(f"Automatic backup created: {backup['name']}")
             remote = backup.get("remote") or {}
             if remote.get("configured"):
                 if remote.get("ok"):
-                    print(f"Automatic backup uploaded off-site: {backup['name']} -> {remote.get('destination')}")
+                    print(f"Automatic backup uploaded off-site: {backup['name']} -> {remote.get('remote_path')}")
                 else:
                     message = remote.get("message") or "off-site upload failed"
                     print(f"Automatic backup off-site upload failed: {message}")
@@ -547,9 +701,37 @@ class System(commands.Cog):
                             f"to `{remote.get('destination')}`."
                         ),
                     )
+            guild_exports = await self._upload_guild_exports(backup, created_at)
+            if guild_exports.get("configured"):
+                print(
+                    "Guild backup exports finished: "
+                    f"{guild_exports['uploaded']} uploaded, {guild_exports['failed']} failed"
+                )
+                if guild_exports["failed"]:
+                    await send_error_digest(
+                        self.bot,
+                        "Guild Backup Export Error",
+                        RuntimeError(f"{guild_exports['failed']} guild export(s) failed"),
+                        context=(
+                            f"Full backup `{backup['name']}` was created, but some per-server "
+                            "Google Drive exports failed."
+                        ),
+                    )
         except Exception as error:
             print(f"Automatic backup failed: {error!r}")
             await send_error_digest(self.bot, "Automatic Backup Error", error, context="Scheduled backup failed.")
+
+    @tasks.loop(seconds=60)
+    async def backup_loop(self):
+        slot = self._scheduled_backup_slot()
+        if not slot or slot == self.last_backup_slot or self.backup_running:
+            return
+        self.last_backup_slot = slot
+        self.backup_running = True
+        try:
+            await self._run_automatic_backup()
+        finally:
+            self.backup_running = False
 
     @backup_loop.before_loop
     async def before_backup_loop(self):

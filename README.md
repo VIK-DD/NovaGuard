@@ -200,8 +200,11 @@ NovaGuard loads `.env` automatically at startup.
 | `UPTIME_URL` | Optional | Link used in status/developer cards |
 | `BOT_BRAND` | Optional | Embed footer branding; quote values containing `&` or other shell characters |
 | `STREAM_STATUSES` | Optional | Pipe-separated rotating streaming texts |
-| `BACKUP_INTERVAL_HOURS` | Optional | Automatic local backup interval; defaults to `6` |
+| `BACKUP_SCHEDULE` | Optional | Fixed automatic backup times; defaults to `07:00,19:00` |
+| `BACKUP_TIMEZONE` | Optional | Timezone for `BACKUP_SCHEDULE`; defaults to `Europe/Chisinau` |
 | `BACKUP_REMOTE_DEST` | Optional | `rclone` destination for off-site backup uploads, e.g. `gdrive:NovaGuard/backups` |
+| `BACKUP_REMOTE_FULL_PREFIX` | Optional | Remote folder for full restore zips; defaults to `full` |
+| `BACKUP_REMOTE_GUILD_PREFIX` | Optional | Remote folder for per-server JSON exports; defaults to `guilds` |
 | `BACKUP_RCLONE_BIN` | Optional | Custom `rclone` binary path; defaults to `rclone` |
 | `BACKUP_REMOTE_TIMEOUT_SECONDS` | Optional | Off-site upload timeout; defaults to `300` |
 | `ANTHROPIC_API_KEY` | Optional | Enables `/ask` |
@@ -292,10 +295,11 @@ That means the bot can tell your server what changed without you writing a manua
 - `/doctor` checks latency, event-loop lag, config, permissions, JSON state, SQLite status and GitHub reachability.
 - `/status` gives members a clean public summary without exposing admin details.
 - Admin error digests can be routed into a private channel.
-- Automatic backups run every 6 hours by default and keep the newest 10 archives in `backups/`.
-- If `BACKUP_REMOTE_DEST` is configured, each backup is uploaded off-site with `rclone` after the local integrity check.
+- Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 full archives in `backups/`.
+- If `BACKUP_REMOTE_DEST` is configured, each verified full backup is uploaded off-site under `full/YYYY/MM/`.
+- The same scheduled run exports every Discord server under `guilds/<server-name>-<guild-id>/YYYY/MM/`.
 - `/config backup` and `/backup create` create immediate manual archives.
-- `/backup status`, `/backup list` and `/backup test` verify that the latest archive can be opened, parsed, restored into a safe temporary folder and, when configured, copied off-site.
+- `/backup status`, `/backup list` and `/backup test` verify that the latest archive can be opened, parsed, restored into a safe temporary folder and, when configured, copied off-site with per-server export status.
 - See `docs/RESTORE.md` before restoring live data or setting up an off-site copy.
 
 If the Raspberry Pi stalls briefly, NovaGuard can detect that and report it without falling apart.

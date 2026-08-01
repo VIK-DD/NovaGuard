@@ -1,6 +1,6 @@
 # NovaGuard Backup And Restore
 
-NovaGuard creates local zip backups in `backups/` every 6 hours and keeps the newest archives on disk. These backups include the SQLite database, JSON feature state, update state and GitHub watcher state.
+NovaGuard creates local zip backups in `backups/` at 07:00 and 19:00 Europe/Chisinau by default, and keeps the newest archives on disk. These backups include the SQLite database, JSON feature state, update state and GitHub watcher state.
 
 ## Check Backup Health
 
@@ -57,8 +57,11 @@ destination to match the name you chose.
 Add this to `.env`:
 
 ```bash
-BACKUP_INTERVAL_HOURS=6
+BACKUP_SCHEDULE=07:00,19:00
+BACKUP_TIMEZONE=Europe/Chisinau
 BACKUP_REMOTE_DEST=gdrive:NovaGuard/backups
+BACKUP_REMOTE_FULL_PREFIX=full
+BACKUP_REMOTE_GUILD_PREFIX=guilds
 BACKUP_REMOTE_TIMEOUT_SECONDS=300
 ```
 
@@ -80,6 +83,27 @@ In Discord, run:
 `/backup status` reports whether the latest local backup was also uploaded
 off-site. If the local zip is created but the Google Drive upload fails, the bot
 sends an admin error digest.
+
+Google Drive layout:
+
+```text
+NovaGuard/
+  backups/
+    full/
+      2026/
+        08/
+          novaguard-full-2026-08-01_07-00-00-auto.zip
+          novaguard-full-2026-08-01_19-00-00-auto.zip
+    guilds/
+      MadCats-RPG-B-HOOD-1328794007748476939/
+        2026/
+          08/
+            2026-08-01_07-00-00.json
+            2026-08-01_19-00-00.json
+```
+
+Use `full/` for disaster recovery. Use `guilds/` when you need to inspect or
+recover one server's settings, levels, economy and voice report state.
 
 Alternatives still work:
 

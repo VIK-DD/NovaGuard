@@ -23,7 +23,13 @@ class BackupIntegrityTests(unittest.TestCase):
         self.old_restore_dir = backups.RESTORE_CHECK_DIR
         self.old_env = {
             key: os.environ.get(key)
-            for key in ("BACKUP_REMOTE_DEST", "BACKUP_RCLONE_BIN", "BACKUP_REMOTE_TIMEOUT_SECONDS")
+            for key in (
+                "BACKUP_REMOTE_DEST",
+                "BACKUP_REMOTE_FULL_PREFIX",
+                "BACKUP_REMOTE_GUILD_PREFIX",
+                "BACKUP_RCLONE_BIN",
+                "BACKUP_REMOTE_TIMEOUT_SECONDS",
+            )
         }
         self.db_counter = 0
         backups.BACKUP_DIR = self.root / "backups"
@@ -78,7 +84,7 @@ class BackupIntegrityTests(unittest.TestCase):
 
     def test_list_backups_returns_newest_first_with_human_sizes(self):
         old_backup = self.write_backup("novaguard-backup-old.zip")
-        new_backup = self.write_backup("novaguard-backup-new.zip")
+        new_backup = self.write_backup("novaguard-full-new.zip")
         old_time = datetime(2026, 7, 30, 10, tzinfo=UTC).timestamp()
         new_time = datetime(2026, 7, 31, 10, tzinfo=UTC).timestamp()
         os.utime(old_backup, (old_time, old_time))
@@ -86,8 +92,21 @@ class BackupIntegrityTests(unittest.TestCase):
 
         listed = backups.list_backups()
 
-        self.assertEqual([item["name"] for item in listed], ["novaguard-backup-new.zip", "novaguard-backup-old.zip"])
+        self.assertEqual([item["name"] for item in listed], ["novaguard-full-new.zip", "novaguard-backup-old.zip"])
         self.assertTrue(listed[0]["size_text"].endswith(("B", "KB")))
+
+    def test_remote_paths_are_grouped_by_full_and_guild_folders(self):
+        when = datetime(2026, 8, 1, 4, 5, 6, tzinfo=UTC)
+        backup_path = self.write_backup("novaguard-full-2026-08-01_04-05-06-auto.zip")
+
+        full_path = backups.remote_full_backup_path(backup_path, when)
+        guild_path = backups.guild_export_relative_path("1328794007748476939", "MadCats - RPG B-HOOD!", when)
+
+        self.assertEqual(full_path, "full/2026/08/novaguard-full-2026-08-01_04-05-06-auto.zip")
+        self.assertEqual(
+            guild_path,
+            "guilds/MadCats-RPG-B-HOOD-1328794007748476939/2026/08/2026-08-01_04-05-06.json",
+        )
 
     def test_remote_upload_is_skipped_when_not_configured(self):
         os.environ.pop("BACKUP_REMOTE_DEST", None)
@@ -125,7 +144,9 @@ class BackupIntegrityTests(unittest.TestCase):
         status = backups.remote_backup_status(backup_path.name)
 
         self.assertTrue(result["ok"])
-        self.assertIn("copyto", args_file.read_text(encoding="utf-8"))
+        args = args_file.read_text(encoding="utf-8")
+        self.assertIn("copyto", args)
+        self.assertIn("gdrive:NovaGuard/backups/full/", args)
         self.assertEqual(status["latest"]["backup_name"], backup_path.name)
         self.assertTrue(status["matches_backup"])
 

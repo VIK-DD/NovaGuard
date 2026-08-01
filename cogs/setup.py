@@ -184,9 +184,16 @@ def backup_remote_text(status):
         return "Not configured. Set `BACKUP_REMOTE_DEST` after configuring `rclone`."
 
     latest = status.get("latest") or {}
+    guild_exports = status.get("latest_guild_exports") or {}
     destination = status.get("destination") or "remote storage"
+    guild_line = ""
+    if guild_exports:
+        guild_line = (
+            f"\nServer exports: `{guild_exports.get('uploaded', 0)}` uploaded • "
+            f"`{guild_exports.get('failed', 0)}` failed"
+        )
     if not latest:
-        return f"Configured for `{destination}`, but no upload has been recorded yet."
+        return f"Configured for `{destination}`, but no full upload has been recorded yet.{guild_line}"
 
     backup_name = latest.get("backup_name") or "unknown backup"
     if latest.get("ok"):
@@ -199,17 +206,17 @@ def backup_remote_text(status):
             except ValueError:
                 uploaded = ""
         stale = "" if status.get("matches_backup") else "\n⚠️ Latest local backup has not been confirmed off-site yet."
-        return f"✅ `{backup_name}` uploaded to `{destination}`.{uploaded}{stale}"
+        return f"✅ `{backup_name}` uploaded to `{destination}`.{uploaded}{stale}{guild_line}"
 
     message = latest.get("message") or "Upload failed."
-    return f"⚠️ Last upload failed for `{backup_name}` to `{destination}`.\n`{message[:180]}`"
+    return f"⚠️ Last upload failed for `{backup_name}` to `{destination}`.\n`{message[:180]}`{guild_line}"
 
 
 def backup_status_embed(latest, report=None):
     if not latest:
         embed = make_embed(
             "🧳 Backup status",
-            "No backup archives exist yet. Run `/backup create` or wait for the automatic 6h backup loop.",
+            "No backup archives exist yet. Run `/backup create` or wait for the scheduled 07:00/19:00 backup.",
             color=Palette.WARNING,
         )
         brand_footer(embed, "Backup status")
