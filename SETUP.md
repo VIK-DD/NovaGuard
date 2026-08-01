@@ -17,10 +17,13 @@ Important values that should stay in `.env`:
 - `GITHUB_USERNAME`: the GitHub profile used by `/github` and `/dev`
 - `GITHUB_PRIMARY_REPO`: the default repo used by `/repo`, `/dev`, `/health`, `/commits`, `/release`
 - `GITHUB_WATCH_REPOS`: comma-separated list of repos the watcher should monitor
-- `GITHUB_TOKEN`: optional, but strongly recommended for smoother GitHub API access
+- `GITHUB_TOKEN`: optional, but strongly recommended for smoother GitHub API access.
+  Keep exactly one `GITHUB_TOKEN=` line in `.env`; a placeholder above the real
+  token will be loaded first and GitHub will reject it as bad credentials.
 - `GITHUB_POLL_SECONDS`: how often the watcher checks GitHub
 - `UPTIME_URL`: optional link shown inside the developer dashboard
-- `BOT_BRAND`: footer branding for embeds
+- `BOT_BRAND`: footer branding for embeds. Quote values that contain shell
+  characters, for example `BOT_BRAND="Developed by VIK & CloudMedia"`.
 - `STREAM_STATUSES`: rotating streaming texts separated by `|`
 - `STREAM_STATUS_INTERVAL_SECONDS`: how often the streaming status rotates, in seconds (`15` recommended)
 

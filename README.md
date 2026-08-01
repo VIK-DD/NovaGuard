@@ -193,12 +193,12 @@ NovaGuard loads `.env` automatically at startup.
 | `GITHUB_USERNAME` | Optional | GitHub profile used by GitHub commands |
 | `GITHUB_PRIMARY_REPO` | Optional | Main repository used by repo/dev/health cards |
 | `GITHUB_WATCH_REPOS` | Optional | Comma-separated repo list for GitHub feed |
-| `GITHUB_TOKEN` | Optional | Better GitHub API limits and reliability |
+| `GITHUB_TOKEN` | Optional | Better GitHub API limits and reliability; keep a single line in `.env` |
 | `UPDATE_CHANNEL_ID` | Optional | Fallback update channel for the main guild |
 | `GITHUB_EVENT_CHANNEL_ID` | Optional | Fallback GitHub feed channel |
 | `ERROR_LOG_CHANNEL_ID` | Optional | Fallback admin error digest channel |
 | `UPTIME_URL` | Optional | Link used in status/developer cards |
-| `BOT_BRAND` | Optional | Embed footer branding |
+| `BOT_BRAND` | Optional | Embed footer branding; quote values containing `&` or other shell characters |
 | `STREAM_STATUSES` | Optional | Pipe-separated rotating streaming texts |
 | `ANTHROPIC_API_KEY` | Optional | Enables `/ask` |
 | `ANTHROPIC_MODEL` | Optional | Claude model override |
