@@ -21,6 +21,10 @@ class BackupIntegrityTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         self.old_backup_dir = backups.BACKUP_DIR
         self.old_restore_dir = backups.RESTORE_CHECK_DIR
+        self.old_env = {
+            key: os.environ.get(key)
+            for key in ("BACKUP_REMOTE_DEST", "BACKUP_RCLONE_BIN", "BACKUP_REMOTE_TIMEOUT_SECONDS")
+        }
         self.db_counter = 0
         backups.BACKUP_DIR = self.root / "backups"
         backups.RESTORE_CHECK_DIR = backups.BACKUP_DIR / "restore-check"
@@ -29,6 +33,11 @@ class BackupIntegrityTests(unittest.TestCase):
     def tearDown(self):
         backups.BACKUP_DIR = self.old_backup_dir
         backups.RESTORE_CHECK_DIR = self.old_restore_dir
+        for key, value in self.old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         self.temp_dir.cleanup()
 
     def write_sqlite(self):
@@ -79,6 +88,46 @@ class BackupIntegrityTests(unittest.TestCase):
 
         self.assertEqual([item["name"] for item in listed], ["novaguard-backup-new.zip", "novaguard-backup-old.zip"])
         self.assertTrue(listed[0]["size_text"].endswith(("B", "KB")))
+
+    def test_remote_upload_is_skipped_when_not_configured(self):
+        os.environ.pop("BACKUP_REMOTE_DEST", None)
+        backup_path = self.write_backup()
+
+        result = backups.upload_backup_to_remote(backup_path)
+
+        self.assertFalse(result["configured"])
+        self.assertTrue(result["skipped"])
+        self.assertFalse(result["ok"])
+
+    def test_remote_upload_uses_rclone_and_saves_status(self):
+        backup_path = self.write_backup()
+        fake_rclone = self.root / "rclone"
+        args_file = self.root / "rclone-args.txt"
+        fake_rclone.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$@\" > {args_file}\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        fake_rclone.chmod(0o755)
+        os.environ["BACKUP_REMOTE_DEST"] = "gdrive:NovaGuard/backups"
+        os.environ["BACKUP_RCLONE_BIN"] = str(fake_rclone)
+
+        result = backups.upload_backup_to_remote(backup_path)
+        backups.save_remote_backup_state(
+            {
+                "configured": result["configured"],
+                "destination": result["destination"],
+                "latest": result,
+                "updated_at": "2026-08-01T00:00:00+00:00",
+            }
+        )
+        status = backups.remote_backup_status(backup_path.name)
+
+        self.assertTrue(result["ok"])
+        self.assertIn("copyto", args_file.read_text(encoding="utf-8"))
+        self.assertEqual(status["latest"]["backup_name"], backup_path.name)
+        self.assertTrue(status["matches_backup"])
 
 
 if __name__ == "__main__":

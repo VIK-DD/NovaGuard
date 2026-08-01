@@ -45,7 +45,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
-from .backups import inspect_backup, list_backups
+from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_VERSION, github_config
 from .database import connect, load_levels_data
 from .levels_settings import resolve_levels, validate_levels
@@ -1114,6 +1114,10 @@ class WebServer:
         backups = await asyncio.to_thread(list_backups, 1)
         newest_backup = backups[0] if backups else None
         backup_report = await asyncio.to_thread(inspect_backup, newest_backup["path"]) if newest_backup else None
+        offsite_backup = await asyncio.to_thread(
+            remote_backup_status,
+            newest_backup["name"] if newest_backup else None,
+        )
 
         update_state = load_update_state()
         update_feed = merged_update_feed(
@@ -1181,6 +1185,7 @@ class WebServer:
                 "ok": bool(backup_report and backup_report.get("ok")),
                 "warnings": backup_report.get("warnings", []) if backup_report else [],
                 "errors": backup_report.get("errors", []) if backup_report else [],
+                "offsite": offsite_backup,
             },
             "updates": update_feed[:5],
         }

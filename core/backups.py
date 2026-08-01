@@ -1,8 +1,10 @@
 """Safe backup helpers for NovaGuard state."""
 
 import json
+import os
 import shutil
 import sqlite3
+import subprocess
 import tempfile
 import zipfile
 from datetime import UTC, datetime
@@ -13,9 +15,30 @@ from .database import DB_PATH, init_database
 from .storage import DATA_DIR
 
 BACKUP_DIR = BASE_DIR / "backups"
+OFFSITE_STATE_FILENAME = "offsite_state.json"
 MAX_BACKUPS = 10
 MIN_BACKUP_BYTES = 200
 RESTORE_CHECK_DIR = BACKUP_DIR / "restore-check"
+
+
+def env_int(name, default):
+    raw_value = os.getenv(name)
+    if not raw_value:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
+
+
+def remote_backup_config():
+    destination = os.getenv("BACKUP_REMOTE_DEST", "").strip()
+    return {
+        "configured": bool(destination),
+        "destination": destination,
+        "rclone_bin": os.getenv("BACKUP_RCLONE_BIN", "rclone").strip() or "rclone",
+        "timeout_seconds": max(env_int("BACKUP_REMOTE_TIMEOUT_SECONDS", 300), 30),
+    }
 
 
 def backup_timestamp():
@@ -81,6 +104,107 @@ def list_backups(limit=None):
 def latest_backup():
     backups = list_backups(limit=1)
     return backups[0] if backups else None
+
+
+def offsite_state_file():
+    return BACKUP_DIR / OFFSITE_STATE_FILENAME
+
+
+def load_remote_backup_state():
+    state_file = offsite_state_file()
+    if not state_file.exists():
+        return {}
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_remote_backup_state(state):
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    state_file = offsite_state_file()
+    tmp_path = state_file.with_name(state_file.name + ".tmp")
+    tmp_path.write_text(json.dumps(state, indent=2, ensure_ascii=True), encoding="utf-8")
+    os.replace(tmp_path, state_file)
+
+
+def remote_backup_status(backup_name=None):
+    config = remote_backup_config()
+    state = load_remote_backup_state()
+    latest = state.get("latest") if isinstance(state.get("latest"), dict) else {}
+    return {
+        "configured": config["configured"],
+        "destination": config["destination"],
+        "latest": latest,
+        "matches_backup": bool(backup_name and latest.get("backup_name") == backup_name),
+    }
+
+
+def upload_backup_to_remote(backup_path):
+    config = remote_backup_config()
+    backup_path = Path(backup_path)
+    result = {
+        "configured": config["configured"],
+        "ok": False,
+        "skipped": False,
+        "backup_name": backup_path.name,
+        "destination": config["destination"],
+        "uploaded_at": None,
+        "message": "",
+        "returncode": None,
+        "stdout": "",
+        "stderr": "",
+    }
+
+    if not config["configured"]:
+        result["skipped"] = True
+        result["message"] = "BACKUP_REMOTE_DEST is not configured."
+        return result
+    if not backup_path.exists():
+        result["message"] = "Backup archive does not exist."
+        return result
+
+    destination = config["destination"]
+    remote_path = (
+        f"{destination}{backup_path.name}"
+        if destination.endswith(("/", ":"))
+        else f"{destination}/{backup_path.name}"
+    )
+    command = [
+        config["rclone_bin"],
+        "copyto",
+        str(backup_path),
+        remote_path,
+        "--checksum",
+        "--retries",
+        "3",
+        "--low-level-retries",
+        "10",
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=config["timeout_seconds"],
+            check=False,
+        )
+    except FileNotFoundError:
+        result["message"] = f"{config['rclone_bin']} was not found."
+        return result
+    except subprocess.TimeoutExpired:
+        result["message"] = f"Upload timed out after {config['timeout_seconds']}s."
+        return result
+
+    result["returncode"] = completed.returncode
+    result["stdout"] = (completed.stdout or "").strip()[-500:]
+    result["stderr"] = (completed.stderr or "").strip()[-500:]
+    result["ok"] = completed.returncode == 0
+    result["uploaded_at"] = datetime.now(UTC).isoformat() if result["ok"] else None
+    result["message"] = "Uploaded to off-site storage." if result["ok"] else (result["stderr"] or "rclone upload failed.")
+    return result
 
 
 def _safe_extract(zip_file, target_dir):
@@ -207,6 +331,30 @@ def create_backup(label="auto"):
 
     prune_old_backups()
     integrity = inspect_backup(backup_path)
+    if integrity["ok"]:
+        remote = upload_backup_to_remote(backup_path)
+    else:
+        config = remote_backup_config()
+        remote = {
+            "configured": config["configured"],
+            "ok": False,
+            "skipped": True,
+            "backup_name": backup_path.name,
+            "destination": config["destination"],
+            "uploaded_at": None,
+            "message": "Local backup integrity check failed; off-site upload skipped.",
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
+        }
+    save_remote_backup_state(
+        {
+            "configured": remote["configured"],
+            "destination": remote["destination"],
+            "latest": remote,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+    )
     return {
         "path": str(backup_path),
         "name": backup_path.name,
@@ -214,6 +362,7 @@ def create_backup(label="auto"):
         "size_text": human_size(backup_path.stat().st_size if backup_path.exists() else 0),
         "included": included,
         "integrity": integrity,
+        "remote": remote,
     }
 
 

@@ -37,9 +37,53 @@ If something looks wrong, stop the bot again and restore `data-before-restore/`.
 
 ## Off-Site Backup
 
-Local backups protect against bad commands and corrupted files, but they do not protect against a dead SD card. Copy `backups/*.zip` off the Pi with one of these:
+Local backups protect against bad commands and corrupted files, but they do not
+protect against a dead server. Configure `rclone` once, then NovaGuard uploads
+each verified backup zip to Google Drive automatically.
 
-- `rclone` to Google Drive, OneDrive, Dropbox or Cloudflare R2.
+Recommended Google Drive setup on the VPS:
+
+```bash
+sudo apt update
+sudo apt install -y rclone
+rclone config
+rclone mkdir gdrive:NovaGuard/backups
+rclone lsd gdrive:
+```
+
+Use `gdrive` as the remote name during `rclone config`, or change the `.env`
+destination to match the name you chose.
+
+Add this to `.env`:
+
+```bash
+BACKUP_INTERVAL_HOURS=6
+BACKUP_REMOTE_DEST=gdrive:NovaGuard/backups
+BACKUP_REMOTE_TIMEOUT_SECONDS=300
+```
+
+Then restart the bot and create one manual backup:
+
+```bash
+pm2 restart 0 --update-env
+pm2 save
+```
+
+In Discord, run:
+
+```text
+/backup create
+/backup status
+/backup test
+```
+
+`/backup status` reports whether the latest local backup was also uploaded
+off-site. If the local zip is created but the Google Drive upload fails, the bot
+sends an admin error digest.
+
+Alternatives still work:
+
+- `rclone` to OneDrive, Dropbox or Cloudflare R2.
 - `scp`/`rsync` to a Mac, NAS or another machine over Tailscale.
 - A scheduled cron job that copies only new zip files.
 

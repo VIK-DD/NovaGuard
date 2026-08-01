@@ -3,12 +3,13 @@
 import asyncio
 import io
 import json
+from datetime import datetime
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.backups import create_backup, inspect_backup, latest_backup, list_backups
+from core.backups import create_backup, inspect_backup, latest_backup, list_backups, remote_backup_status
 from core.config import github_config
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -178,6 +179,32 @@ def backup_errors_text(report):
     return "No issues found."
 
 
+def backup_remote_text(status):
+    if not status or not status.get("configured"):
+        return "Not configured. Set `BACKUP_REMOTE_DEST` after configuring `rclone`."
+
+    latest = status.get("latest") or {}
+    destination = status.get("destination") or "remote storage"
+    if not latest:
+        return f"Configured for `{destination}`, but no upload has been recorded yet."
+
+    backup_name = latest.get("backup_name") or "unknown backup"
+    if latest.get("ok"):
+        uploaded_at = latest.get("uploaded_at")
+        uploaded = ""
+        if uploaded_at:
+            try:
+                uploaded_dt = datetime.fromisoformat(uploaded_at)
+                uploaded = f"\nUploaded: {discord.utils.format_dt(uploaded_dt, 'R')}"
+            except ValueError:
+                uploaded = ""
+        stale = "" if status.get("matches_backup") else "\n⚠️ Latest local backup has not been confirmed off-site yet."
+        return f"✅ `{backup_name}` uploaded to `{destination}`.{uploaded}{stale}"
+
+    message = latest.get("message") or "Upload failed."
+    return f"⚠️ Last upload failed for `{backup_name}` to `{destination}`.\n`{message[:180]}`"
+
+
 def backup_status_embed(latest, report=None):
     if not latest:
         embed = make_embed(
@@ -211,6 +238,11 @@ def backup_status_embed(latest, report=None):
             f"Files: `{len(checked_report.get('included', []))}` total • "
             f"`{len(checked_report.get('json_files', []))}` JSON checked"
         ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Off-site copy",
+        value=backup_remote_text(remote_backup_status(latest["name"])),
         inline=False,
     )
     embed.add_field(name="Notes", value=backup_errors_text(checked_report), inline=False)

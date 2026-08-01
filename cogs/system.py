@@ -24,6 +24,7 @@ from core.config import (
     GUILD_ID,
     STREAM_URL,
     UPDATE_STATE_FILE,
+    env_int,
     github_config,
     stream_status_interval_seconds,
     stream_statuses,
@@ -42,7 +43,7 @@ from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
 
 LAG_MONITOR_SECONDS = 5
-BACKUP_INTERVAL_HOURS = 6
+BACKUP_INTERVAL_HOURS = max(env_int("BACKUP_INTERVAL_HOURS", 6), 1)
 BACKUP_STARTUP_DELAY_SECONDS = 120
 HEALTH_ALERT_COOLDOWN_SECONDS = 900
 HIGH_LAG_ALERT_MS = 3000
@@ -530,6 +531,22 @@ class System(commands.Cog):
         try:
             backup = await asyncio.to_thread(create_backup, "auto")
             print(f"Automatic backup created: {backup['name']}")
+            remote = backup.get("remote") or {}
+            if remote.get("configured"):
+                if remote.get("ok"):
+                    print(f"Automatic backup uploaded off-site: {backup['name']} -> {remote.get('destination')}")
+                else:
+                    message = remote.get("message") or "off-site upload failed"
+                    print(f"Automatic backup off-site upload failed: {message}")
+                    await send_error_digest(
+                        self.bot,
+                        "Off-site Backup Error",
+                        RuntimeError(message),
+                        context=(
+                            f"Local backup `{backup['name']}` was created, but NovaGuard could not upload it "
+                            f"to `{remote.get('destination')}`."
+                        ),
+                    )
         except Exception as error:
             print(f"Automatic backup failed: {error!r}")
             await send_error_digest(self.bot, "Automatic Backup Error", error, context="Scheduled backup failed.")
