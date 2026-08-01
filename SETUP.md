@@ -184,14 +184,14 @@ Tip: `/help` opens an interactive hub with a category menu.
 
 ## 5c. SQLite, backups and health
 
-- `data/novaguard.sqlite3` stores server setup/config, XP levels and economy wallets.
+- `data/novaguard.sqlite3` stores server setup/config, XP levels, economy wallets and voice report state.
 - Old `data/settings.json`, `data/levels.json` and `data/economy.json` are migrated automatically once and kept as safety backups.
 - Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 full zip archives in `backups/`.
 - Set `BACKUP_SCHEDULE=07:00,19:00` and `BACKUP_TIMEZONE=Europe/Chisinau` if you want to make the schedule explicit.
 - Set `BACKUP_REMOTE_DEST=gdrive:NovaGuard/backups` after configuring `rclone` to upload every verified full backup off-server under `full/YYYY/MM/`.
 - Scheduled backups also export each Discord server to `guilds/<server-name>-<guild-id>/YYYY/MM/`.
 - `/config backup` and `/backup create` create a manual backup immediately.
-- `/backup status`, `/backup list` and `/backup test` inspect backup health, restore readiness and off-site upload status without touching live data.
+- `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` inspect backup health, restore readiness and off-site upload status without touching live data.
 - `/doctor` checks database, JSON files, GitHub API, permissions, latency, uptime, backup status and event-loop lag.
 - The health monitor sends admin error embeds if the event loop lag becomes dangerously high.
 

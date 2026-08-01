@@ -179,6 +179,28 @@ def backup_errors_text(report):
     return "No issues found."
 
 
+def find_backup(name=None):
+    backups = list_backups()
+    if not name:
+        return backups[0] if backups else None
+    target = name.strip()
+    for backup in backups:
+        if backup["name"] == target:
+            return backup
+    return None
+
+
+def backup_contents_text(report):
+    included = report.get("included") or []
+    if not included:
+        return "No files found in archive."
+    shown = included[:12]
+    lines = [f"• `{item}`" for item in shown]
+    if len(included) > len(shown):
+        lines.append(f"• ...and `{len(included) - len(shown)}` more")
+    return "\n".join(lines)
+
+
 def backup_remote_text(status):
     if not status or not status.get("configured"):
         return "Not configured. Set `BACKUP_REMOTE_DEST` after configuring `rclone`."
@@ -210,6 +232,52 @@ def backup_remote_text(status):
 
     message = latest.get("message") or "Upload failed."
     return f"⚠️ Last upload failed for `{backup_name}` to `{destination}`.\n`{message[:180]}`{guild_line}"
+
+
+def backup_remote_embed(status):
+    configured = bool(status and status.get("configured"))
+    latest = (status or {}).get("latest") or {}
+    guild_exports = (status or {}).get("latest_guild_exports") or {}
+    embed = make_embed(
+        "☁️ Backup remote",
+        (
+            f"Destination: `{status.get('destination')}`\n"
+            f"Full prefix: `{status.get('full_prefix')}`\n"
+            f"Guild prefix: `{status.get('guild_prefix')}`"
+            if configured
+            else "Remote backup is not configured. Set `BACKUP_REMOTE_DEST` after configuring `rclone`."
+        ),
+        color=Palette.SUCCESS if configured and latest.get("ok") else Palette.WARNING,
+    )
+    if latest:
+        embed.add_field(
+            name="Latest full upload",
+            value=(
+                f"Backup: `{latest.get('backup_name')}`\n"
+                f"Status: `{'ok' if latest.get('ok') else 'failed'}`\n"
+                f"Remote path: `{latest.get('remote_path') or '-'}`\n"
+                f"Message: `{(latest.get('message') or '-')[:180]}`"
+            ),
+            inline=False,
+        )
+    if guild_exports:
+        failed = [
+            export for export in guild_exports.get("exports", [])
+            if isinstance(export, dict) and not export.get("ok")
+        ][:5]
+        failed_text = "\n".join(f"• `{item.get('guild_name')}` - `{item.get('message') or 'failed'}`" for item in failed)
+        embed.add_field(
+            name="Latest server exports",
+            value=(
+                f"Uploaded: `{guild_exports.get('uploaded', 0)}`\n"
+                f"Failed: `{guild_exports.get('failed', 0)}`\n"
+                f"Skipped: `{guild_exports.get('skipped', 0)}`"
+                + (f"\n{failed_text}" if failed_text else "")
+            ),
+            inline=False,
+        )
+    brand_footer(embed, "Backup remote")
+    return embed
 
 
 def backup_status_embed(latest, report=None):
@@ -295,6 +363,59 @@ def backup_test_embed(latest, report):
     )
     embed.add_field(name="Notes", value=backup_errors_text(report), inline=False)
     brand_footer(embed, "Backup restore test")
+    return embed
+
+
+def backup_inspect_embed(backup, report):
+    embed = make_embed(
+        "🔎 Backup inspect",
+        f"Archive: `{backup['name']}`",
+        color=Palette.SUCCESS if report.get("ok") else Palette.WARNING,
+    )
+    embed.add_field(
+        name="Archive",
+        value=(
+            f"Size: `{backup['size_text']}`\n"
+            f"Created: {discord.utils.format_dt(backup['mtime'], 'F')} "
+            f"({discord.utils.format_dt(backup['mtime'], 'R')})\n"
+            f"SQLite integrity: `{report.get('sqlite') or 'not included'}`"
+        ),
+        inline=False,
+    )
+    embed.add_field(name="Contents", value=backup_contents_text(report), inline=False)
+    embed.add_field(name="Notes", value=backup_errors_text(report), inline=False)
+    brand_footer(embed, "Backup inspect")
+    return embed
+
+
+def backup_restore_plan_embed(backup, report):
+    command_block = (
+        "cd ~/NovaGuard\n"
+        "pm2 stop 0\n"
+        "mkdir -p data-before-restore\n"
+        "cp -a data/. data-before-restore/\n"
+        "rm -rf backups/restore-check\n"
+        f"unzip backups/{backup['name']} -d backups/restore-check\n"
+        "cp backups/restore-check/data/novaguard.sqlite3 data/novaguard.sqlite3\n"
+        "cp backups/restore-check/data/*.json data/ 2>/dev/null || true\n"
+        "cp backups/restore-check/.update_state.json . 2>/dev/null || true\n"
+        "cp backups/restore-check/.github_state.json . 2>/dev/null || true\n"
+        "pm2 restart 0 --update-env\n"
+        "pm2 logs 0 --lines 100"
+    )
+    embed = make_embed(
+        "🧭 Backup restore plan",
+        "This does not restore anything automatically. Stop the bot first and run the commands only when you are sure.",
+        color=Palette.INFO if report.get("ok") else Palette.WARNING,
+    )
+    embed.add_field(
+        name="Selected archive",
+        value=f"`{backup['name']}`\nIntegrity: `{backup_integrity_line(report)}`",
+        inline=False,
+    )
+    embed.add_field(name="Commands", value=f"```bash\n{command_block[:920]}\n```", inline=False)
+    embed.add_field(name="Notes", value=backup_errors_text(report), inline=False)
+    brand_footer(embed, "Manual restore plan")
     return embed
 
 
@@ -491,12 +612,37 @@ class Setup(commands.Cog):
         report = await asyncio.to_thread(inspect_backup, latest["path"]) if latest else None
         await respond(interaction, backup_status_embed(latest, report), ephemeral=True)
 
+    @backup.command(name="remote", description="Show Google Drive/off-site backup upload status")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_remote(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        latest = latest_backup()
+        status = await asyncio.to_thread(remote_backup_status, latest["name"] if latest else None)
+        await respond(interaction, backup_remote_embed(status), ephemeral=True)
+
     @backup.command(name="list", description="List the newest backup archives")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_list(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
         backups = await asyncio.to_thread(list_backups, 8)
         await respond(interaction, backup_list_embed(backups), ephemeral=True)
+
+    @backup.command(name="inspect", description="Inspect a local backup archive without restoring it")
+    @app_commands.describe(name="Backup archive name; leave empty for the latest backup")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_inspect(self, interaction: discord.Interaction, name: str | None = None):
+        await defer_interaction(interaction, ephemeral=True)
+        backup = await asyncio.to_thread(find_backup, name)
+        if not backup:
+            embed = make_embed(
+                "Backup not found",
+                "No matching local backup archive exists. Use `/backup list` to see available archives.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Backup inspect")
+            return await respond(interaction, embed, ephemeral=True)
+        report = await asyncio.to_thread(inspect_backup, backup["path"])
+        await respond(interaction, backup_inspect_embed(backup, report), ephemeral=True)
 
     @backup.command(name="test", description="Extract and verify the newest backup without touching live data")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -507,6 +653,23 @@ class Setup(commands.Cog):
             return await respond(interaction, backup_status_embed(None), ephemeral=True)
         report = await asyncio.to_thread(inspect_backup, latest["path"], extract=True)
         await respond(interaction, backup_test_embed(latest, report), ephemeral=True)
+
+    @backup.command(name="restore", description="Show a safe manual restore plan for a backup")
+    @app_commands.describe(name="Backup archive name; leave empty for the latest backup")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def backup_restore(self, interaction: discord.Interaction, name: str | None = None):
+        await defer_interaction(interaction, ephemeral=True)
+        backup = await asyncio.to_thread(find_backup, name)
+        if not backup:
+            embed = make_embed(
+                "Backup not found",
+                "No matching local backup archive exists. Use `/backup list` to see available archives.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Backup restore plan")
+            return await respond(interaction, embed, ephemeral=True)
+        report = await asyncio.to_thread(inspect_backup, backup["path"])
+        await respond(interaction, backup_restore_plan_embed(backup, report), ephemeral=True)
 
     @config.command(name="reset", description="Reset NovaGuard setup/config for this server")
     @app_commands.describe(confirm="Set to true to confirm the reset")

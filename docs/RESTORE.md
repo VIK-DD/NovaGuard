@@ -1,6 +1,6 @@
 # NovaGuard Backup And Restore
 
-NovaGuard creates local zip backups in `backups/` at 07:00 and 19:00 Europe/Chisinau by default, and keeps the newest archives on disk. These backups include the SQLite database, JSON feature state, update state and GitHub watcher state.
+NovaGuard creates local zip backups in `backups/` at 07:00 and 19:00 Europe/Chisinau by default, and keeps the newest archives on disk. These backups include the SQLite database, remaining JSON feature state, update state and GitHub watcher state. Voice report state lives in SQLite.
 
 ## Check Backup Health
 
@@ -8,29 +8,33 @@ Use these in Discord before touching files:
 
 ```text
 /backup status
+/backup remote
+/backup inspect
 /backup list
 /backup test
+/backup restore
 ```
 
 `/backup test` extracts the newest archive into `backups/restore-check/` only. It does not overwrite live data.
+`/backup restore` prints a safe manual restore plan only; it does not overwrite live data.
 
 ## Manual Restore
 
 Only do this when the bot is stopped and you know which archive you want.
 
 ```bash
-cd ~/pythonbot
-pm2 stop pythonbot
+cd ~/NovaGuard
+pm2 stop 0
 mkdir -p data-before-restore
 cp -a data/. data-before-restore/
 rm -rf backups/restore-check
-unzip backups/novaguard-backup-YYYYMMDD-HHMMSS-auto.zip -d backups/restore-check
+unzip backups/novaguard-full-YYYY-MM-DD_HH-MM-SS-auto.zip -d backups/restore-check
 cp backups/restore-check/data/novaguard.sqlite3 data/novaguard.sqlite3
 cp backups/restore-check/data/*.json data/ 2>/dev/null || true
 cp backups/restore-check/.update_state.json . 2>/dev/null || true
 cp backups/restore-check/.github_state.json . 2>/dev/null || true
-pm2 restart pythonbot --update-env
-pm2 logs pythonbot --lines 100
+pm2 restart 0 --update-env
+pm2 logs 0 --lines 100
 ```
 
 If something looks wrong, stop the bot again and restore `data-before-restore/`.
@@ -77,6 +81,8 @@ In Discord, run:
 ```text
 /backup create
 /backup status
+/backup remote
+/backup inspect
 /backup test
 ```
 

@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import BASE_DIR, GITHUB_STATE_FILE, UPDATE_STATE_FILE
-from .database import DB_PATH, init_database
+from .database import DB_PATH, VOICE_STORE_FILES, init_database, load_voice_store
 from .storage import DATA_DIR
 
 BACKUP_DIR = BASE_DIR / "backups"
@@ -381,6 +381,8 @@ def create_backup(label="auto"):
     safe_label = "".join(char for char in label.lower() if char.isalnum() or char in {"-", "_"}) or "backup"
     backup_path = BACKUP_DIR / f"novaguard-full-{backup_timestamp(created_at)}-{safe_label}.zip"
     temp_db = BACKUP_DIR / f".novaguard-backup-{backup_timestamp(created_at)}.sqlite3"
+    for store in VOICE_STORE_FILES:
+        load_voice_store(store, {})
 
     included = []
     try:
@@ -390,7 +392,10 @@ def create_backup(label="auto"):
                 zip_file.write(temp_db, "data/novaguard.sqlite3")
                 included.append("data/novaguard.sqlite3")
 
+            legacy_voice_files = {path.resolve() for path in VOICE_STORE_FILES.values()}
             for json_file in sorted(DATA_DIR.glob("*.json")) if DATA_DIR.exists() else []:
+                if json_file.resolve() in legacy_voice_files:
+                    continue
                 archive_name = f"data/{json_file.name}"
                 zip_file.write(json_file, archive_name)
                 included.append(archive_name)

@@ -11,7 +11,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.storage import get_guild_settings, load_data, save_data, update_guild_settings
+from core.database import load_voice_store, save_voice_store
+from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, respond
 
@@ -463,11 +464,11 @@ class VoiceReports(commands.Cog):
         self._send_task: asyncio.Task | None = None
 
     async def cog_load(self):
-        raw_sessions = await asyncio.to_thread(load_data, "voice_sessions", {})
+        raw_sessions = await asyncio.to_thread(load_voice_store, "voice_sessions", {})
         self.sessions = raw_sessions if isinstance(raw_sessions, dict) else {}
-        raw_pending = await asyncio.to_thread(load_data, VOICE_PENDING_REPORTS_STORE, {})
+        raw_pending = await asyncio.to_thread(load_voice_store, VOICE_PENDING_REPORTS_STORE, {})
         self.pending_reports = raw_pending if isinstance(raw_pending, dict) else {}
-        raw_history = await asyncio.to_thread(load_data, VOICE_REPORT_HISTORY_STORE, {})
+        raw_history = await asyncio.to_thread(load_voice_store, VOICE_REPORT_HISTORY_STORE, {})
         self.report_history = raw_history if isinstance(raw_history, dict) else {}
         self._restore_task = asyncio.create_task(self._restore_sessions_after_ready())
         self._retry_task = asyncio.create_task(self._retry_pending_reports())
@@ -484,17 +485,17 @@ class VoiceReports(commands.Cog):
     async def _persist(self):
         async with self._persist_lock:
             snapshot = copy.deepcopy(self.sessions)
-            await asyncio.to_thread(save_data, "voice_sessions", snapshot)
+            await asyncio.to_thread(save_voice_store, "voice_sessions", snapshot)
 
     async def _persist_pending(self):
         async with self._pending_lock:
             snapshot = copy.deepcopy(self.pending_reports)
-            await asyncio.to_thread(save_data, VOICE_PENDING_REPORTS_STORE, snapshot)
+            await asyncio.to_thread(save_voice_store, VOICE_PENDING_REPORTS_STORE, snapshot)
 
     async def _persist_history(self):
         async with self._history_lock:
             snapshot = copy.deepcopy(self.report_history)
-            await asyncio.to_thread(save_data, VOICE_REPORT_HISTORY_STORE, snapshot)
+            await asyncio.to_thread(save_voice_store, VOICE_REPORT_HISTORY_STORE, snapshot)
 
     def _pending_guild_reports(self, guild_id: int) -> dict[str, dict]:
         return self.pending_reports.setdefault(str(guild_id), {})
@@ -916,7 +917,7 @@ class VoiceReports(commands.Cog):
         if len(chunks) > 5:
             embed.add_field(
                 name="More reports",
-                value="Only the first entries fit in Discord's embed limit. Retry or inspect `data/voice_pending_reports.json` for the full list.",
+                value="Only the first entries fit in Discord's embed limit. Use `/backup inspect` or the SQLite backup for deeper recovery work.",
                 inline=False,
             )
         brand_footer(embed, "Voice session reports")

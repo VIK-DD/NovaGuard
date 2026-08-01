@@ -224,8 +224,9 @@ NovaGuard is designed so admins can do most setup **inside Discord**, not by edi
 4. Use `/config view` to review everything
 5. Use `/doctor` to verify health, permissions and integrations
 
-The bot stores server config in `data/novaguard.sqlite3`, while keeping optional
-`.env` fallback values for your main server.
+The bot stores server config, levels, economy and voice report state in
+`data/novaguard.sqlite3`, while keeping optional `.env` fallback values for your
+main server.
 
 ---
 
@@ -233,7 +234,7 @@ The bot stores server config in `data/novaguard.sqlite3`, while keeping optional
 
 | Category | Highlights |
 | --- | --- |
-| Setup | `/setup`, `/config view`, `/config export`, `/config backup`, `/config reset` |
+| Setup | `/setup`, `/config view`, `/config export`, `/config backup`, `/config reset`, `/backup status`, `/backup remote`, `/backup inspect`, `/backup restore` |
 | Voice reports | `/voice set`, `/voice status`, `/voice test`, `/voice off` |
 | System | `/ping`, `/uptime`, `/status`, `/botinfo`, `/doctor`, `/help`, `/latest`, `/updates`, `/forceupdate` |
 | Developer | `/github`, `/repo`, `/dev`, `/health`, `/commits`, `/release`, `/ghwatch` |
@@ -295,11 +296,12 @@ That means the bot can tell your server what changed without you writing a manua
 - `/doctor` checks latency, event-loop lag, config, permissions, JSON state, SQLite status and GitHub reachability.
 - `/status` gives members a clean public summary without exposing admin details.
 - Admin error digests can be routed into a private channel.
+- SQLite stores server setup/config, levels, economy, dashboard state and voice report state.
 - Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 full archives in `backups/`.
 - If `BACKUP_REMOTE_DEST` is configured, each verified full backup is uploaded off-site under `full/YYYY/MM/`.
 - The same scheduled run exports every Discord server under `guilds/<server-name>-<guild-id>/YYYY/MM/`.
 - `/config backup` and `/backup create` create immediate manual archives.
-- `/backup status`, `/backup list` and `/backup test` verify that the latest archive can be opened, parsed, restored into a safe temporary folder and, when configured, copied off-site with per-server export status.
+- `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` verify local archives, off-site uploads, archive contents and safe manual restore steps.
 - See `docs/RESTORE.md` before restoring live data or setting up an off-site copy.
 
 If the Raspberry Pi stalls briefly, NovaGuard can detect that and report it without falling apart.

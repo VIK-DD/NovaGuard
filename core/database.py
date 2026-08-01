@@ -17,6 +17,11 @@ DB_PATH = DATA_DIR / "novaguard.sqlite3"
 LEGACY_SETTINGS_FILE = DATA_DIR / "settings.json"
 LEGACY_LEVELS_FILE = DATA_DIR / "levels.json"
 LEGACY_ECONOMY_FILE = DATA_DIR / "economy.json"
+VOICE_STORE_FILES = {
+    "voice_sessions": DATA_DIR / "voice_sessions.json",
+    "voice_pending_reports": DATA_DIR / "voice_pending_reports.json",
+    "voice_report_history": DATA_DIR / "voice_report_history.json",
+}
 
 _LOCK = threading.RLock()
 _INITIALIZED = False
@@ -97,6 +102,15 @@ def init_database():
                 trophies TEXT NOT NULL DEFAULT '[]',
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (guild_id, user_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_state (
+                store TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -233,6 +247,72 @@ def load_legacy_json(path):
     except json.JSONDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def save_voice_store(store, data):
+    init_database()
+    now = utc_now()
+    with _LOCK, connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO voice_state (store, payload, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(store) DO UPDATE SET
+                payload = excluded.payload,
+                updated_at = excluded.updated_at
+            """,
+            (str(store), encode_value(data if data is not None else {}), now),
+        )
+        connection.commit()
+
+
+def migrate_legacy_voice_json(store):
+    init_database()
+    marker = f"legacy_{store}_json_migrated"
+    if get_metadata(marker):
+        return
+
+    legacy_path = VOICE_STORE_FILES.get(store)
+    if legacy_path and legacy_path.exists():
+        legacy = load_legacy_json(legacy_path)
+        if legacy:
+            save_voice_store(store, legacy)
+    set_metadata(marker, True)
+
+
+def load_voice_store(store, default=None):
+    migrate_legacy_voice_json(store)
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT payload FROM voice_state WHERE store = ?", (str(store),)).fetchone()
+    if row is None:
+        return {} if default is None else default
+    value = decode_value(row["payload"])
+    return value if value is not None else ({} if default is None else default)
+
+
+def get_voice_store_status():
+    init_database()
+    with _LOCK, connect() as connection:
+        rows = connection.execute("SELECT store, payload, updated_at FROM voice_state ORDER BY store").fetchall()
+
+    status = {}
+    for row in rows:
+        payload = decode_value(row["payload"])
+        if isinstance(payload, dict):
+            guild_count = len(payload)
+            item_count = sum(len(value) if isinstance(value, (dict, list)) else 1 for value in payload.values())
+        elif isinstance(payload, list):
+            guild_count = 0
+            item_count = len(payload)
+        else:
+            guild_count = 0
+            item_count = 0
+        status[row["store"]] = {
+            "updated_at": row["updated_at"],
+            "guild_count": guild_count,
+            "item_count": item_count,
+        }
+    return status
 
 
 def save_levels_data(data):

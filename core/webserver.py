@@ -47,9 +47,9 @@ from aiohttp import web
 
 from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_VERSION, github_config
-from .database import connect, load_levels_data
+from .database import connect, load_levels_data, load_voice_store
 from .levels_settings import resolve_levels, validate_levels
-from .storage import get_guild_settings, load_data, update_guild_settings
+from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
 
@@ -1087,8 +1087,8 @@ class WebServer:
                 }
             )
 
-        voice_history = await asyncio.to_thread(load_data, "voice_report_history", {})
-        voice_pending = await asyncio.to_thread(load_data, "voice_pending_reports", {})
+        voice_history = await asyncio.to_thread(load_voice_store, "voice_report_history", {})
+        voice_pending = await asyncio.to_thread(load_voice_store, "voice_pending_reports", {})
         guild_voice_history = voice_history.get(str(guild.id), []) if isinstance(voice_history, dict) else []
         guild_voice_pending = voice_pending.get(str(guild.id), {}) if isinstance(voice_pending, dict) else {}
         voice_reports = []

@@ -38,7 +38,7 @@ from core.config import (
     stream_status_interval_seconds,
     stream_statuses,
 )
-from core.database import DB_PATH, load_economy_data, load_levels_data
+from core.database import DB_PATH, load_economy_data, load_levels_data, load_voice_store
 from core.error_digest import send_error_digest
 from core.github_api import github_api
 from core.maintenance import (
@@ -610,9 +610,9 @@ class System(commands.Cog):
             lambda: {
                 "levels": load_levels_data(),
                 "economy": load_economy_data(),
-                "voice_sessions": load_data("voice_sessions", {}),
-                "voice_pending_reports": load_data("voice_pending_reports", {}),
-                "voice_report_history": load_data("voice_report_history", {}),
+                "voice_sessions": load_voice_store("voice_sessions", {}),
+                "voice_pending_reports": load_voice_store("voice_pending_reports", {}),
+                "voice_report_history": load_voice_store("voice_report_history", {}),
                 "giveaways": load_data("giveaways", []),
                 "reminders": load_data("reminders", []),
                 "warns": load_data("warns", {}),
