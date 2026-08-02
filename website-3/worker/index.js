@@ -275,6 +275,22 @@ async function serveAsset(request, env) {
   });
 }
 
+async function timingSafeEqual(a, b) {
+  // HMAC both values with a throwaway key, then compare the fixed-length MACs
+  // byte by byte. A plain string compare returns at the first differing
+  // character, which leaks how much of the password prefix was right.
+  const key = await crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const [macA, macB] = await Promise.all([
+    crypto.subtle.sign("HMAC", key, encoder.encode(a)),
+    crypto.subtle.sign("HMAC", key, encoder.encode(b)),
+  ]);
+  const bytesA = new Uint8Array(macA);
+  const bytesB = new Uint8Array(macB);
+  let diff = 0;
+  for (let i = 0; i < bytesA.length; i++) diff |= bytesA[i] ^ bytesB[i];
+  return diff === 0;
+}
+
 async function handleLogin(request, env) {
   if (!env.AUTH_PASSWORD) {
     return new Response("AUTH_PASSWORD is not configured.", { status: 500 });
@@ -288,7 +304,7 @@ async function handleLogin(request, env) {
   const password = String(form.get("password") || "");
   const next = safeNext(String(form.get("next") || "/dashboard/"));
 
-  if (password !== env.AUTH_PASSWORD) {
+  if (!(await timingSafeEqual(password, env.AUTH_PASSWORD))) {
     const url = new URL("/login/", request.url);
     url.searchParams.set("next", next);
     url.searchParams.set("error", "1");
