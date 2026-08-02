@@ -1,11 +1,13 @@
 """💰 Economy category — coins, daily streaks, work, gambling and a trophy shop."""
 
+import asyncio
 import random
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from core.database import load_economy_data, save_economy_data
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -47,12 +49,9 @@ def parse_saved_datetime(value):
     return parsed.astimezone(UTC)
 
 
-def load_economy():
-    return load_economy_data()
-
-
-def save_economy(data):
-    save_economy_data(data)
+# How often the in-memory wallets are written back to SQLite as a safety net.
+# Mutating commands also flush right away, so this only covers missed paths.
+ECONOMY_FLUSH_SECONDS = 60
 
 
 def get_wallet(data, guild_id, user_id):
@@ -70,15 +69,57 @@ class Economy(commands.Cog):
     COLOR = Palette.GOLD
     DESCRIPTION = "Coins, daily streaks, work, gambling, slots and a trophy shop."
 
+    # Wallets live in memory and flush to SQLite, mirroring the Levels cog.
+    # The old pattern (load full table -> mutate -> delete + rewrite full table,
+    # synchronously on the event loop, for every command) blocked the loop on a
+    # Raspberry Pi and rewrote every guild's wallets on each /daily. Command
+    # handlers mutate self.data without awaiting in between, so read-modify-write
+    # races cannot interleave; the flush snapshots under a lock.
     def __init__(self, bot):
         self.bot = bot
+        self.data = load_economy_data()
+        self.dirty = False
+        self.flush_lock = asyncio.Lock()
+
+    async def cog_load(self):
+        self.flush_loop.start()
+
+    async def cog_unload(self):
+        self.flush_loop.cancel()
+        await self.flush()
+
+    async def flush(self):
+        async with self.flush_lock:
+            if not self.dirty:
+                return
+            snapshot = deepcopy(self.data)
+            self.dirty = False
+            try:
+                await asyncio.to_thread(save_economy_data, snapshot)
+            except Exception:
+                self.dirty = True
+                raise
+
+    async def _save(self):
+        self.dirty = True
+        try:
+            await self.flush()
+        except Exception as error:
+            print(f"Economy flush skipped due to storage issue: {error!r}")
+
+    @tasks.loop(seconds=ECONOMY_FLUSH_SECONDS)
+    async def flush_loop(self):
+        try:
+            await self.flush()
+        except Exception as error:
+            print(f"Economy flush skipped due to storage issue: {error!r}")
 
     @app_commands.command(name="balance", description="Check a wallet")
     @app_commands.describe(member="Whose wallet? (defaults to you)")
     @app_commands.guild_only()
     async def balance(self, interaction: discord.Interaction, member: discord.Member | None = None):
         target = member or interaction.user
-        data = load_economy()
+        data = self.data
         wallet = get_wallet(data, interaction.guild_id, target.id)
 
         embed = make_embed(
@@ -98,7 +139,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="daily", description="Claim your daily coins (streak bonus!)")
     @app_commands.guild_only()
     async def daily(self, interaction: discord.Interaction):
-        data = load_economy()
+        data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         now = datetime.now(UTC)
 
@@ -121,7 +162,7 @@ class Economy(commands.Cog):
         wallet["coins"] += reward
         wallet["daily_streak"] = streak
         wallet["last_daily"] = now.isoformat()
-        save_economy(data)
+        await self._save()
 
         embed = make_embed(
             "🎁 Daily reward claimed!",
@@ -134,7 +175,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="work", description="Do an honest hour of work for coins")
     @app_commands.guild_only()
     async def work(self, interaction: discord.Interaction):
-        data = load_economy()
+        data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         now = datetime.now(UTC)
 
@@ -153,7 +194,7 @@ class Economy(commands.Cog):
         earnings = random.randint(50, 150)
         wallet["coins"] += earnings
         wallet["last_work"] = now.isoformat()
-        save_economy(data)
+        await self._save()
 
         embed = make_embed(
             "🔨 Shift complete",
@@ -177,7 +218,7 @@ class Economy(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        data = load_economy()
+        data = self.data
         sender = get_wallet(data, interaction.guild_id, interaction.user.id)
         if sender["coins"] < amount:
             embed = make_embed("💸 Not enough coins", f"You only have {CURRENCY} {humanize_number(sender['coins'])}.", color=Palette.DANGER)
@@ -187,7 +228,7 @@ class Economy(commands.Cog):
         receiver = get_wallet(data, interaction.guild_id, member.id)
         sender["coins"] -= amount
         receiver["coins"] += amount
-        save_economy(data)
+        await self._save()
 
         embed = make_embed(
             "💸 Payment sent",
@@ -205,7 +246,7 @@ class Economy(commands.Cog):
         interaction: discord.Interaction,
         amount: app_commands.Range[int, 10, 1000000],
     ):
-        data = load_economy()
+        data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         if wallet["coins"] < amount:
             embed = make_embed("💸 Not enough coins", f"You only have {CURRENCY} {humanize_number(wallet['coins'])}.", color=Palette.DANGER)
@@ -218,7 +259,7 @@ class Economy(commands.Cog):
         else:
             wallet["coins"] -= amount
             embed = make_embed("💀 You lost…", f"# -{CURRENCY} {humanize_number(amount)}", color=Palette.DANGER)
-        save_economy(data)
+        await self._save()
 
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins • The house always wins")
         await respond(interaction, embed)
@@ -231,7 +272,7 @@ class Economy(commands.Cog):
         interaction: discord.Interaction,
         amount: app_commands.Range[int, 10, 100000],
     ):
-        data = load_economy()
+        data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         if wallet["coins"] < amount:
             embed = make_embed("💸 Not enough coins", f"You only have {CURRENCY} {humanize_number(wallet['coins'])}.", color=Palette.DANGER)
@@ -254,7 +295,7 @@ class Economy(commands.Cog):
             title, color = "🎰 No luck…", Palette.DANGER
 
         wallet["coins"] += net
-        save_economy(data)
+        await self._save()
 
         sign = "+" if net >= 0 else "-"
         embed = make_embed(title, f"# [ {display} ]\n\n**{sign}{CURRENCY} {humanize_number(abs(net))}**", color=color)
@@ -264,7 +305,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="richest", description="Top 10 richest members")
     @app_commands.guild_only()
     async def richest(self, interaction: discord.Interaction):
-        data = load_economy()
+        data = self.data
         guild_data = data.get(str(interaction.guild_id), {})
         ordered = sorted(guild_data.items(), key=lambda kv: kv[1].get("coins", 0), reverse=True)
         ordered = [(uid, wallet) for uid, wallet in ordered if wallet.get("coins")]
@@ -306,7 +347,7 @@ class Economy(commands.Cog):
     @app_commands.guild_only()
     async def buy(self, interaction: discord.Interaction, item: app_commands.Choice[str]):
         label, price = TROPHIES[item.value]
-        data = load_economy()
+        data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
 
         if item.value in wallet.get("trophies", []):
@@ -322,7 +363,7 @@ class Economy(commands.Cog):
 
         wallet["coins"] -= price
         wallet.setdefault("trophies", []).append(item.value)
-        save_economy(data)
+        await self._save()
 
         embed = make_embed("🛍️ Purchase complete!", f"{label} is now on your shelf. Flex responsibly. 😎", color=Palette.SUCCESS)
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins")
