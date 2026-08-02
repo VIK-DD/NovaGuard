@@ -1,8 +1,12 @@
 """Regression tests for the shared AutoMod defaults."""
 
+import os
+import sys
 import unittest
 
-from core.automod_settings import AUTOMOD_DEFAULTS, resolve_automod
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.automod_settings import AUTOMOD_DEFAULTS, resolve_automod  # noqa: E402
 
 
 class ResolveAutomodTests(unittest.TestCase):
