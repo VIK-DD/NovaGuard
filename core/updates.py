@@ -273,41 +273,56 @@ def any_changed(changed_files, *file_names):
     return any(file_name in changed_files for file_name in file_names)
 
 
+def _markers_present(files_data, file_name, markers):
+    source = files_data.get(file_name, "")
+    return all(marker in source for marker in markers)
+
+
+def feature_just_arrived(old_files, new_files, file_name, *markers):
+    """True only when ``markers`` appear in ``file_name`` for the first time.
+
+    A highlight has to describe what *this* release added. Testing the markers
+    against the new snapshot alone re-announced a feature every time its file
+    was touched again: build #39 told everyone that automatic backups and the
+    SQLite migration had just landed, months after they actually shipped.
+    """
+    return _markers_present(new_files, file_name, markers) and not _markers_present(
+        old_files, file_name, markers
+    )
+
+
 def summarize_feature_highlights(old_files, new_files):
-    changed_files = changed_file_names(old_files, new_files)
     highlights = []
 
-    if any_changed(changed_files, "cogs/setup.py", "core/guild_config.py"):
-        setup_source = new_files.get("cogs/setup.py", "")
-        if "ChannelSelect" in setup_source and "config = app_commands.Group" in setup_source:
-            highlights.append("🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools")
+    if feature_just_arrived(
+        old_files, new_files, "cogs/setup.py", "ChannelSelect", "config = app_commands.Group"
+    ):
+        highlights.append("🚀 Setup wizard upgraded with select menus, channel picker and `/config` admin tools")
 
-    if any_changed(changed_files, "core/database.py", "core/storage.py"):
-        database_source = new_files.get("core/database.py", "")
-        if "novaguard.sqlite3" in database_source and "level_records" in database_source:
-            highlights.append("🗄️ SQLite now powers server config, XP levels and economy wallets")
+    if feature_just_arrived(
+        old_files, new_files, "core/database.py", "novaguard.sqlite3", "level_records"
+    ):
+        highlights.append("🗄️ SQLite now powers server config, XP levels and economy wallets")
 
-    if any_changed(changed_files, "core/backups.py", "cogs/system.py"):
-        if "create_backup" in new_files.get("core/backups.py", ""):
-            highlights.append("🧳 Automatic backups added with manual `/config backup` support")
+    if feature_just_arrived(old_files, new_files, "core/backups.py", "create_backup"):
+        highlights.append("🧳 Automatic backups added with manual `/config backup` support")
 
-    if any_changed(changed_files, "cogs/system.py", "core/error_digest.py"):
-        system_source = new_files.get("cogs/system.py", "")
-        if "HIGH_LAG_ALERT_MS" in system_source and "loop_lag_snapshot" in system_source:
-            highlights.append("🩺 Health monitoring now tracks event-loop lag and sends admin alerts")
+    if feature_just_arrived(
+        old_files, new_files, "cogs/system.py", "HIGH_LAG_ALERT_MS", "loop_lag_snapshot"
+    ):
+        highlights.append("🩺 Health monitoring now tracks event-loop lag and sends admin alerts")
 
-    if any_changed(changed_files, "cogs/levels.py", "cogs/economy.py", "core/database.py"):
-        if "load_levels_data" in new_files.get("core/database.py", "") and "load_economy_data" in new_files.get("core/database.py", ""):
-            highlights.append("🏆 Levels and economy migrate safely from JSON into SQLite")
+    if feature_just_arrived(
+        old_files, new_files, "core/database.py", "load_levels_data", "load_economy_data"
+    ):
+        highlights.append("🏆 Levels and economy migrate safely from JSON into SQLite")
 
-    if any_changed(changed_files, "core/updates.py"):
-        highlights.append("📜 Update embeds now produce cleaner professional release notes")
+    if feature_just_arrived(old_files, new_files, "cogs/developer.py", "resolve_configured_channels"):
+        highlights.append("🐙 GitHub/update feeds now respect per-server setup channels")
 
-    if any_changed(changed_files, "cogs/developer.py", "core/updates.py", "core/guild_config.py"):
-        developer_source = new_files.get("cogs/developer.py", "")
-        if "resolve_configured_channels" in developer_source:
-            highlights.append("🐙 GitHub/update feeds now respect per-server setup channels")
-
+    # There is deliberately no highlight for core/updates.py itself: it had no
+    # marker at all, so it fired on every single edit to this file and said the
+    # release notes had just been improved no matter what actually changed.
     return highlights[:6]
 
 
