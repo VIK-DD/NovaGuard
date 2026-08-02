@@ -29,6 +29,7 @@ REPORT_SEND_TIMEOUT_SECONDS = 15
 REPORT_HISTORY_LIMIT = 10
 REPORT_SEND_SPACING_SECONDS = 3
 REPORT_SEND_QUEUE_MAXSIZE = 50
+PERSIST_DEBOUNCE_SECONDS = 2
 
 
 def now_utc():
@@ -462,6 +463,7 @@ class VoiceReports(commands.Cog):
         self._restore_task: asyncio.Task | None = None
         self._retry_task: asyncio.Task | None = None
         self._send_task: asyncio.Task | None = None
+        self._persist_task: asyncio.Task | None = None
 
     async def cog_load(self):
         raw_sessions = await asyncio.to_thread(load_voice_store, "voice_sessions", {})
@@ -481,11 +483,34 @@ class VoiceReports(commands.Cog):
             self._retry_task.cancel()
         if self._send_task and not self._send_task.done():
             self._send_task.cancel()
+        if self._persist_task and not self._persist_task.done():
+            self._persist_task.cancel()
+        # Write whatever a pending debounce would have written.
+        await self._persist()
 
     async def _persist(self):
         async with self._persist_lock:
             snapshot = copy.deepcopy(self.sessions)
             await asyncio.to_thread(save_voice_store, "voice_sessions", snapshot)
+
+    def _schedule_persist(self):
+        """Debounced persist for the join/leave hot path.
+
+        A busy evening produces bursts of voice state updates; writing the full
+        session store on every single one wears the Pi's SD card for no gain.
+        Session boundaries (report queued, session dropped, tracking toggled)
+        still persist immediately via _persist().
+        """
+        if self._persist_task and not self._persist_task.done():
+            return
+        self._persist_task = asyncio.create_task(self._persist_later())
+
+    async def _persist_later(self):
+        await asyncio.sleep(PERSIST_DEBOUNCE_SECONDS)
+        try:
+            await self._persist()
+        except Exception as error:
+            print(f"Voice session persist failed: {error!r}")
 
     async def _persist_pending(self):
         async with self._pending_lock:
@@ -603,7 +628,7 @@ class VoiceReports(commands.Cog):
             session = await self._begin_channel_session(channel, [member], now_utc())
         else:
             record_member_join(session, member.id, member.display_name, now_utc())
-        await self._persist()
+        self._schedule_persist()
 
     async def _handle_leave(self, member: discord.Member, channel):
         guild_sessions = self._guild_sessions(member.guild.id)
@@ -614,7 +639,7 @@ class VoiceReports(commands.Cog):
         ended_at = now_utc()
         record_member_leave(session, member.id, ended_at)
         if active_member_ids(session):
-            await self._persist()
+            self._schedule_persist()
             return
 
         if session_duration(session, ended_at) < MIN_SESSION_SECONDS:
