@@ -4,9 +4,9 @@ Deliberately free of discord.py and aiohttp, so the cog and the web API can both
 depend on it and the rules stay unit-testable on their own. `core/guild_config.py`
 cannot host this: it resolves channels through a live bot object.
 
-One home for the defaults, on purpose. `AUTOMOD_DEFAULTS` is declared twice —
-`cogs/automod.py` and `core/webserver.py` — and the two can drift apart without
-anything noticing.
+One home for the defaults, on purpose — the same reason `AUTOMOD_DEFAULTS`
+now lives only in `core/automod_settings.py`: duplicated defaults drift apart
+without anything noticing.
 
 Ids are handled as strings throughout. Discord ids exceed 2^53, so letting them
 reach JSON as numbers would corrupt them in a browser; the storage layer accepts

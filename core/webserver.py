@@ -45,6 +45,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
+from .automod_settings import resolve_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_VERSION, github_config
 from .database import connect, load_levels_data, load_voice_store
@@ -141,7 +142,6 @@ CHANNEL_KEYS = (
     "error_log_channel",
 )
 ROLE_KEYS = ("autorole", "ticket_staff_role")
-AUTOMOD_DEFAULTS = {"invites": True, "spam": True, "badwords": []}
 MAX_BADWORDS = 100
 MAX_BADWORD_LENGTH = 40
 DASHBOARD_XP_PER_LEVEL = 118
@@ -995,8 +995,7 @@ class WebServer:
 
     async def _config_payload(self, guild):
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
-        automod = dict(AUTOMOD_DEFAULTS)
-        automod.update(settings.get("automod") or {})
+        automod = resolve_automod(settings)
 
         return {
             "guild": {
@@ -1126,8 +1125,7 @@ class WebServer:
             latest=update_state.get("latest"),
         )
 
-        automod = dict(AUTOMOD_DEFAULTS)
-        automod.update(settings.get("automod") or {})
+        automod = resolve_automod(settings)
         modules = [
             {"key": "welcome", "label": "Welcome", "enabled": bool(settings.get("welcome_channel"))},
             {"key": "logs", "label": "Server logs", "enabled": bool(settings.get("log_channel"))},
@@ -1410,8 +1408,7 @@ class WebServer:
                 errors.append("automod: must be an object")
             else:
                 current = await asyncio.to_thread(get_guild_settings, guild.id)
-                automod = dict(AUTOMOD_DEFAULTS)
-                automod.update(current.get("automod") or {})
+                automod = resolve_automod(current)
                 for flag in ("invites", "spam"):
                     if flag in raw:
                         automod[flag] = bool(raw[flag])

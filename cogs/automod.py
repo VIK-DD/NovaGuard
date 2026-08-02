@@ -9,12 +9,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.automod_settings import resolve_automod
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
 
 INVITE_PATTERN = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
-AUTOMOD_DEFAULTS = {"invites": True, "spam": True, "badwords": []}
 SPAM_MESSAGES = 6
 SPAM_WINDOW_SECONDS = 6
 SPAM_TIMEOUT_SECONDS = 60
@@ -22,9 +22,7 @@ SPAM_BUCKET_TTL_SECONDS = 300
 
 
 def get_automod_config(guild_id):
-    config = dict(AUTOMOD_DEFAULTS)
-    config.update(get_guild_settings(guild_id).get("automod", {}))
-    return config
+    return resolve_automod(get_guild_settings(guild_id))
 
 
 def save_automod_config(guild_id, config):

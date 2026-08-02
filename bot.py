@@ -207,9 +207,16 @@ def create_bot():
         else:
             print(f"Command error: {original!r}")
             current_bot = interaction.client
-            current_bot.loop.create_task(
+            # Keep a strong reference: a bare create_task can be garbage
+            # collected mid-flight and the digest silently never sends.
+            digest_tasks = getattr(current_bot, "_digest_tasks", None)
+            if digest_tasks is None:
+                digest_tasks = current_bot._digest_tasks = set()
+            task = asyncio.create_task(
                 send_error_digest(current_bot, "Slash Command Error", original, interaction=interaction)
             )
+            digest_tasks.add(task)
+            task.add_done_callback(digest_tasks.discard)
             embed = make_embed(
                 "💥 Something hiccuped",
                 "An unexpected error occurred. The team has been notified — please try again in a moment.",
