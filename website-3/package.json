@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "astro dev",
-    "build": "astro check && astro build && node scripts/soft-launch.mjs",
-    "build:launch": "astro check && astro build",
+    "sync-updates": "node scripts/sync-updates-archive.mjs",
+    "build": "node scripts/sync-updates-archive.mjs && astro check && astro build && node scripts/soft-launch.mjs",
+    "build:launch": "node scripts/sync-updates-archive.mjs && astro check && astro build",
     "preview": "astro preview",
     "deploy": "npm run build && wrangler deploy",
     "test": "vitest run",
