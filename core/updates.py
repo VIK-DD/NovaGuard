@@ -25,6 +25,70 @@ from .utils import build_link_view, parse_github_datetime
 COMMAND_DECORATORS = {"command", "hybrid_command", "context_menu"}
 STATUS_VARIABLE_NAMES = {"stream_statuses", "DEFAULT_STREAM_STATUSES"}
 
+# Human names for the tracked source files, so release notes can say
+# "improvements to voice session reports" instead of "`cogs/voice.py`".
+# Wording only — nothing here feeds the fingerprint or announce logic.
+FRIENDLY_AREAS = {
+    "bot.py": "the bot's core",
+    ".env.example": "the setup guides",
+    "SETUP.md": "the setup guides",
+    "cogs/ai.py": "the /ask AI assistant",
+    "cogs/automod.py": "the AutoMod filters",
+    "cogs/developer.py": "the GitHub cards & watcher",
+    "cogs/economy.py": "coins & economy games",
+    "cogs/fun.py": "fun & games",
+    "cogs/giveaways.py": "giveaways",
+    "cogs/levels.py": "levels & XP",
+    "cogs/logs.py": "server logs",
+    "cogs/moderation.py": "the moderation tools",
+    "cogs/roles.py": "role panels",
+    "cogs/setup.py": "the setup wizard",
+    "cogs/system.py": "the health & status tools",
+    "cogs/tickets.py": "support tickets",
+    "cogs/utility.py": "the utility tools",
+    "cogs/voice.py": "voice session reports",
+    "cogs/welcome.py": "welcome messages",
+    "core/automod_settings.py": "the AutoMod filters",
+    "core/backups.py": "the backup system",
+    "core/config.py": "the bot's configuration",
+    "core/database.py": "data storage",
+    "core/error_digest.py": "error alerts",
+    "core/github_api.py": "the GitHub connection",
+    "core/guild_config.py": "server configuration",
+    "core/levels_settings.py": "levels & XP",
+    "core/maintenance.py": "maintenance mode",
+    "core/storage.py": "data storage",
+    "core/theme.py": "the visual style",
+    "core/update_feed.py": "the public update feed",
+    "core/updates.py": "update announcements",
+    "core/utils.py": "the bot's core",
+    "core/webserver.py": "the web dashboard",
+}
+
+
+def humanize_areas(file_names, limit=4):
+    """Turn tracked file paths into a readable list of feature areas."""
+    areas = []
+    for file_name in sorted(file_names):
+        label = FRIENDLY_AREAS.get(file_name)
+        if label is None:
+            stem = file_name.rsplit("/", 1)[-1]
+            label = stem.removesuffix(".py").replace("_", " ")
+        if label not in areas:
+            areas.append(label)
+
+    shown = areas[:limit]
+    if not shown:
+        return "the bot"
+    if len(shown) == 1:
+        text = shown[0]
+    else:
+        text = ", ".join(shown[:-1]) + f" and {shown[-1]}"
+    hidden = len(areas) - len(shown)
+    if hidden > 0:
+        text += f" (+{hidden} more)"
+    return text
+
 
 def tracked_files():
     files = [BASE_DIR / "bot.py", BASE_DIR / ".env.example", BASE_DIR / "SETUP.md"]
@@ -283,27 +347,34 @@ def summarize_changes(old_files, new_files, has_history=False):
         summary.append("🛠️ Added global maintenance mode with DND presence and graceful command blocking")
 
     if added_commands:
-        summary.append("Added commands: " + format_command_list(added_commands, limit=12))
+        summary.append("New commands ready to try: " + format_command_list(added_commands, limit=12))
     if removed_commands:
-        summary.append("Removed commands: " + format_command_list(removed_commands))
+        summary.append("Retired commands: " + format_command_list(removed_commands))
     if changed_commands:
-        summary.append("Updated command behavior: " + format_command_list(changed_commands, limit=12))
+        summary.append(
+            "Improved commands — same names, smoother behavior: "
+            + format_command_list(changed_commands, limit=12)
+        )
 
     if extract_all_stream_texts(old_files) != extract_all_stream_texts(new_files):
-        summary.append("Refreshed rotating streaming statuses")
+        summary.append("Fresh rotating status messages under the bot's name")
 
     other_changed_files = []
     internal_changed_files = []
     for file_name in sorted(changed_files):
         if file_name.endswith(".py"):
-            internal_changed_files.append(f"`{file_name}`")
+            internal_changed_files.append(file_name)
         else:
-            other_changed_files.append(f"`{file_name}`")
+            other_changed_files.append(file_name)
 
     if other_changed_files:
-        summary.append("Updated project files: " + ", ".join(other_changed_files[:6]))
+        summary.append(
+            "Refreshed docs and examples: " + ", ".join(f"`{name}`" for name in other_changed_files[:6])
+        )
     if internal_changed_files and (not summary or not (added_commands or removed_commands or changed_commands)):
-        summary.append("Internal engine improvements: " + ", ".join(internal_changed_files[:6]))
+        summary.append(
+            "Behind-the-scenes improvements to " + humanize_areas(internal_changed_files)
+        )
 
     added_lines = 0
     removed_lines = 0
@@ -318,7 +389,7 @@ def summarize_changes(old_files, new_files, has_history=False):
         removed_lines += sum(1 for line in diff_lines if line.startswith("- "))
 
     if not summary:
-        summary.append("General internal improvements and cleanup")
+        summary.append("Small polish behind the scenes — everything works the same, just a little better")
 
     return summary, added_lines, removed_lines
 
