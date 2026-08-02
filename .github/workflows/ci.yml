@@ -34,8 +34,10 @@ jobs:
       - name: Import smoke test
         run: python -c "import bot; print('cogs', len(bot.COGS))"
 
-      - name: Dashboard API smoke test
-        run: python tests/test_webserver.py
+      - name: Test suite
+        run: |
+          python -m pip install pytest
+          python -m pytest tests -q
 
       - name: Security audit (pip-audit)
         run: |
@@ -61,3 +63,31 @@ jobs:
 
       - name: Import smoke test (locked versions)
         run: python -c "import bot; print('cogs', len(bot.COGS))"
+
+  website:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website-3
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website-3/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test suite
+        run: npx vitest run
+
+      # build:launch runs the archive sync first; it fails soft when the bot
+      # API is unreachable from CI, so the committed archive is what gets baked.
+      - name: Type-check and build
+        run: npm run build:launch
