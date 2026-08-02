@@ -1,4 +1,7 @@
-const SESSION_COOKIE = "ng_session";
+// Deliberately NOT "ng_session": that name belongs to the bot API's login
+// cookie on api.novaguard.fun. They live on different hosts today, but a
+// future `Domain=.novaguard.fun` on either would make them clobber each other.
+const SESSION_COOKIE = "ng_gate";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
 const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
@@ -112,7 +115,6 @@ function isPublicPath(pathname) {
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname.startsWith("/coming-soon/") ||
-    pathname.startsWith("/_next/") ||
     pathname.startsWith("/_astro/") ||
     pathname.startsWith("/assets/") ||
     pathname === "/favicon.png" ||
