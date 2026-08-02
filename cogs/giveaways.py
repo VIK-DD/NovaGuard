@@ -30,6 +30,12 @@ async def save_giveaways_async(entries):
     await asyncio.to_thread(save_giveaways, entries)
 
 
+# Serialises every load -> mutate -> save on the giveaways file. Without it two
+# concurrent button clicks (or a click racing the watcher) both read the same
+# list and the second save silently drops the first one's change.
+_STORE_LOCK = asyncio.Lock()
+
+
 def build_giveaway_embed(entry, ended=False, winner_ids=None):
     ends_at = datetime.fromisoformat(entry["ends_at"])
     entrants = entry.get("entrants", [])
@@ -85,19 +91,22 @@ class GiveawayButton(
             for uid in [u for u, t in self._cooldown.items() if now - t > 60]:
                 self._cooldown.pop(uid, None)
 
-        entries = await load_giveaways_async()
-        entry = next((g for g in entries if g["message_id"] == self.message_id), None)
-        if entry is None or entry.get("ended"):
-            return await interaction.response.send_message("This giveaway has already ended!", ephemeral=True)
+        note = None
+        async with _STORE_LOCK:
+            entries = await load_giveaways_async()
+            entry = next((g for g in entries if g["message_id"] == self.message_id), None)
+            if entry is not None and not entry.get("ended"):
+                user_id = interaction.user.id
+                if user_id in entry["entrants"]:
+                    entry["entrants"].remove(user_id)
+                    note = "You left the giveaway. 😢"
+                else:
+                    entry["entrants"].append(user_id)
+                    note = "You're in — good luck! 🍀"
+                await save_giveaways_async(entries)
 
-        user_id = interaction.user.id
-        if user_id in entry["entrants"]:
-            entry["entrants"].remove(user_id)
-            note = "You left the giveaway. 😢"
-        else:
-            entry["entrants"].append(user_id)
-            note = "You're in — good luck! 🍀"
-        await save_giveaways_async(entries)
+        if entry is None or entry.get("ended") or note is None:
+            return await interaction.response.send_message("This giveaway has already ended!", ephemeral=True)
 
         await interaction.response.edit_message(embed=build_giveaway_embed(entry))
         await interaction.followup.send(note, ephemeral=True)
@@ -127,20 +136,29 @@ class Giveaways(commands.Cog):
     async def cog_unload(self):
         self.giveaway_watcher.cancel()
 
-    async def finish_giveaway(self, entry, entries):
-        entry["ended"] = True
-        entrants = entry.get("entrants", [])
-        count = min(entry["winners"], len(entrants))
-        winner_ids = random.sample(entrants, count) if count else []
-        entry["winner_ids"] = winner_ids
-        await save_giveaways_async(entries)
+    async def finish_giveaway(self, message_id):
+        """End a giveaway by message id. Draws and saves under the store lock
+        (re-reading the file so a racing button click is never lost), then does
+        the slow Discord sends outside it. Returns the entry, or None when no
+        active giveaway matched."""
+        async with _STORE_LOCK:
+            entries = await load_giveaways_async()
+            entry = next((g for g in entries if str(g["message_id"]) == str(message_id)), None)
+            if entry is None or entry.get("ended"):
+                return None
+            entry["ended"] = True
+            entrants = entry.get("entrants", [])
+            count = min(entry["winners"], len(entrants))
+            winner_ids = random.sample(entrants, count) if count else []
+            entry["winner_ids"] = winner_ids
+            await save_giveaways_async(entries)
 
         channel = self.bot.get_channel(entry["channel_id"])
         if channel is None:
             try:
                 channel = await self.bot.fetch_channel(entry["channel_id"])
             except discord.HTTPException:
-                return winner_ids
+                return entry
 
         try:
             message = await channel.fetch_message(entry["message_id"])
@@ -162,15 +180,24 @@ class Giveaways(commands.Cog):
             await channel.send(embed=embed)
         except discord.HTTPException:
             pass
-        return winner_ids
+        return entry
 
     @tasks.loop(seconds=30)
     async def giveaway_watcher(self):
         entries = await load_giveaways_async()
         now = datetime.now(UTC)
         for entry in entries:
-            if not entry.get("ended") and datetime.fromisoformat(entry["ends_at"]) <= now:
-                await self.finish_giveaway(entry, entries)
+            if entry.get("ended"):
+                continue
+            # A corrupt ends_at must not raise: an unhandled exception stops a
+            # tasks.loop for good and no giveaway would ever be drawn again.
+            try:
+                due = datetime.fromisoformat(entry["ends_at"]) <= now
+            except (KeyError, TypeError, ValueError):
+                print(f"Giveaway entry #{entry.get('message_id')} has an invalid ends_at; skipping")
+                continue
+            if due:
+                await self.finish_giveaway(entry.get("message_id"))
 
     @giveaway_watcher.before_loop
     async def before_giveaway_watcher(self):
@@ -222,9 +249,10 @@ class Giveaways(commands.Cog):
         view.add_item(GiveawayButton(message.id))
         await message.edit(view=view)
 
-        entries = await load_giveaways_async()
-        entries.append(entry)
-        await save_giveaways_async(entries)
+        async with _STORE_LOCK:
+            entries = await load_giveaways_async()
+            entries.append(entry)
+            await save_giveaways_async(entries)
 
     async def _giveaway_choices(self, interaction, current, ended):
         entries = await load_giveaways_async()
@@ -254,15 +282,13 @@ class Giveaways(commands.Cog):
     @app_commands.describe(message_id="Pick the giveaway to end")
     @app_commands.autocomplete(message_id=active_giveaway_autocomplete)
     async def giveaway_end(self, interaction: discord.Interaction, message_id: str):
-        entries = await load_giveaways_async()
-        entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
-        if entry is None or entry.get("ended"):
+        await defer_interaction(interaction, ephemeral=True)
+        entry = await self.finish_giveaway(message_id.strip())
+        if entry is None:
             embed = make_embed("🔍 Not found", "No active giveaway with that message ID.", color=Palette.WARNING)
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        await defer_interaction(interaction, ephemeral=True)
-        await self.finish_giveaway(entry, entries)
         embed = make_embed("🏁 Giveaway ended", f"**{entry['prize']}** was drawn early.", color=Palette.SUCCESS)
         brand_footer(embed)
         await respond(interaction, embed, ephemeral=True)
@@ -271,23 +297,31 @@ class Giveaways(commands.Cog):
     @app_commands.describe(message_id="Pick the ended giveaway")
     @app_commands.autocomplete(message_id=ended_giveaway_autocomplete)
     async def giveaway_reroll(self, interaction: discord.Interaction, message_id: str):
-        entries = await load_giveaways_async()
-        entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
-        if entry is None or not entry.get("ended"):
+        async with _STORE_LOCK:
+            entries = await load_giveaways_async()
+            entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
+            if entry is None or not entry.get("ended"):
+                entry = None
+                entrants = []
+            else:
+                entrants = entry.get("entrants", [])
+                if entrants:
+                    count = min(entry["winners"], len(entrants))
+                    winner_ids = random.sample(entrants, count)
+                    entry["winner_ids"] = winner_ids
+                    await save_giveaways_async(entries)
+
+        if entry is None:
             embed = make_embed("🔍 Not found", "No **ended** giveaway with that message ID.", color=Palette.WARNING)
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        entrants = entry.get("entrants", [])
         if not entrants:
             embed = make_embed("😢 No entries", "Nobody entered that giveaway — nothing to reroll.", color=Palette.WARNING)
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        count = min(entry["winners"], len(entrants))
-        winner_ids = random.sample(entrants, count)
-        entry["winner_ids"] = winner_ids
-        await save_giveaways_async(entries)
+        count = len(winner_ids)
 
         mentions = ", ".join(f"<@{uid}>" for uid in winner_ids)
         embed = make_embed("🎲 Reroll!", f"New winner{'s' if count > 1 else ''} for **{entry['prize']}**: {mentions} 🎊", color=Palette.GOLD)

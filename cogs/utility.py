@@ -25,6 +25,10 @@ TIMESTAMP_STYLES = [
     ("F", "Long date/time"),
     ("R", "Relative"),
 ]
+# Serialises load -> mutate -> save on the reminders file so concurrent
+# /remind calls (or a cancel racing the delivery loop) cannot drop entries.
+_REMINDERS_LOCK = asyncio.Lock()
+
 BADGE_LABELS = {
     "staff": "Discord Staff",
     "partner": "Partner",
@@ -129,9 +133,10 @@ class ReminderCancelSelect(discord.ui.Select):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("These reminders are not yours!", ephemeral=True)
 
-        reminders = await asyncio.to_thread(load_data, "reminders", [])
-        reminders = [item for item in reminders if item["id"] != self.values[0]]
-        await asyncio.to_thread(save_data, "reminders", reminders)
+        async with _REMINDERS_LOCK:
+            reminders = await asyncio.to_thread(load_data, "reminders", [])
+            reminders = [item for item in reminders if item.get("id") != self.values[0]]
+            await asyncio.to_thread(save_data, "reminders", reminders)
 
         embed = make_embed("🗑️ Reminder cancelled", "That reminder will not fire anymore.", color=Palette.SUCCESS)
         brand_footer(embed)
@@ -156,17 +161,27 @@ class Utility(commands.Cog):
 
     @tasks.loop(seconds=20)
     async def reminder_loop(self):
-        reminders = await asyncio.to_thread(load_data, "reminders", [])
-        if not reminders:
-            return
+        async with _REMINDERS_LOCK:
+            reminders = await asyncio.to_thread(load_data, "reminders", [])
+            if not reminders:
+                return
 
-        now = datetime.now(UTC)
-        due = [item for item in reminders if datetime.fromisoformat(item["due_at"]) <= now]
-        if not due:
-            return
+            now = datetime.now(UTC)
+            due = []
+            remaining = []
+            for item in reminders:
+                # A corrupt due_at must not raise: an unhandled exception stops
+                # a tasks.loop for good and no reminder would ever fire again.
+                try:
+                    is_due = datetime.fromisoformat(item["due_at"]) <= now
+                except (KeyError, TypeError, ValueError):
+                    print(f"Reminder {item.get('id')} has an invalid due_at; dropping it")
+                    continue
+                (due if is_due else remaining).append(item)
 
-        remaining = [item for item in reminders if item not in due]
-        await asyncio.to_thread(save_data, "reminders", remaining)
+            if not due and len(remaining) == len(reminders):
+                return
+            await asyncio.to_thread(save_data, "reminders", remaining)
 
         for item in due:
             channel = self.bot.get_channel(item["channel_id"])
@@ -229,17 +244,18 @@ class Utility(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         due_at = datetime.now(UTC) + delta
-        reminders = await asyncio.to_thread(load_data, "reminders", [])
-        reminders.append(
-            {
-                "id": uuid.uuid4().hex[:8],
-                "user_id": interaction.user.id,
-                "channel_id": interaction.channel_id,
-                "message": message,
-                "due_at": due_at.isoformat(),
-            }
-        )
-        await asyncio.to_thread(save_data, "reminders", reminders)
+        async with _REMINDERS_LOCK:
+            reminders = await asyncio.to_thread(load_data, "reminders", [])
+            reminders.append(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "user_id": interaction.user.id,
+                    "channel_id": interaction.channel_id,
+                    "message": message,
+                    "due_at": due_at.isoformat(),
+                }
+            )
+            await asyncio.to_thread(save_data, "reminders", reminders)
 
         embed = make_embed(
             "⏰ Reminder set!",
