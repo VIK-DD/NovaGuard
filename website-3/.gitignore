@@ -6,3 +6,4 @@ out/
 .env
 .wrangler/
 .dev.vars*
+tsconfig.tsbuildinfo
