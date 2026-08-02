@@ -696,13 +696,22 @@ class VoiceReports(commands.Cog):
     async def _retry_pending_reports(self):
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
-            for guild_id, reports in list(self.pending_reports.items()):
-                guild = self.bot.get_guild(int(guild_id))
-                if guild is None:
-                    continue
-                for report_id in list(reports):
-                    await self._send_pending_report(guild, report_id)
-                    await asyncio.sleep(1)
+            # One bad report (corrupt guild key, unexpected error) must not kill
+            # the retry task for the rest of the process lifetime.
+            try:
+                for guild_id, reports in list(self.pending_reports.items()):
+                    if not str(guild_id).isdigit():
+                        continue
+                    guild = self.bot.get_guild(int(guild_id))
+                    if guild is None:
+                        continue
+                    for report_id in list(reports):
+                        await self._send_pending_report(guild, report_id)
+                        await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                print(f"Voice report retry sweep failed, will retry: {error!r}")
             await asyncio.sleep(REPORT_RETRY_SECONDS)
 
     async def _send_queued_reports(self):
@@ -714,6 +723,11 @@ class VoiceReports(commands.Cog):
                 if guild is not None:
                     await self._send_pending_report(guild, report_id)
                     await asyncio.sleep(REPORT_SEND_SPACING_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                # The report stays in pending_reports; the retry sweep owns it now.
+                print(f"Voice report send failed for #{report_id}, left for retry: {error!r}")
             finally:
                 self._send_queue.task_done()
 
