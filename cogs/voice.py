@@ -966,6 +966,7 @@ class VoiceReports(commands.Cog):
 
     @voice.command(name="test", description="Send a preview voice session report to the configured channel")
     async def voice_test(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True, thinking=True)
         report_channel = await self._report_channel(interaction.guild)
         if report_channel is None:
             embed = make_embed(

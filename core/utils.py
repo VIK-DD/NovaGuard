@@ -120,7 +120,12 @@ async def respond(interaction, embed=None, view=None, ephemeral=False, content=N
     try:
         if interaction.response.is_done():
             return await interaction.followup.send(embed=embed, ephemeral=ephemeral, wait=True, **extra)
-        return await interaction.response.send_message(embed=embed, ephemeral=ephemeral, **extra)
+        callback = await interaction.response.send_message(embed=embed, ephemeral=ephemeral, **extra)
+        # discord.py 2.6 returns an InteractionCallbackResponse here, not a
+        # Message. Callers that need the sent message (poll, giveaway) expect a
+        # Message or None and fall back to interaction.original_response().
+        resource = getattr(callback, "resource", None)
+        return resource if isinstance(resource, discord.Message) else None
     except discord.NotFound as error:
         if getattr(error, "code", None) == 10062:
             print("Interaction response skipped: Discord expired the interaction token.")

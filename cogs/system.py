@@ -1159,7 +1159,8 @@ class System(commands.Cog):
 
     @app_commands.command(name="latest", description="The latest automatic bot changelog")
     async def latest(self, interaction: discord.Interaction):
-        await defer_interaction(interaction)
+        # The empty-state reply is ephemeral, so check before deferring — an
+        # early public defer would freeze the response as public.
         update_state = updates.load_update_state()
         latest_update = update_state.get("latest")
         if not latest_update:
@@ -1167,6 +1168,7 @@ class System(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
+        await defer_interaction(interaction)
         await respond(
             interaction,
             updates.build_code_update_embed(latest_update),
@@ -1175,7 +1177,6 @@ class System(commands.Cog):
 
     @app_commands.command(name="updates", description="Browse the full bot release timeline")
     async def updates_command(self, interaction: discord.Interaction):
-        await defer_interaction(interaction)
         update_state = updates.load_update_state()
         update_history = updates.normalize_update_history(update_state.get("history", []))
         if not update_history:
@@ -1183,6 +1184,7 @@ class System(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
+        await defer_interaction(interaction)
         embeds = updates.build_update_history_embeds(update_history)
         view = Paginator(embeds, interaction.user.id) if len(embeds) > 1 else None
         await respond(interaction, embeds[0], view=view)

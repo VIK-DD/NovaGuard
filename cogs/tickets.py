@@ -6,7 +6,7 @@ from discord.ext import commands
 
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import respond
+from core.utils import defer_interaction, respond
 
 
 class TicketOpenButton(
@@ -151,6 +151,7 @@ class Tickets(commands.Cog):
         channel: discord.TextChannel,
         staff_role: discord.Role,
     ):
+        await defer_interaction(interaction, ephemeral=True)
         update_guild_settings(interaction.guild_id, ticket_staff_role=staff_role.id)
 
         embed = make_embed(

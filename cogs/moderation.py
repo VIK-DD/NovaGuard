@@ -83,6 +83,7 @@ class Moderation(commands.Cog):
         if not can_act_on(interaction.user, member):
             return await hierarchy_error(interaction)
 
+        await defer_interaction(interaction)
         await member.kick(reason=f"{interaction.user} • {reason or 'No reason given'}")
         embed = make_embed(
             "🥾 Member kicked",
@@ -103,6 +104,7 @@ class Moderation(commands.Cog):
         if not can_act_on(interaction.user, member):
             return await hierarchy_error(interaction)
 
+        await defer_interaction(interaction)
         await interaction.guild.ban(member, reason=f"{interaction.user} • {reason or 'No reason given'}")
         embed = make_embed(
             "🔨 Member banned",
@@ -136,6 +138,7 @@ class Moderation(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         delta = min(delta, timedelta(days=28))
+        await defer_interaction(interaction)
         await member.timeout(delta, reason=f"{interaction.user} • {reason or 'No reason given'}")
 
         until = datetime.now(UTC) + delta
@@ -155,6 +158,7 @@ class Moderation(commands.Cog):
     @app_commands.checks.bot_has_permissions(moderate_members=True)
     @app_commands.guild_only()
     async def untimeout(self, interaction: discord.Interaction, member: discord.Member):
+        await defer_interaction(interaction)
         await member.timeout(None, reason=f"Timeout removed by {interaction.user}")
         embed = make_embed("🔊 Timeout removed", f"**{member.display_name}** can speak again.", color=Palette.SUCCESS)
         brand_footer(embed, f"By {interaction.user.display_name}")
@@ -167,6 +171,7 @@ class Moderation(commands.Cog):
     @app_commands.checks.bot_has_permissions(manage_channels=True)
     @app_commands.guild_only()
     async def slowmode(self, interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 21600]):
+        await defer_interaction(interaction)
         await interaction.channel.edit(slowmode_delay=seconds)
         if seconds:
             embed = make_embed("🐢 Slowmode on", f"One message every `{seconds}s` in this channel.", color=Palette.WARNING)
@@ -187,6 +192,7 @@ class Moderation(commands.Cog):
         title: str,
         message: str,
     ):
+        await defer_interaction(interaction, ephemeral=True)
         embed = make_embed(f"📣 {title}", message.replace("\\n", "\n"), color=Palette.PRIMARY)
         brand_footer(embed, f"Announcement by {interaction.user.display_name}")
         try:

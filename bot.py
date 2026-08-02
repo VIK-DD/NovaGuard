@@ -73,21 +73,12 @@ discord_client_logger.addFilter(DiscordNoiseFilter())
 
 
 class NovaCommandTree(app_commands.CommandTree):
-    async def _acknowledge_command(self, interaction: discord.Interaction) -> bool:
-        """Claim each slash interaction before command work can exceed Discord's deadline."""
-        try:
-            await interaction.response.defer(thinking=True)
-        except discord.NotFound as error:
-            if getattr(error, "code", None) == 10062:
-                print("Interaction expired before the bot could acknowledge it.")
-                return False
-            raise
-        except discord.HTTPException as error:
-            # Keep the command callable when Discord has a brief REST hiccup; its
-            # normal response path still gets a chance to reach the user.
-            print(f"Interaction acknowledgement delayed by Discord API: {error!r}")
-        return True
-
+    # NOTE: this check must NOT defer the interaction. A defer freezes the
+    # response's ephemerality — Discord ignores the ephemeral flag on the
+    # followup that resolves a public "thinking" state — so a global
+    # non-ephemeral defer silently made every ephemeral reply public
+    # (/doctor, /backup status, /maintenance, ...). Commands that need time
+    # call core.utils.defer_interaction themselves with the right visibility.
     async def interaction_check(self, interaction: discord.Interaction, /):
         command = interaction.command
         if command is None:
@@ -125,7 +116,7 @@ class NovaCommandTree(app_commands.CommandTree):
                 pass
             return False
 
-        return await self._acknowledge_command(interaction)
+        return True
 
 
 class DevBot(commands.Bot):
