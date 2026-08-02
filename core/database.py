@@ -343,6 +343,39 @@ def save_levels_data(data):
         connection.commit()
 
 
+def upsert_level_records(rows):
+    """Write only the given ``(guild_id, user_id, record)`` rows.
+
+    The hot path: the Levels cog tracks which members changed and flushes just
+    those rows, instead of rewriting every guild's records via save_levels_data
+    (which stays for migration and full rebuilds).
+    """
+    init_database()
+    now = utc_now()
+    with _LOCK, connect() as connection:
+        for guild_id, user_id, record in rows:
+            connection.execute(
+                """
+                INSERT INTO level_records (guild_id, user_id, xp, messages, last_gain, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                    xp = excluded.xp,
+                    messages = excluded.messages,
+                    last_gain = excluded.last_gain,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(guild_id),
+                    str(user_id),
+                    int(record.get("xp", 0) or 0),
+                    int(record.get("messages", 0) or 0),
+                    record.get("last_gain"),
+                    now,
+                ),
+            )
+        connection.commit()
+
+
 def migrate_legacy_levels_json():
     init_database()
     if get_metadata("legacy_levels_json_migrated"):
@@ -400,6 +433,44 @@ def save_economy_data(data):
                         now,
                     ),
                 )
+        connection.commit()
+
+
+def upsert_economy_wallets(rows):
+    """Write only the given ``(guild_id, user_id, wallet)`` rows.
+
+    Same shape as upsert_level_records: the Economy cog flushes changed wallets
+    row by row; save_economy_data stays for migration and full rebuilds.
+    """
+    init_database()
+    now = utc_now()
+    with _LOCK, connect() as connection:
+        for guild_id, user_id, wallet in rows:
+            connection.execute(
+                """
+                INSERT INTO economy_wallets (
+                    guild_id, user_id, coins, daily_streak, last_daily, last_work, trophies, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                    coins = excluded.coins,
+                    daily_streak = excluded.daily_streak,
+                    last_daily = excluded.last_daily,
+                    last_work = excluded.last_work,
+                    trophies = excluded.trophies,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(guild_id),
+                    str(user_id),
+                    int(wallet.get("coins", 0) or 0),
+                    int(wallet.get("daily_streak", 0) or 0),
+                    wallet.get("last_daily"),
+                    wallet.get("last_work"),
+                    encode_value(wallet.get("trophies", [])),
+                    now,
+                ),
+            )
         connection.commit()
 
 

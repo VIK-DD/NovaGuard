@@ -12,7 +12,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core.backups import create_backup
-from core.database import load_levels_data, save_levels_data
+from core.database import load_levels_data, save_levels_data, upsert_level_records
 from core.levels_settings import resolve_levels
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -252,7 +252,11 @@ class Levels(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = load_levels_data()
-        self.dirty = False
+        # Which (guild_id, user_id) records changed since the last flush. The
+        # flush writes just those rows; a full-table rewrite happens only when
+        # full_rewrite is set (backfill replaces a whole guild's records).
+        self.dirty_keys: set[tuple[str, str]] = set()
+        self.full_rewrite = False
         self.flush_lock = asyncio.Lock()
 
     async def cog_load(self):
@@ -264,16 +268,34 @@ class Levels(commands.Cog):
 
     async def flush(self):
         async with self.flush_lock:
-            if not self.dirty:
+            if self.full_rewrite:
+                snapshot = deepcopy(self.data)
+                keys = set(self.dirty_keys)
+                self.full_rewrite = False
+                self.dirty_keys.clear()
+                try:
+                    await asyncio.to_thread(save_levels_data, snapshot)
+                except Exception:
+                    self.full_rewrite = True
+                    self.dirty_keys |= keys
+                    raise
                 return
 
-            snapshot = deepcopy(self.data)
-            self.dirty = False
-
+            if not self.dirty_keys:
+                return
+            keys = set(self.dirty_keys)
+            self.dirty_keys.clear()
+            rows = [
+                (guild_id, user_id, deepcopy(self.data.get(guild_id, {}).get(user_id)))
+                for guild_id, user_id in keys
+                if self.data.get(guild_id, {}).get(user_id) is not None
+            ]
+            if not rows:
+                return
             try:
-                await asyncio.to_thread(save_levels_data, snapshot)
+                await asyncio.to_thread(upsert_level_records, rows)
             except Exception:
-                self.dirty = True
+                self.dirty_keys |= keys
                 raise
 
     @tasks.loop(seconds=XP_FLUSH_SECONDS)
@@ -421,7 +443,9 @@ class Levels(commands.Cog):
 
         backup = await self.bot.loop.run_in_executor(None, create_backup, "levels-backfill")
         replace_backfill_for_guild(guild_data, message_counts, xp_by_user)
-        self.dirty = True
+        # A backfill deletes records, which row upserts cannot express — force
+        # the full-table rewrite path for this flush.
+        self.full_rewrite = True
         await self.flush()
 
         embed = build_backfill_embed(
@@ -487,7 +511,7 @@ class Levels(commands.Cog):
         guild_data = self.data.setdefault(str(message.guild.id), {})
         record = guild_data.setdefault(str(message.author.id), {"xp": 0, "messages": 0, "last_gain": None})
         record["messages"] = record.get("messages", 0) + 1
-        self.dirty = True
+        self.dirty_keys.add((str(message.guild.id), str(message.author.id)))
 
         now = datetime.now(UTC)
         last_gain = parse_saved_datetime(record.get("last_gain"))
