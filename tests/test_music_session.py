@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -68,7 +69,7 @@ class MusicSessionTests(unittest.TestCase):
 
     def test_touch_resets_the_idle_clock(self):
         session = MusicSession("1")
-        session._idle_since = 0.0
+        session._idle_since = time.monotonic() - 1200
         self.assertGreater(session.idle_seconds(), 1000)
         session.touch()
         self.assertLess(session.idle_seconds(), 1)
