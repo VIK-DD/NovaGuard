@@ -51,6 +51,18 @@ class MusicErrorMessageTests(unittest.TestCase):
         self.assertIn("requires login", notice)
         self.assertIn("OAuth", notice)
 
+    def test_lavalink_node_status_accepts_connected_name_or_text(self):
+        class Status:
+            name = "CONNECTED"
+
+            def __str__(self):
+                return "NodeStatus.CONNECTED"
+
+        class Node:
+            status = Status()
+
+        self.assertTrue(lavalink_music_cog._node_is_connected(Node()))
+
 
 class SessionCapTests(unittest.TestCase):
     def setUp(self):

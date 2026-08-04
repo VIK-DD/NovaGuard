@@ -22,6 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional backend dependency
 IDLE_CHECK_SECONDS = 30
 MAX_PLAYLIST_TRACKS = 100
 MAX_QUEUE_LENGTH = 500
+NODE_CONNECT_WAIT_SECONDS = 20
 
 
 def _track_title(track):
@@ -84,6 +85,13 @@ def _track_failure_notice(payload):
     if "video is unavailable" in details:
         return "YouTube says this video is unavailable from the Lavalink node; moving to the next item."
     return "Lavalink reported a track error; moving to the next item."
+
+
+def _node_is_connected(node):
+    status = getattr(node, "status", None)
+    status_name = str(getattr(status, "name", "") or "").lower()
+    status_text = str(status or "").lower()
+    return status_name == "connected" or status_text.endswith("connected")
 
 
 class LavalinkQueue:
@@ -266,17 +274,29 @@ class LavalinkMusic(commands.Cog):
             return False
         try:
             node = wavelink.Pool.get_node()
-            if str(getattr(node.status, "name", "")).lower() == "connected":
+            if _node_is_connected(node):
                 self._node_error = None
                 return True
         except Exception:
             pass
 
         try:
-            node = wavelink.Node(uri=lavalink_uri(), password=lavalink_password(), retries=3)
+            node = wavelink.Node(uri=lavalink_uri(), password=lavalink_password(), retries=10)
             await wavelink.Pool.connect(nodes=[node], client=self.bot, cache_capacity=100)
-            self._node_error = None
-            return True
+            for _ in range(NODE_CONNECT_WAIT_SECONDS * 2):
+                try:
+                    candidate = wavelink.Pool.get_node()
+                except Exception:
+                    candidate = node
+                if _node_is_connected(candidate):
+                    self._node_error = None
+                    return True
+                await asyncio.sleep(0.5)
+            self._node_error = (
+                f"Lavalink at `{lavalink_uri()}` did not reach CONNECTED state yet. "
+                "Wait until Lavalink says ready, then try again."
+            )
+            return False
         except Exception as error:
             self._node_error = str(error) or repr(error)
             print(f"Lavalink node unavailable: {error!r}")
