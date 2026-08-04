@@ -6,6 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.music_card import card_fields
+from core.music_queue import LoopMode
 from core.music_session import IDLE_DISCONNECT_SECONDS, SessionRegistry
 from core.music_sources import extract, format_duration, refresh_stream_url
 from core.theme import Palette, brand_footer, make_embed
@@ -41,6 +43,92 @@ def nothing_playing_embed(detail="There is nothing playing here."):
     return embed
 
 
+class MusicControls(discord.ui.View):
+    """The player buttons."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    async def _session_or_refusal(self, interaction):
+        session = self.cog.sessions.get(interaction.guild_id)
+        if session is None or session.voice_client is None:
+            await interaction.response.send_message("This session has ended.", ephemeral=True)
+            return None
+        if not in_voice_with_bot(interaction, session):
+            await interaction.response.send_message(
+                "You have to be in my voice channel to control playback.", ephemeral=True
+            )
+            return None
+        return session
+
+    @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.secondary, custom_id="ng:music:toggle")
+    async def toggle(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        client = session.voice_client
+        if client.is_paused():
+            client.resume()
+        else:
+            client.pause()
+        session.touch()
+        await self.cog.refresh_card(session, interaction)
+
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary, custom_id="ng:music:skip")
+    async def skip_button(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        session.voice_client.stop()
+        session.touch()
+        await interaction.response.defer()
+
+    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, custom_id="ng:music:stop")
+    async def stop_button(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        await self.cog._teardown(session)
+        await interaction.response.edit_message(content="Playback stopped.", embed=None, view=None)
+
+    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, custom_id="ng:music:shuffle")
+    async def shuffle_button(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        session.queue.shuffle()
+        session.touch()
+        await self.cog.refresh_card(session, interaction)
+
+    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary, custom_id="ng:music:loop")
+    async def loop_button(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        session.queue.set_loop(LoopMode.next_mode(session.queue.loop))
+        session.touch()
+        await self.cog.refresh_card(session, interaction)
+
+    @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.secondary, row=1, custom_id="ng:music:voldown")
+    async def volume_down(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        session.volume = max(0, session.volume - 10)
+        session.touch()
+        await self.cog.refresh_card(session, interaction)
+
+    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, row=1, custom_id="ng:music:volup")
+    async def volume_up(self, interaction, button):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        session.volume = min(100, session.volume + 10)
+        session.touch()
+        await self.cog.refresh_card(session, interaction)
+
+
 class Music(commands.Cog):
     """Music playback with a queue and a button-driven player."""
 
@@ -62,6 +150,7 @@ class Music(commands.Cog):
     MAX_CONSECUTIVE_SKIPS = 5
 
     async def cog_load(self):
+        self.bot.add_view(MusicControls(self))
         self.idle_watcher.start()
 
     async def cog_unload(self):
@@ -255,18 +344,70 @@ class Music(commands.Cog):
         except discord.HTTPException:
             pass
 
+    def build_card(self, session):
+        import time
+
+        elapsed = int(time.monotonic() - session.started_at) if session.started_at else 0
+        client = session.voice_client
+        fields = card_fields(
+            current=session.queue.current,
+            upcoming=session.queue.upcoming,
+            elapsed=elapsed,
+            volume=session.volume,
+            loop=session.queue.loop,
+            paused=bool(client and client.is_paused()),
+        )
+        embed = make_embed(fields["title"], fields["description"], color=Palette.FUN)
+        current = session.queue.current
+        if current and current.thumbnail:
+            embed.set_thumbnail(url=current.thumbnail)
+        embed.add_field(name="Progress", value=fields["progress"], inline=False)
+        embed.add_field(name="Next up", value=fields["next_up"], inline=False)
+        brand_footer(embed, fields["footer"])
+        return embed
+
+    async def refresh_card(self, session, interaction=None):
+        """Redraw the card in place. Called on state change only."""
+        embed = self.build_card(session)
+        if interaction is not None:
+            try:
+                await interaction.response.edit_message(embed=embed, view=MusicControls(self))
+            except discord.HTTPException:
+                pass
+            return
+        if session.text_channel_id is None or session.card_message_id is None:
+            return
+        channel = self.bot.get_channel(session.text_channel_id)
+        if channel is None:
+            return
+        try:
+            message = await channel.fetch_message(session.card_message_id)
+            await message.edit(embed=embed, view=MusicControls(self))
+        except discord.HTTPException:
+            pass
+
     async def _announce_track(self, session, track):
-        """Placeholder replaced by the player card in the next task."""
+        """Post a fresh card and remove the previous one."""
         import time
 
         session.started_at = time.monotonic()
-        await self._notify(
-            session, f"Now playing **{track.title}** `{format_duration(track.duration)}`"
-        )
+        channel = self.bot.get_channel(session.text_channel_id) if session.text_channel_id else None
+        if channel is None:
+            return
 
-    async def refresh_card(self, session, interaction=None):
-        """Placeholder replaced by the player card in the next task."""
-        return
+        if session.card_message_id is not None:
+            try:
+                old = await channel.fetch_message(session.card_message_id)
+                await old.delete()
+            except discord.HTTPException:
+                pass
+            session.card_message_id = None
+
+        try:
+            message = await channel.send(embed=self.build_card(session), view=MusicControls(self))
+            session.card_message_id = message.id
+        except discord.HTTPException as error:
+            print(f"Music card could not be posted in guild {session.guild_id}: {error!r}")
 
     @app_commands.command(name="play", description="Play a song from a link or a search")
     @app_commands.describe(query="A YouTube/SoundCloud/Spotify link, or words to search for")
