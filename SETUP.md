@@ -67,7 +67,9 @@ curl -fsSL https://deno.land/install.sh | sh
 python -m pip install -r requirements.txt
 ```
 
-If PM2 cannot see `deno` in PATH, set the absolute runtime path:
+NovaGuard auto-detects the common Deno locations, including
+`/home/ubuntu/.deno/bin/deno`. If your host uses a custom path, set it
+explicitly:
 
 ```env
 MUSIC_YTDLP_JS_RUNTIME=/home/ubuntu/.deno/bin/deno
@@ -78,8 +80,9 @@ The limit exists for CPU, not RAM: YouTube streams are usually copied without
 re-encoding, while SoundCloud has to be transcoded.
 
 Searches prefer YouTube. `MUSIC_ENABLE_SOUNDCLOUD_FALLBACK=true` lets the bot
-try SoundCloud only when YouTube returns nothing. Set it to `false` for
-YouTube-only search quality once cookies are working reliably.
+try SoundCloud when YouTube returns nothing or when a found YouTube result
+cannot resolve a playable stream. Set it to `false` for YouTube-only search
+quality once cookies and EJS are working reliably.
 
 Spotify credentials are optional. Without them a Spotify track link still
 works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes

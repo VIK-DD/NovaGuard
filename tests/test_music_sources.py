@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -173,7 +174,8 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
             os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = self._saved_remote_components
 
     def test_no_cookie_options_are_added_by_default(self):
-        self.assertEqual(ydl_runtime_options(), {})
+        with mock.patch("core.music_sources.detected_deno_path", return_value=None):
+            self.assertEqual(ydl_runtime_options(), {})
 
     def test_cookie_file_is_passed_to_yt_dlp(self):
         os.environ["MUSIC_YTDLP_COOKIES_FILE"] = "~/cookies.txt"
@@ -206,7 +208,15 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
 
     def test_remote_components_are_passed_to_yt_dlp(self):
         os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = "ejs:github|ejs:npm"
-        self.assertEqual(ydl_runtime_options()["remote_components"], ["ejs:github", "ejs:npm"])
+        with mock.patch("core.music_sources.detected_deno_path", return_value=None):
+            self.assertEqual(ydl_runtime_options()["remote_components"], ["ejs:github", "ejs:npm"])
+
+    def test_deno_is_auto_detected_when_runtime_is_not_explicit(self):
+        with mock.patch("core.music_sources.detected_deno_path", return_value="/usr/local/bin/deno"):
+            self.assertEqual(
+                ydl_runtime_options()["js_runtimes"],
+                {"deno": {"path": "/usr/local/bin/deno"}},
+            )
 
 
 class SearchProviderConfigTests(unittest.TestCase):

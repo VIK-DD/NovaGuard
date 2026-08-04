@@ -108,6 +108,19 @@ class EditingTests(unittest.TestCase):
         self.assertEqual(queue.upcoming, [])
         self.assertEqual(queue.current.title, "a")
 
+    def test_replace_current_updates_the_cursor_track(self):
+        queue = MusicQueue()
+        queue.add(track("youtube"))
+        replacement = track("soundcloud")
+        queue.advance()
+
+        self.assertTrue(queue.replace_current(replacement))
+        self.assertIs(queue.current, replacement)
+
+    def test_replace_current_returns_false_when_idle(self):
+        queue = MusicQueue()
+        self.assertFalse(queue.replace_current(track("x")))
+
     def test_shuffle_keeps_every_upcoming_track(self):
         queue = MusicQueue()
         queue.add_many([track(str(i)) for i in range(20)])

@@ -16,6 +16,7 @@ from core.music_sources import (
     format_duration,
     normalise_query,
     refresh_stream_url,
+    soundcloud_fallback_for,
     spotify_credentials_configured,
 )
 from core.theme import Palette, brand_footer, make_embed
@@ -341,8 +342,18 @@ class Music(commands.Cog):
 
             source = await self._audio_source(track, session.volume)
             if source is None:
-                await self._notify(session, f"Skipped **{track.title}** - it could not be played.")
-                continue
+                fallback = await soundcloud_fallback_for(track)
+                if fallback is not None:
+                    fallback_source = await self._audio_source(fallback, session.volume)
+                    if fallback_source is not None:
+                        session.queue.replace_current(fallback)
+                        track = fallback
+                        source = fallback_source
+                    else:
+                        source = None
+                if source is None:
+                    await self._notify(session, f"Skipped **{track.title}** - it could not be played.")
+                    continue
 
             def after_playing(error, session=session):
                 if error:

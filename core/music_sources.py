@@ -120,6 +120,9 @@ import json
 import logging
 import urllib.parse
 import urllib.request
+import shutil
+import time
+from pathlib import Path
 
 from .database import cache_get, cache_put
 from .music_queue import Track
@@ -135,6 +138,39 @@ SEARCH_PROVIDERS = (
     ("ytsearch1:", "youtube"),
     ("scsearch1:", "soundcloud"),
 )
+YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+URL_RESULT_TYPES = {"url", "url_transparent"}
+YOUTUBE_EJS_FAILURE_MARKERS = (
+    "signature solving failed",
+    "n challenge solving failed",
+    "only images are available",
+    "requested format is not available",
+)
+_last_ejs_hint_at = 0.0
+
+
+def _is_youtube_ejs_failure(message):
+    text = (message or "").lower()
+    return "[youtube]" in text and any(marker in text for marker in YOUTUBE_EJS_FAILURE_MARKERS)
+
+
+def _maybe_log_youtube_ejs_hint(message):
+    """Throttle a clear operator hint when yt-dlp cannot solve YouTube formats."""
+    global _last_ejs_hint_at
+    if not _is_youtube_ejs_failure(message):
+        return
+    now = time.monotonic()
+    if now - _last_ejs_hint_at < 300:
+        return
+    _last_ejs_hint_at = now
+    options = ydl_runtime_options()
+    log.warning(
+        "YouTube EJS challenge failed. Deno detected at %s; yt-dlp js_runtimes=%s; "
+        "remote_components=%s. Install/update Deno and `yt-dlp[default]`, then restart PM2.",
+        detected_deno_path() or "not found",
+        options.get("js_runtimes") or "yt-dlp default",
+        options.get("remote_components") or "disabled",
+    )
 
 
 class _YtDlpLogger:
@@ -144,9 +180,11 @@ class _YtDlpLogger:
         log.debug("yt-dlp: %s", message)
 
     def warning(self, message):
+        _maybe_log_youtube_ejs_hint(message)
         log.warning("yt-dlp warning: %s", message)
 
     def error(self, message):
+        _maybe_log_youtube_ejs_hint(message)
         log.warning("yt-dlp error: %s", message)
 
 
@@ -177,6 +215,21 @@ def _parse_js_runtimes(value):
     return runtimes
 
 
+def detected_deno_path():
+    """Find Deno even when PM2 does not inherit the user's shell PATH."""
+    found = shutil.which("deno")
+    if found:
+        return found
+    for candidate in (
+        Path.home() / ".deno" / "bin" / "deno",
+        Path("/home/ubuntu/.deno/bin/deno"),
+        Path("/usr/local/bin/deno"),
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def ydl_runtime_options():
     """Environment-driven yt-dlp options that should be read at call time."""
     options = {}
@@ -193,6 +246,10 @@ def ydl_runtime_options():
         options["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
     if js_runtimes:
         options["js_runtimes"] = _parse_js_runtimes(js_runtimes)
+    else:
+        deno_path = detected_deno_path()
+        if deno_path:
+            options["js_runtimes"] = {"deno": {"path": deno_path}}
     if remote_components:
         options["remote_components"] = _split_env_list(remote_components)
     return options
@@ -228,6 +285,30 @@ YDL_OPTIONS = {
 }
 
 
+def _youtube_watch_url(video_id):
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _entry_page_url(entry, source):
+    for key in ("webpage_url", "original_url"):
+        value = entry.get(key)
+        if value:
+            return value
+    value = entry.get("url") or ""
+    if source == "youtube":
+        video_id = entry.get("id") or value
+        if YOUTUBE_ID.match(video_id or ""):
+            return _youtube_watch_url(video_id)
+    return value if URL_START.match(value) else ""
+
+
+def _entry_stream_url(entry):
+    value = entry.get("url") or ""
+    if entry.get("_type") in URL_RESULT_TYPES:
+        return None
+    return value if URL_START.match(value) else None
+
+
 def track_from_entry(entry, requester_id, source):
     """Build a Track from one yt-dlp result.
 
@@ -238,13 +319,13 @@ def track_from_entry(entry, requester_id, source):
     entry = entry or {}
     return Track(
         title=entry.get("title") or "Unknown track",
-        url=entry.get("webpage_url") or entry.get("original_url") or entry.get("url") or "",
+        url=_entry_page_url(entry, source),
         duration=int(entry.get("duration") or 0),
         source=source,
         requester_id=str(requester_id),
         thumbnail=entry.get("thumbnail"),
         uploader=entry.get("uploader") or entry.get("channel"),
-        stream_url=entry.get("url"),
+        stream_url=_entry_stream_url(entry),
     )
 
 
@@ -339,7 +420,7 @@ async def _extract_by_search(kind, platform, identifier, requester_id):
         entry = None
         source = "youtube"
         for prefix, source_name in search_providers():
-            info = await _extract(f"{prefix}{query}")
+            info = await _extract(f"{prefix}{query}", flat=True)
             entries = (info or {}).get("entries") or []
             if entries and entries[0]:
                 entry = entries[0]
@@ -356,6 +437,21 @@ async def _extract_by_search(kind, platform, identifier, requester_id):
         cache_put(key, {**entry, "_source": source}, SEARCH_TTL_SECONDS)
         tracks.append(track_from_entry(entry, requester_id, source))
     return tracks
+
+
+async def soundcloud_fallback_for(track):
+    """Find a SoundCloud candidate when a YouTube stream cannot be resolved."""
+    if not soundcloud_fallback_enabled() or not track or track.source == "soundcloud":
+        return None
+    query = " ".join(part for part in (track.title, track.uploader or "") if part).strip()
+    if not query:
+        return None
+    info = await _extract(f"scsearch1:{query}", flat=True)
+    entries = (info or {}).get("entries") or []
+    if not entries or not entries[0]:
+        log.warning("Music SoundCloud rescue returned no entries for %r", query)
+        return None
+    return track_from_entry(entries[0], track.requester_id, "soundcloud")
 
 
 def _fetch_json(url, headers=None, data=None):

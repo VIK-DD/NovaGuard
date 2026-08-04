@@ -118,6 +118,13 @@ class MusicQueue:
             return None
         return self._tracks.pop(self._index + position)
 
+    def replace_current(self, track):
+        """Replace the track currently under the cursor."""
+        if 0 <= self._index < len(self._tracks):
+            self._tracks[self._index] = track
+            return True
+        return False
+
     def clear(self):
         """Drop everything after the current track."""
         del self._tracks[self._index + 1 :]
