@@ -102,3 +102,230 @@ def search_cache_key(text):
 
 def stream_cache_key(url):
     return f"stream:{(url or '').strip()}"
+
+
+# ── extraction ───────────────────────────────────────────────────────
+
+import asyncio
+import base64
+import json
+import logging
+import os
+import urllib.parse
+import urllib.request
+
+from .database import cache_get, cache_put
+from .music_queue import Track
+
+log = logging.getLogger("novaguard.music")
+
+EXTRACT_TIMEOUT_SECONDS = 20
+SEARCH_TTL_SECONDS = 7 * 86400
+STREAM_TTL_SECONDS = 6 * 3600
+MAX_PLAYLIST_TRACKS = 100
+HTTP_TIMEOUT_SECONDS = 10
+
+# `default_search` is deliberately unset: the search prefix is chosen in code
+# so a query that happens to look like a URL cannot send yt-dlp somewhere
+# unexpected.
+YDL_OPTIONS = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+    "noplaylist": True,
+    "extract_flat": False,
+    "socket_timeout": 15,
+    "retries": 1,
+    "ignoreerrors": True,
+    # IPv6-first resolution often stalls on small VPS hosts.
+    "source_address": "0.0.0.0",
+}
+
+
+def track_from_entry(entry, requester_id, source):
+    """Build a Track from one yt-dlp result.
+
+    Defensive throughout: yt-dlp entries are loosely typed, and a field that
+    is present for one extractor is absent or null for another. ``url`` holds an
+    expiring CDN link, so ``webpage_url`` is preferred as the stable identity.
+    """
+    entry = entry or {}
+    return Track(
+        title=entry.get("title") or "Unknown track",
+        url=entry.get("webpage_url") or entry.get("original_url") or entry.get("url") or "",
+        duration=int(entry.get("duration") or 0),
+        source=source,
+        requester_id=str(requester_id),
+        thumbnail=entry.get("thumbnail"),
+        uploader=entry.get("uploader") or entry.get("channel"),
+        stream_url=entry.get("url"),
+    )
+
+
+def _blocking_extract(target, flat=False):
+    """Run yt-dlp. Called only through asyncio.to_thread."""
+    import yt_dlp
+
+    options = dict(YDL_OPTIONS)
+    if flat:
+        options["extract_flat"] = "in_playlist"
+        options["noplaylist"] = False
+    with yt_dlp.YoutubeDL(options) as ydl:
+        return ydl.extract_info(target, download=False)
+
+
+async def _extract(target, *, flat=False):
+    """Extraction with the shared timeout, off the event loop.
+
+    Returns None on any failure. This layer never raises: a dead link must not
+    be able to take down a player loop.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_blocking_extract, target, flat),
+            timeout=EXTRACT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        log.warning("Music extraction timed out for %s", target)
+        return None
+    except Exception as error:
+        log.warning("Music extraction failed for %s: %r", target, error)
+        return None
+
+
+async def refresh_stream_url(track):
+    """Re-resolve a track whose CDN link expired. Returns True on success."""
+    if not track.url:
+        return False
+    info = await _extract(track.url)
+    if not info:
+        return False
+    fresh = track_from_entry(info, track.requester_id, track.source)
+    if not fresh.stream_url:
+        return False
+    track.stream_url = fresh.stream_url
+    return True
+
+
+async def extract(text, requester_id):
+    """Resolve user input into playable tracks.
+
+    Returns a list, empty when nothing could be resolved. Search results are
+    cached for a week; the expiring stream link inside a cached entry is never
+    trusted, so the player refreshes it before playing.
+    """
+    kind, platform, identifier = classify_input(text)
+
+    if kind == "search" or platform == "spotify":
+        return await _extract_by_search(kind, platform, identifier, requester_id)
+
+    if kind == "playlist":
+        target = f"https://www.youtube.com/playlist?list={identifier}" if platform == "youtube" else text
+        info = await _extract(target, flat=True)
+        entries = [entry for entry in ((info or {}).get("entries") or []) if entry][:MAX_PLAYLIST_TRACKS]
+        return [track_from_entry(entry, requester_id, platform) for entry in entries]
+
+    info = await _extract(text)
+    if not info:
+        return []
+    return [track_from_entry(info, requester_id, platform or "youtube")]
+
+
+async def _extract_by_search(kind, platform, identifier, requester_id):
+    """Search YouTube for a query, or for the song a Spotify link names."""
+    if platform == "spotify":
+        metadata = await resolve_spotify(kind, identifier)
+        queries = [query for query in (spotify_to_query(item) for item in metadata) if query]
+    else:
+        queries = [identifier] if identifier else []
+
+    tracks = []
+    for query in queries[:MAX_PLAYLIST_TRACKS]:
+        key = search_cache_key(query)
+        cached = cache_get(key)
+        if cached:
+            tracks.append(track_from_entry(cached, requester_id, cached.get("_source") or "youtube"))
+            continue
+        info = await _extract(f"ytsearch1:{query}")
+        entries = (info or {}).get("entries") or []
+        if not entries or not entries[0]:
+            continue
+        entry = entries[0]
+        cache_put(key, {**entry, "_source": "youtube"}, SEARCH_TTL_SECONDS)
+        tracks.append(track_from_entry(entry, requester_id, "youtube"))
+    return tracks
+
+
+def _fetch_json(url, headers=None, data=None):
+    """Blocking HTTP GET/POST returning parsed JSON. Only via to_thread."""
+    request = urllib.request.Request(url, headers=headers or {}, data=data)
+    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+        return json.load(response)
+
+
+async def resolve_spotify(kind, identifier):
+    """Spotify metadata as ``[{"title", "artist"}]``.
+
+    Spotify permits no audio streaming to third-party apps. Without
+    credentials, a single track still resolves through public oEmbed; playlists
+    return nothing until the Web API credentials are configured.
+    """
+    client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
+    has_credentials = bool(client_id and client_secret)
+
+    if kind == "track" and not has_credentials:
+        link = f"https://open.spotify.com/track/{identifier}"
+        url = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(link, safe="")
+        try:
+            oembed = await asyncio.to_thread(_fetch_json, url)
+        except Exception as error:
+            log.warning("Spotify oEmbed lookup failed: %r", error)
+            return []
+        return [{"title": oembed.get("title") or "", "artist": ""}]
+
+    if not has_credentials:
+        return []
+
+    try:
+        auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        token_payload = await asyncio.to_thread(
+            _fetch_json,
+            "https://accounts.spotify.com/api/token",
+            {
+                "Authorization": f"Basic {auth}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            b"grant_type=client_credentials",
+        )
+        token = token_payload.get("access_token")
+        if not token:
+            return []
+        headers = {"Authorization": f"Bearer {token}"}
+
+        if kind == "track":
+            data = await asyncio.to_thread(
+                _fetch_json, f"https://api.spotify.com/v1/tracks/{identifier}", headers
+            )
+            items = [data]
+        else:
+            data = await asyncio.to_thread(
+                _fetch_json,
+                f"https://api.spotify.com/v1/playlists/{identifier}/tracks"
+                f"?limit={MAX_PLAYLIST_TRACKS}",
+                headers,
+            )
+            items = [row.get("track") for row in (data.get("items") or []) if row.get("track")]
+    except Exception as error:
+        log.warning("Spotify API lookup failed: %r", error)
+        return []
+
+    return [
+        {
+            "title": item.get("name") or "",
+            "artist": ", ".join(artist.get("name", "") for artist in (item.get("artists") or [])),
+        }
+        for item in items
+        if item
+    ]

@@ -8,3 +8,9 @@ anthropic>=0.40,<1
 # ceiling pinned us to exactly the vulnerable 49.x. Used for Fernet
 # encryption of OAuth tokens at rest in core/webserver.py.
 cryptography>=50.0,<51
+
+# Music. yt-dlp resolves and streams YouTube/SoundCloud; PyNaCl is
+# discord.py's voice encryption backend. yt-dlp breaks whenever YouTube
+# changes something, so expect to bump it more often than the rest.
+yt-dlp>=2026.7.0
+PyNaCl>=1.5,<2
