@@ -276,6 +276,12 @@ pm2 restart novaguard --update-env
 
 The bot loads `.env` automatically on startup — no manual exports needed.
 
+If an existing Lavalink node logs `youtube-plugin-1.14.0` or fails popular
+YouTube links with `This video is unavailable`, refresh the deployed
+`application.yml` from the repo and restart Lavalink. The example config tracks
+the current `youtube-source` plugin release because YouTube client behavior
+changes often.
+
 ### Public website status and dashboard API
 
 The bot already exposes live `GET /api/v1/health` and `GET /api/v1/stats`
