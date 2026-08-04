@@ -69,6 +69,23 @@ def _nothing_found_description(query):
     )
 
 
+def _payload_error_text(payload):
+    exception = getattr(payload, "exception", None) or getattr(payload, "error", None)
+    return str(exception or payload or "")
+
+
+def _track_failure_notice(payload):
+    details = _payload_error_text(payload).lower()
+    if "requires login" in details or "sign in" in details or "all clients failed" in details:
+        return (
+            "YouTube rejected this track on the Lavalink node because it requires login. "
+            "Enable youtube-source OAuth on Lavalink, then try again."
+        )
+    if "video is unavailable" in details:
+        return "YouTube says this video is unavailable from the Lavalink node; moving to the next item."
+    return "Lavalink reported a track error; moving to the next item."
+
+
 class LavalinkQueue:
     """Small queue wrapper around Wavelink tracks."""
 
@@ -503,7 +520,7 @@ class LavalinkMusic(commands.Cog):
             return
         session = self.sessions.get(str(guild.id))
         if session:
-            await self._notify(session, "Lavalink reported a track error; moving to the next item.")
+            await self._notify(session, _track_failure_notice(payload))
             await self._play_next(session)
 
     @commands.Cog.listener()

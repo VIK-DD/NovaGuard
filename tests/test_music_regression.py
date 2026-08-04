@@ -9,6 +9,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cogs.music as music_cog  # noqa: E402
+import cogs.music_lavalink as lavalink_music_cog  # noqa: E402
 import cogs.voice as voice_cog  # noqa: E402
 from core.music_session import SessionRegistry, configured_max_sessions  # noqa: E402
 
@@ -40,6 +41,15 @@ class MusicErrorMessageTests(unittest.TestCase):
             )
         self.assertIn("SPOTIFY_CLIENT_ID", description)
         self.assertIn("Spotify Web API", description)
+
+    def test_lavalink_login_failures_get_an_oauth_hint(self):
+        class Payload:
+            exception = "All clients failed to load the item. This video requires login."
+
+        notice = lavalink_music_cog._track_failure_notice(Payload())
+
+        self.assertIn("requires login", notice)
+        self.assertIn("OAuth", notice)
 
 
 class SessionCapTests(unittest.TestCase):

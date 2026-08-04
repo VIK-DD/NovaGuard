@@ -282,6 +282,20 @@ YouTube links with `This video is unavailable`, refresh the deployed
 the current `youtube-source` plugin release because YouTube client behavior
 changes often.
 
+If the node is already on `youtube-plugin-1.18.2` but playback logs say
+`This video requires login` or `All clients failed to load the item`, the VPS IP
+is still challenged by YouTube. At that point Lavalink is working, but YouTube
+will not stream anonymously from that host. Use one of these fixes:
+
+1. Enable `plugins.youtube.oauth.enabled: true` in
+   `/home/ubuntu/lavalink/application.yml`, restart Lavalink, and follow the
+   OAuth code printed in `pm2 logs lavalink`. Use a burner YouTube account.
+2. After Lavalink prints a refresh token, paste it under
+   `plugins.youtube.oauth.refreshToken` so future restarts do not ask again.
+3. If OAuth is not acceptable, run the music node through a cleaner egress
+   IP/proxy. Updating only the bot cannot bypass a YouTube host-level login
+   challenge.
+
 ### Public website status and dashboard API
 
 The bot already exposes live `GET /api/v1/health` and `GET /api/v1/stats`

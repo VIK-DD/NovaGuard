@@ -50,10 +50,20 @@ plugins:
     clients:
       - MUSIC
       - ANDROID_VR
+      - TVHTML5_SIMPLY
       - WEB
+      - MWEB
       - WEBEMBEDDED
+
+    # Leave OAuth off by default for the example config. If YouTube replies with
+    # "This video requires login" from a VPS/Oracle IP, enable this on the live
+    # node with a burner YouTube account and persist the printed refresh token.
+    oauth:
+      enabled: false
+      # refreshToken: "paste the generated refresh token here"
 
 logging:
   level:
     root: INFO
     lavalink: INFO
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
