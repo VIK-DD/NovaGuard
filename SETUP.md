@@ -153,6 +153,36 @@ cd bgutil-ytdlp-pot-provider/server
 MUSIC_YTDLP_EXTRACTOR_ARGS=youtubepot-bgutilscript:server-home=/home/ubuntu/bgutil-ytdlp-pot-provider/server
 ```
 
+#### When the host IP itself is flagged (proxy)
+
+If Deno, fresh cookies **and** the PO Token provider are all in place and
+YouTube still answers `Sign in to confirm you're not a bot`, the datacenter IP
+itself is flagged — common on Oracle/AWS/Hetzner ranges. No client-side setting
+clears an IP-level flag; the fix is a clean egress IP for music traffic only:
+
+```env
+MUSIC_YTDLP_PROXY=http://user:pass@proxy-host:3128
+```
+
+- The proxy applies to every yt-dlp call **and** to FFmpeg while it streams
+  YouTube audio (Google CDN URLs only play from the IP that resolved them).
+  SoundCloud streams stay on the direct connection.
+- Use an `http://` proxy URL. A `socks5://` proxy works for yt-dlp but FFmpeg
+  cannot tunnel through it, so playback would 403; NovaGuard refuses it for
+  streaming and logs a warning.
+- What works in practice, best first:
+  1. A residential/ISP proxy with unmetered bandwidth (audio streaming uses
+     real gigabytes; per-GB residential plans get expensive).
+  2. A tiny VPS at a *different* provider (a home connection is even better)
+     running Squid or tinyproxy with auth, port firewalled to the bot's IP.
+  3. Rotating datacenter proxies — often flagged too; test before paying.
+- After changing `.env`: `pm2 restart pythonbot && pm2 save`.
+
+When YouTube challenges the host, NovaGuard now logs a clear
+`YouTube is challenging this host IP` warning (throttled, at most one per
+5 minutes) and `/play` tells the user the server IP is being challenged
+instead of a generic "nothing found".
+
 ## 3. Raspberry Pi with pm2
 
 If your bot already runs in pm2, update the files and restart:

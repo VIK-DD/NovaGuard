@@ -7,7 +7,11 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import core.music_sources as music_sources  # noqa: E402
 from core.music_sources import (  # noqa: E402
+    configured_proxy,
+    ffmpeg_proxy_url,
+    youtube_bot_check_recent,
     classify_input,
     best_search_entry,
     format_duration,
@@ -204,6 +208,7 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         self._saved_extractor_args = os.environ.pop("MUSIC_YTDLP_EXTRACTOR_ARGS", None)
         self._saved_min_bitrate = os.environ.pop("MUSIC_MIN_AUDIO_BITRATE_KBPS", None)
         self._saved_strict_bitrate = os.environ.pop("MUSIC_STRICT_MIN_AUDIO_BITRATE", None)
+        self._saved_proxy = os.environ.pop("MUSIC_YTDLP_PROXY", None)
 
     def tearDown(self):
         os.environ.pop("MUSIC_YTDLP_COOKIES_FILE", None)
@@ -214,6 +219,7 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         os.environ.pop("MUSIC_YTDLP_EXTRACTOR_ARGS", None)
         os.environ.pop("MUSIC_MIN_AUDIO_BITRATE_KBPS", None)
         os.environ.pop("MUSIC_STRICT_MIN_AUDIO_BITRATE", None)
+        os.environ.pop("MUSIC_YTDLP_PROXY", None)
         if self._saved_file is not None:
             os.environ["MUSIC_YTDLP_COOKIES_FILE"] = self._saved_file
         if self._saved_browser is not None:
@@ -230,6 +236,8 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
             os.environ["MUSIC_MIN_AUDIO_BITRATE_KBPS"] = self._saved_min_bitrate
         if self._saved_strict_bitrate is not None:
             os.environ["MUSIC_STRICT_MIN_AUDIO_BITRATE"] = self._saved_strict_bitrate
+        if self._saved_proxy is not None:
+            os.environ["MUSIC_YTDLP_PROXY"] = self._saved_proxy
 
     def test_no_cookie_options_are_added_by_default(self):
         with mock.patch("core.music_sources.detected_deno_path", return_value=None):
@@ -295,6 +303,31 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
                 {"deno": {"path": "/usr/local/bin/deno"}},
             )
 
+    def test_proxy_is_passed_to_yt_dlp(self):
+        os.environ["MUSIC_YTDLP_PROXY"] = "http://user:pass@proxy.test:3128"
+        with mock.patch("core.music_sources.detected_deno_path", return_value=None):
+            self.assertEqual(
+                ydl_runtime_options()["proxy"], "http://user:pass@proxy.test:3128"
+            )
+
+    def test_no_proxy_option_is_added_by_default(self):
+        with mock.patch("core.music_sources.detected_deno_path", return_value=None):
+            self.assertNotIn("proxy", ydl_runtime_options())
+
+    def test_http_proxy_is_offered_to_ffmpeg(self):
+        os.environ["MUSIC_YTDLP_PROXY"] = "http://user:pass@proxy.test:3128"
+        self.assertEqual(ffmpeg_proxy_url(), "http://user:pass@proxy.test:3128")
+
+    def test_socks_proxy_is_refused_for_ffmpeg(self):
+        os.environ["MUSIC_YTDLP_PROXY"] = "socks5://proxy.test:1080"
+        with mock.patch.object(music_sources.log, "warning") as warn:
+            self.assertIsNone(ffmpeg_proxy_url())
+        self.assertEqual(configured_proxy(), "socks5://proxy.test:1080")
+        # the warning is emitted once, not per track
+        with mock.patch.object(music_sources.log, "warning") as warn_again:
+            self.assertIsNone(ffmpeg_proxy_url())
+        self.assertLessEqual(warn_again.call_count + warn.call_count, 1)
+
     def test_format_prefers_direct_audio_over_hls(self):
         selector = ydl_format_selector()
 
@@ -318,6 +351,47 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
 
         self.assertIn("abr>=320", selector)
         self.assertFalse(selector.endswith("/bestaudio/best"))
+
+
+class YoutubeBotCheckTests(unittest.TestCase):
+    def setUp(self):
+        music_sources._bot_check_seen_at = 0.0
+        music_sources._last_bot_check_hint_at = 0.0
+        self._saved_proxy = os.environ.pop("MUSIC_YTDLP_PROXY", None)
+
+    def tearDown(self):
+        music_sources._bot_check_seen_at = 0.0
+        music_sources._last_bot_check_hint_at = 0.0
+        os.environ.pop("MUSIC_YTDLP_PROXY", None)
+        if self._saved_proxy is not None:
+            os.environ["MUSIC_YTDLP_PROXY"] = self._saved_proxy
+
+    def test_bot_check_message_is_recognised_with_either_apostrophe(self):
+        for message in (
+            "ERROR: [youtube] abc123: Sign in to confirm you're not a bot",
+            "ERROR: [youtube] abc123: Sign in to confirm you’re not a bot",
+        ):
+            self.assertTrue(music_sources._is_youtube_bot_check(message))
+
+    def test_unrelated_errors_are_not_a_bot_check(self):
+        self.assertFalse(music_sources._is_youtube_bot_check("[youtube] abc: Video unavailable"))
+        self.assertFalse(music_sources._is_youtube_bot_check("[soundcloud] sign in to confirm"))
+
+    def test_a_seen_bot_check_is_reported_as_recent(self):
+        self.assertFalse(youtube_bot_check_recent())
+        with mock.patch.object(music_sources.log, "warning"):
+            music_sources._maybe_log_youtube_bot_check_hint(
+                "ERROR: [youtube] abc: Sign in to confirm you're not a bot"
+            )
+        self.assertTrue(youtube_bot_check_recent())
+
+    def test_the_operator_hint_mentions_the_proxy_env_var(self):
+        with mock.patch.object(music_sources.log, "warning") as warn:
+            music_sources._maybe_log_youtube_bot_check_hint(
+                "ERROR: [youtube] abc: Sign in to confirm you're not a bot"
+            )
+        blob = " ".join(str(call) for call in warn.call_args_list)
+        self.assertIn("MUSIC_YTDLP_PROXY", blob)
 
 
 class SearchProviderConfigTests(unittest.TestCase):

@@ -275,12 +275,57 @@ YOUTUBE_EJS_FAILURE_MARKERS = (
     "only images are available",
     "requested format is not available",
 )
+# "Sign in to confirm you're not a bot" — matched on the prefix so both the
+# straight and the curly apostrophe variants are caught.
+YOUTUBE_BOT_CHECK_MARKERS = (
+    "sign in to confirm",
+)
+BOT_CHECK_RECENT_WINDOW_SECONDS = 900
 _last_ejs_hint_at = 0.0
+_last_bot_check_hint_at = 0.0
+_bot_check_seen_at = 0.0
 
 
 def _is_youtube_ejs_failure(message):
     text = (message or "").lower()
     return "[youtube]" in text and any(marker in text for marker in YOUTUBE_EJS_FAILURE_MARKERS)
+
+
+def _is_youtube_bot_check(message):
+    text = (message or "").lower()
+    return "[youtube]" in text and any(marker in text for marker in YOUTUBE_BOT_CHECK_MARKERS)
+
+
+def youtube_bot_check_recent(window_seconds=BOT_CHECK_RECENT_WINDOW_SECONDS):
+    """True when YouTube challenged this host within the recent window."""
+    if _bot_check_seen_at <= 0:
+        return False
+    return (time.monotonic() - _bot_check_seen_at) < window_seconds
+
+
+def _maybe_log_youtube_bot_check_hint(message):
+    """Remember and explain YouTube's IP challenge, throttled for the logs."""
+    global _last_bot_check_hint_at, _bot_check_seen_at
+    if not _is_youtube_bot_check(message):
+        return
+    _bot_check_seen_at = time.monotonic()
+    now = time.monotonic()
+    if now - _last_bot_check_hint_at < 300:
+        return
+    _last_bot_check_hint_at = now
+    if configured_proxy():
+        log.warning(
+            "YouTube is challenging this host even through MUSIC_YTDLP_PROXY. "
+            "Rotate the proxy exit IP or refresh MUSIC_YTDLP_COOKIES_FILE from a "
+            "fresh browser session, then restart PM2."
+        )
+    else:
+        log.warning(
+            "YouTube is challenging this host IP ('Sign in to confirm you're not a bot'). "
+            "Cookies and PO tokens rarely clear an IP-level flag; route music through a "
+            "clean egress instead: set MUSIC_YTDLP_PROXY=http://user:pass@host:port in "
+            ".env and restart PM2. See SETUP.md > Music."
+        )
 
 
 def _maybe_log_youtube_ejs_hint(message):
@@ -310,10 +355,12 @@ class _YtDlpLogger:
 
     def warning(self, message):
         _maybe_log_youtube_ejs_hint(message)
+        _maybe_log_youtube_bot_check_hint(message)
         log.warning("yt-dlp warning: %s", message)
 
     def error(self, message):
         _maybe_log_youtube_ejs_hint(message)
+        _maybe_log_youtube_bot_check_hint(message)
         log.warning("yt-dlp error: %s", message)
 
 
@@ -384,9 +431,43 @@ def detected_deno_path():
     return None
 
 
+def configured_proxy():
+    """The music proxy URL from the environment, or empty when unset."""
+    return os.getenv("MUSIC_YTDLP_PROXY", "").strip()
+
+
+_non_http_proxy_warned = False
+
+
+def ffmpeg_proxy_url():
+    """Proxy FFmpeg must stream through, or None.
+
+    YouTube CDN URLs are bound to the IP that resolved them, so when yt-dlp
+    goes through a proxy the audio stream has to ride the same proxy. FFmpeg
+    only tunnels through http(s) proxies; a socks:// value works for yt-dlp
+    but would leave FFmpeg on the flagged IP, so it is refused loudly here.
+    """
+    global _non_http_proxy_warned
+    proxy = configured_proxy()
+    if not proxy:
+        return None
+    if proxy.lower().startswith(("http://", "https://")):
+        return proxy
+    if not _non_http_proxy_warned:
+        _non_http_proxy_warned = True
+        log.warning(
+            "MUSIC_YTDLP_PROXY is not an http(s) URL; FFmpeg cannot stream YouTube "
+            "through it and playback will 403. Use http://user:pass@host:port."
+        )
+    return None
+
+
 def ydl_runtime_options(*, include_cookies=True):
     """Environment-driven yt-dlp options that should be read at call time."""
     options = {}
+    proxy = configured_proxy()
+    if proxy:
+        options["proxy"] = proxy
     cookies_file = os.getenv("MUSIC_YTDLP_COOKIES_FILE", "").strip()
     cookies_from_browser = os.getenv("MUSIC_YTDLP_COOKIES_FROM_BROWSER", "").strip()
     js_runtimes = (
