@@ -328,6 +328,11 @@ def _split_env_list(value):
     return [part.strip() for part in re.split(r"[,|]", value or "") if part.strip()]
 
 
+def _split_extractor_specs(value):
+    """Split extractor-arg specs on pipes/newlines; values may contain commas."""
+    return [part.strip() for part in re.split(r"[|\n]", value or "") if part.strip()]
+
+
 def _parse_js_runtimes(value):
     """Parse runtime[:path] env values into yt-dlp's Python API shape."""
     runtimes = {}
@@ -342,6 +347,26 @@ def _parse_js_runtimes(value):
             continue
         runtimes[name] = {"path": os.path.expanduser(path.strip()) if path.strip() else None}
     return runtimes
+
+
+def _parse_extractor_args(value):
+    """Parse `ie:key=value;other=value` into yt-dlp's Python API shape."""
+    parsed = {}
+    for spec in _split_extractor_specs(value):
+        ie_key, separator, settings = spec.partition(":")
+        ie_key = ie_key.strip()
+        if not separator or not ie_key:
+            continue
+        bucket = parsed.setdefault(ie_key, {})
+        for item in (part.strip() for part in settings.split(";")):
+            if not item:
+                continue
+            key, has_value, raw_value = item.partition("=")
+            key = key.strip().replace("-", "_")
+            if not has_value or not key:
+                continue
+            bucket.setdefault(key, []).append(os.path.expanduser(raw_value.strip()))
+    return parsed
 
 
 def detected_deno_path():
@@ -369,6 +394,7 @@ def ydl_runtime_options(*, include_cookies=True):
         or os.getenv("MUSIC_YTDLP_JS_RUNTIME", "").strip()
     )
     remote_components = os.getenv("MUSIC_YTDLP_REMOTE_COMPONENTS", "").strip()
+    extractor_args = os.getenv("MUSIC_YTDLP_EXTRACTOR_ARGS", "").strip()
     if include_cookies and cookies_file:
         options["cookiefile"] = os.path.expanduser(cookies_file)
     if include_cookies and cookies_from_browser:
@@ -381,6 +407,10 @@ def ydl_runtime_options(*, include_cookies=True):
             options["js_runtimes"] = {"deno": {"path": deno_path}}
     if remote_components:
         options["remote_components"] = _split_env_list(remote_components)
+    if extractor_args:
+        parsed_args = _parse_extractor_args(extractor_args)
+        if parsed_args:
+            options["extractor_args"] = parsed_args
     return options
 
 

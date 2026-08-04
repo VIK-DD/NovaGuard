@@ -201,6 +201,7 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         self._saved_js_runtime = os.environ.pop("MUSIC_YTDLP_JS_RUNTIME", None)
         self._saved_js_runtimes = os.environ.pop("MUSIC_YTDLP_JS_RUNTIMES", None)
         self._saved_remote_components = os.environ.pop("MUSIC_YTDLP_REMOTE_COMPONENTS", None)
+        self._saved_extractor_args = os.environ.pop("MUSIC_YTDLP_EXTRACTOR_ARGS", None)
         self._saved_min_bitrate = os.environ.pop("MUSIC_MIN_AUDIO_BITRATE_KBPS", None)
         self._saved_strict_bitrate = os.environ.pop("MUSIC_STRICT_MIN_AUDIO_BITRATE", None)
 
@@ -210,6 +211,7 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         os.environ.pop("MUSIC_YTDLP_JS_RUNTIME", None)
         os.environ.pop("MUSIC_YTDLP_JS_RUNTIMES", None)
         os.environ.pop("MUSIC_YTDLP_REMOTE_COMPONENTS", None)
+        os.environ.pop("MUSIC_YTDLP_EXTRACTOR_ARGS", None)
         os.environ.pop("MUSIC_MIN_AUDIO_BITRATE_KBPS", None)
         os.environ.pop("MUSIC_STRICT_MIN_AUDIO_BITRATE", None)
         if self._saved_file is not None:
@@ -222,6 +224,8 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
             os.environ["MUSIC_YTDLP_JS_RUNTIMES"] = self._saved_js_runtimes
         if self._saved_remote_components is not None:
             os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = self._saved_remote_components
+        if self._saved_extractor_args is not None:
+            os.environ["MUSIC_YTDLP_EXTRACTOR_ARGS"] = self._saved_extractor_args
         if self._saved_min_bitrate is not None:
             os.environ["MUSIC_MIN_AUDIO_BITRATE_KBPS"] = self._saved_min_bitrate
         if self._saved_strict_bitrate is not None:
@@ -264,6 +268,25 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = "ejs:github|ejs:npm"
         with mock.patch("core.music_sources.detected_deno_path", return_value=None):
             self.assertEqual(ydl_runtime_options()["remote_components"], ["ejs:github", "ejs:npm"])
+
+    def test_extractor_args_are_passed_to_yt_dlp(self):
+        os.environ["MUSIC_YTDLP_EXTRACTOR_ARGS"] = (
+            "youtubepot-bgutilscript:server-home=/home/ubuntu/bgutil/server|"
+            "youtube:player-client=mweb,default;po-token=mweb.gvs+TOKEN"
+        )
+        with mock.patch("core.music_sources.detected_deno_path", return_value=None):
+            self.assertEqual(
+                ydl_runtime_options()["extractor_args"],
+                {
+                    "youtubepot-bgutilscript": {
+                        "server_home": ["/home/ubuntu/bgutil/server"],
+                    },
+                    "youtube": {
+                        "player_client": ["mweb,default"],
+                        "po_token": ["mweb.gvs+TOKEN"],
+                    },
+                },
+            )
 
     def test_deno_is_auto_detected_when_runtime_is_not_explicit(self):
         with mock.patch("core.music_sources.detected_deno_path", return_value="/usr/local/bin/deno"):

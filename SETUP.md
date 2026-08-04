@@ -135,6 +135,24 @@ yt-dlp to fetch fresh EJS scripts dynamically:
 MUSIC_YTDLP_REMOTE_COMPONENTS=ejs:github
 ```
 
+If YouTube still returns `Sign in to confirm you're not a bot` with Deno and
+fresh cookies, the host IP is likely being challenged for playback. In that
+case, install a yt-dlp PO Token provider and point NovaGuard at it:
+
+```bash
+cd /home/ubuntu/NovaGuard
+venv/bin/python -m pip install -U bgutil-ytdlp-pot-provider
+
+cd /home/ubuntu
+git clone --single-branch --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
+cd bgutil-ytdlp-pot-provider/server
+/home/ubuntu/.deno/bin/deno install --allow-scripts=npm:canvas --frozen
+```
+
+```env
+MUSIC_YTDLP_EXTRACTOR_ARGS=youtubepot-bgutilscript:server-home=/home/ubuntu/bgutil-ytdlp-pot-provider/server
+```
+
 ## 3. Raspberry Pi with pm2
 
 If your bot already runs in pm2, update the files and restart:
