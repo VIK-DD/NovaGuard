@@ -10,7 +10,14 @@ from core.database import cache_prefix_search
 from core.music_card import card_fields
 from core.music_queue import LoopMode
 from core.music_session import IDLE_DISCONNECT_SECONDS, SessionRegistry
-from core.music_sources import extract, format_duration, normalise_query, refresh_stream_url
+from core.music_sources import (
+    classify_input,
+    extract,
+    format_duration,
+    normalise_query,
+    refresh_stream_url,
+    spotify_credentials_configured,
+)
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
 
@@ -42,6 +49,37 @@ def nothing_playing_embed(detail="There is nothing playing here."):
     embed = make_embed("Nothing playing", detail, color=Palette.WARNING)
     brand_footer(embed, "Music")
     return embed
+
+
+def is_missing_voice_backend_error(error):
+    return "PyNaCl" in str(error or "")
+
+
+def missing_voice_backend_embed():
+    embed = make_embed(
+        "Voice support is not installed",
+        "Install the Python voice dependency on the host, then restart the bot: "
+        "`venv/bin/python -m pip install PyNaCl`.",
+        color=Palette.DANGER,
+    )
+    brand_footer(embed, "Music")
+    return embed
+
+
+def nothing_found_description(query):
+    kind, platform, _ = classify_input(query)
+    if platform == "spotify" and kind == "playlist" and not spotify_credentials_configured():
+        return (
+            "Spotify playlist and album links need `SPOTIFY_CLIENT_ID` and "
+            "`SPOTIFY_CLIENT_SECRET` in `.env`. Single Spotify track links can still "
+            "work best-effort; playlists need the Spotify Web API."
+        )
+    if platform == "spotify":
+        return (
+            "I could not read that Spotify link or find a playable match for it. "
+            "Spotify audio cannot be streamed directly, so I search YouTube for the track."
+        )
+    return f"I could not find anything for `{query[:120]}`."
 
 
 class MusicControls(discord.ui.View):
@@ -240,6 +278,12 @@ class Music(commands.Cog):
                 session.voice_client = await voice.channel.connect(self_deaf=True, timeout=20)
             elif client.channel.id != voice.channel.id:
                 await client.move_to(voice.channel)
+        except RuntimeError as error:
+            if not is_missing_voice_backend_error(error):
+                raise
+            print(f"Music voice backend missing in guild {interaction.guild_id}: {error!r}")
+            await self._teardown(session)
+            return None, missing_voice_backend_embed()
         except (discord.ClientException, asyncio.TimeoutError, discord.HTTPException) as error:
             print(f"Music connect failed in guild {interaction.guild_id}: {error!r}")
             await self._teardown(session)
@@ -461,7 +505,9 @@ class Music(commands.Cog):
         tracks = await extract(query, interaction.user.id)
         if not tracks:
             embed = make_embed(
-                "Nothing found", f"I could not find anything for `{query[:120]}`.", color=Palette.WARNING
+                "Nothing found",
+                nothing_found_description(query),
+                color=Palette.WARNING,
             )
             brand_footer(embed, "Music")
             return await respond(interaction, embed, ephemeral=True)

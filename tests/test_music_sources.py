@@ -11,6 +11,7 @@ from core.music_sources import (  # noqa: E402
     format_duration,
     normalise_query,
     search_cache_key,
+    spotify_credentials_configured,
     spotify_to_query,
     stream_cache_key,
 )
@@ -93,6 +94,23 @@ class SpotifyQueryTests(unittest.TestCase):
 
     def test_empty_metadata_yields_an_empty_string(self):
         self.assertEqual(spotify_to_query({}), "")
+
+    def test_spotify_credentials_require_both_values(self):
+        saved_id = os.environ.pop("SPOTIFY_CLIENT_ID", None)
+        saved_secret = os.environ.pop("SPOTIFY_CLIENT_SECRET", None)
+        try:
+            self.assertFalse(spotify_credentials_configured())
+            os.environ["SPOTIFY_CLIENT_ID"] = "client"
+            self.assertFalse(spotify_credentials_configured())
+            os.environ["SPOTIFY_CLIENT_SECRET"] = "secret"
+            self.assertTrue(spotify_credentials_configured())
+        finally:
+            os.environ.pop("SPOTIFY_CLIENT_ID", None)
+            os.environ.pop("SPOTIFY_CLIENT_SECRET", None)
+            if saved_id is not None:
+                os.environ["SPOTIFY_CLIENT_ID"] = saved_id
+            if saved_secret is not None:
+                os.environ["SPOTIFY_CLIENT_SECRET"] = saved_secret
 
 
 class FormattingTests(unittest.TestCase):

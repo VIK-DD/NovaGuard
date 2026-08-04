@@ -6,6 +6,7 @@ That matters because misreading a link is the most common way a music command
 surprises someone. The extraction half wraps yt-dlp in later tasks.
 """
 
+import os
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -75,6 +76,13 @@ def spotify_to_query(metadata):
     return title or artist or ""
 
 
+def spotify_credentials_configured():
+    return bool(
+        os.getenv("SPOTIFY_CLIENT_ID", "").strip()
+        and os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
+    )
+
+
 def format_duration(seconds, live_label=None):
     """Render a track length.
 
@@ -110,7 +118,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import urllib.parse
 import urllib.request
 
@@ -273,7 +280,7 @@ async def resolve_spotify(kind, identifier):
     """
     client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
-    has_credentials = bool(client_id and client_secret)
+    has_credentials = spotify_credentials_configured()
 
     if kind == "track" and not has_credentials:
         link = f"https://open.spotify.com/track/{identifier}"
