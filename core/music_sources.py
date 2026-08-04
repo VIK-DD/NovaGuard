@@ -310,7 +310,7 @@ def _maybe_log_youtube_bot_check_hint(message):
         return
     _bot_check_seen_at = time.monotonic()
     now = time.monotonic()
-    if now - _last_bot_check_hint_at < 300:
+    if _last_bot_check_hint_at > 0 and now - _last_bot_check_hint_at < 300:
         return
     _last_bot_check_hint_at = now
     if configured_proxy():
@@ -334,7 +334,7 @@ def _maybe_log_youtube_ejs_hint(message):
     if not _is_youtube_ejs_failure(message):
         return
     now = time.monotonic()
-    if now - _last_ejs_hint_at < 300:
+    if _last_ejs_hint_at > 0 and now - _last_ejs_hint_at < 300:
         return
     _last_ejs_hint_at = now
     options = ydl_runtime_options()
