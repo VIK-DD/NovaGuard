@@ -12,6 +12,7 @@ from core.lavalink_config import (  # noqa: E402
     lavalink_search_query,
     lavalink_search_source,
     lavalink_uri,
+    lavalink_wavelink_search,
 )
 
 
@@ -61,11 +62,26 @@ class LavalinkConfigTests(unittest.TestCase):
         os.environ["MUSIC_LAVALINK_SEARCH_SOURCE"] = "ytsearch:"
 
         self.assertEqual(lavalink_search_query("drake 9"), "ytsearch:drake 9")
+        self.assertEqual(lavalink_wavelink_search("drake 9"), ("drake 9", "ytsearch"))
 
     def test_urls_are_not_prefixed_as_searches(self):
         self.assertEqual(
             lavalink_search_query(" <https://www.youtube.com/watch?v=sQ4Y9IkAgoQ> "),
             "https://www.youtube.com/watch?v=sQ4Y9IkAgoQ",
+        )
+        self.assertEqual(
+            lavalink_wavelink_search(" <https://www.youtube.com/watch?v=sQ4Y9IkAgoQ> "),
+            ("https://www.youtube.com/watch?v=sQ4Y9IkAgoQ", None),
+        )
+
+    def test_existing_search_prefixes_are_not_added_twice(self):
+        self.assertEqual(
+            lavalink_search_query("ytmsearch:drake 9"),
+            "ytmsearch:drake 9",
+        )
+        self.assertEqual(
+            lavalink_wavelink_search("ytmsearch:drake 9"),
+            ("ytmsearch:drake 9", None),
         )
 
 

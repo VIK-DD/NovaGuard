@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core.lavalink_config import lavalink_password, lavalink_search_query, lavalink_uri
+from core.lavalink_config import lavalink_password, lavalink_uri, lavalink_wavelink_search
 from core.music_card import progress_bar
 from core.music_sources import classify_input, format_duration, spotify_credentials_configured
 from core.music_session import IDLE_DISCONNECT_SECONDS
@@ -380,11 +380,12 @@ class LavalinkMusic(commands.Cog):
             pass
 
     async def _load_tracks(self, query):
-        target = lavalink_search_query(query)
+        target, source = lavalink_wavelink_search(query)
         try:
-            results = await wavelink.Playable.search(target)
+            results = await wavelink.Playable.search(target, source=source)
         except Exception as error:
-            print(f"Lavalink search failed for {target}: {error!r}")
+            source_hint = f" via {source}" if source else ""
+            print(f"Lavalink search failed for {target}{source_hint}: {error!r}")
             return []
         if not results:
             return []

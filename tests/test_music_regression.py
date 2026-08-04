@@ -64,6 +64,52 @@ class MusicErrorMessageTests(unittest.TestCase):
         self.assertTrue(lavalink_music_cog._node_is_connected(Node()))
 
 
+class LavalinkSearchBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_plain_queries_use_wavelink_source_without_double_prefix(self):
+        calls = []
+
+        class FakePlayable:
+            @staticmethod
+            async def search(query, source=None):
+                calls.append((query, source))
+                return ["track"]
+
+        class FakeWavelink:
+            Playable = FakePlayable
+
+            class Playlist:
+                pass
+
+        with mock.patch.object(lavalink_music_cog, "wavelink", FakeWavelink):
+            cog = lavalink_music_cog.LavalinkMusic(bot=mock.Mock())
+            tracks = await cog._load_tracks("drake 9")
+
+        self.assertEqual(tracks, ["track"])
+        self.assertEqual(calls, [("drake 9", "ytmsearch")])
+
+    async def test_prefixed_queries_are_passed_through_once(self):
+        calls = []
+
+        class FakePlayable:
+            @staticmethod
+            async def search(query, source=None):
+                calls.append((query, source))
+                return ["track"]
+
+        class FakeWavelink:
+            Playable = FakePlayable
+
+            class Playlist:
+                pass
+
+        with mock.patch.object(lavalink_music_cog, "wavelink", FakeWavelink):
+            cog = lavalink_music_cog.LavalinkMusic(bot=mock.Mock())
+            tracks = await cog._load_tracks("ytmsearch:drake 9")
+
+        self.assertEqual(tracks, ["track"])
+        self.assertEqual(calls, [("ytmsearch:drake 9", None)])
+
+
 class SessionCapTests(unittest.TestCase):
     def setUp(self):
         self._saved = os.environ.pop("MUSIC_MAX_SESSIONS", None)

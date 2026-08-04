@@ -7,6 +7,7 @@ DEFAULT_LAVALINK_URI = "http://127.0.0.1:2333"
 DEFAULT_LAVALINK_PASSWORD = "youshallnotpass"
 DEFAULT_SEARCH_SOURCE = "ytmsearch"
 URL_START = re.compile(r"^https?://", re.IGNORECASE)
+SEARCH_PREFIX = re.compile(r"^[a-z][a-z0-9_]*search\d*:", re.IGNORECASE)
 
 
 def lavalink_enabled():
@@ -35,4 +36,19 @@ def lavalink_search_query(query):
     cleaned = (query or "").strip().strip("<>").strip()
     if URL_START.match(cleaned):
         return cleaned
+    if SEARCH_PREFIX.match(cleaned):
+        return cleaned
     return f"{lavalink_search_source()}:{cleaned}"
+
+
+def lavalink_wavelink_search(query):
+    """Return ``(query, source)`` for ``wavelink.Playable.search``.
+
+    Wavelink adds the search prefix itself when ``source`` is provided. Passing
+    a pre-prefixed query with the default source creates requests like
+    ``ytmsearch:ytmsearch:song`` on Lavalink.
+    """
+    cleaned = (query or "").strip().strip("<>").strip()
+    if URL_START.match(cleaned) or SEARCH_PREFIX.match(cleaned):
+        return cleaned, None
+    return cleaned, lavalink_search_source()
