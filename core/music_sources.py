@@ -105,23 +105,112 @@ def normalise_query(text):
 
 
 def search_cache_key(text):
-    return f"search:{normalise_query(text)}"
+    return f"search:{SEARCH_CACHE_VERSION}:{normalise_query(text)}"
 
 
 def stream_cache_key(url):
     return f"stream:{(url or '').strip()}"
 
 
+def _fold_search_text(text):
+    """Normalize search text across case, punctuation and Romanian diacritics."""
+    folded = unicodedata.normalize("NFKD", text or "")
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    folded = folded.lower()
+    folded = re.sub(r"[^a-z0-9]+", " ", folded)
+    return " ".join(folded.split())
+
+
+def _search_tokens(text):
+    return [token for token in _fold_search_text(text).split() if len(token) > 1]
+
+
+def _contains_phrase(haystack, phrase):
+    return phrase in _fold_search_text(haystack)
+
+
+def _entry_haystack(entry):
+    return " ".join(
+        str(part or "")
+        for part in (
+            entry.get("title"),
+            entry.get("uploader"),
+            entry.get("channel"),
+            entry.get("artist"),
+        )
+    )
+
+
+def search_entry_score(query, entry, source):
+    """Score one search result. Higher is better; negative means unusable."""
+    entry = entry or {}
+    title = entry.get("title") or ""
+    page_url = _entry_page_url(entry, source)
+    if not title or not page_url:
+        return -100.0
+
+    query_folded = _fold_search_text(query)
+    title_folded = _fold_search_text(title)
+    haystack_folded = _fold_search_text(_entry_haystack(entry))
+    query_tokens = _search_tokens(query)
+    if not query_tokens:
+        return -100.0
+
+    matched = sum(1 for token in query_tokens if token in haystack_folded)
+    coverage = matched / len(query_tokens)
+    title_ratio = SequenceMatcher(None, query_folded, title_folded).ratio()
+    score = (coverage * 58) + (title_ratio * 32)
+
+    if source == "youtube":
+        score += 8
+
+    duration = int(entry.get("duration") or 0)
+    if duration and duration > 900 and not any(term in query_folded for term in ("mix", "live", "concert")):
+        score -= 12
+    if duration and duration < 45:
+        score -= 8
+
+    for term in NEGATIVE_RESULT_TERMS:
+        if term not in query_folded and _contains_phrase(title, term):
+            score -= 8
+    for term in POSITIVE_RESULT_TERMS:
+        if term in query_folded and _contains_phrase(_entry_haystack(entry), term):
+            score += 4
+
+    view_count = int(entry.get("view_count") or 0)
+    if view_count >= 1_000_000:
+        score += 5
+    elif view_count >= 100_000:
+        score += 2
+
+    return round(score, 3)
+
+
+def best_search_entry(query, entries, source):
+    """Pick the best candidate from a provider result page."""
+    candidates = [
+        (search_entry_score(query, entry, source), entry)
+        for entry in (entries or [])
+        if entry
+    ]
+    if not candidates:
+        return None, -100.0
+    score, entry = max(candidates, key=lambda item: item[0])
+    return entry, score
+
+
 # ── extraction ───────────────────────────────────────────────────────
 
 import asyncio
 import base64
+from difflib import SequenceMatcher
 import json
 import logging
 import urllib.parse
 import urllib.request
 import shutil
 import time
+import unicodedata
 from pathlib import Path
 
 from .database import cache_get, cache_put
@@ -134,12 +223,40 @@ SEARCH_TTL_SECONDS = 7 * 86400
 STREAM_TTL_SECONDS = 6 * 3600
 MAX_PLAYLIST_TRACKS = 100
 HTTP_TIMEOUT_SECONDS = 10
+SEARCH_CACHE_VERSION = "v2"
+YOUTUBE_SEARCH_RESULTS = 8
+SOUNDCLOUD_SEARCH_RESULTS = 5
 SEARCH_PROVIDERS = (
-    ("ytsearch1:", "youtube"),
-    ("scsearch1:", "soundcloud"),
+    (f"ytsearch{YOUTUBE_SEARCH_RESULTS}:", "youtube"),
+    (f"scsearch{SOUNDCLOUD_SEARCH_RESULTS}:", "soundcloud"),
 )
+MIN_SEARCH_SCORE = 28
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 URL_RESULT_TYPES = {"url", "url_transparent"}
+NEGATIVE_RESULT_TERMS = {
+    "8d",
+    "bass boosted",
+    "cover",
+    "instrumental",
+    "karaoke",
+    "live",
+    "nightcore",
+    "reaction",
+    "reverb",
+    "slowed",
+    "speed up",
+    "sped up",
+    "tutorial",
+}
+POSITIVE_RESULT_TERMS = {
+    "audio",
+    "lyrics",
+    "lyric",
+    "official",
+    "oficial",
+    "videoclip",
+    "video",
+}
 FFMPEG_HEADER_BLOCKLIST = {
     "accept-encoding",
     "connection",
@@ -238,7 +355,7 @@ def detected_deno_path():
     return None
 
 
-def ydl_runtime_options():
+def ydl_runtime_options(*, include_cookies=True):
     """Environment-driven yt-dlp options that should be read at call time."""
     options = {}
     cookies_file = os.getenv("MUSIC_YTDLP_COOKIES_FILE", "").strip()
@@ -248,9 +365,9 @@ def ydl_runtime_options():
         or os.getenv("MUSIC_YTDLP_JS_RUNTIME", "").strip()
     )
     remote_components = os.getenv("MUSIC_YTDLP_REMOTE_COMPONENTS", "").strip()
-    if cookies_file:
+    if include_cookies and cookies_file:
         options["cookiefile"] = os.path.expanduser(cookies_file)
-    if cookies_from_browser:
+    if include_cookies and cookies_from_browser:
         options["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
     if js_runtimes:
         options["js_runtimes"] = _parse_js_runtimes(js_runtimes)
@@ -360,12 +477,12 @@ def track_from_entry(entry, requester_id, source):
     )
 
 
-def _blocking_extract(target, flat=False):
+def _blocking_extract(target, flat=False, include_cookies=True):
     """Run yt-dlp. Called only through asyncio.to_thread."""
     import yt_dlp
 
     options = dict(YDL_OPTIONS)
-    options.update(ydl_runtime_options())
+    options.update(ydl_runtime_options(include_cookies=include_cookies))
     if flat:
         options["extract_flat"] = "in_playlist"
         options["noplaylist"] = False
@@ -373,7 +490,7 @@ def _blocking_extract(target, flat=False):
         return ydl.extract_info(target, download=False)
 
 
-async def _extract(target, *, flat=False):
+async def _extract(target, *, flat=False, include_cookies=True):
     """Extraction with the shared timeout, off the event loop.
 
     Returns None on any failure. This layer never raises: a dead link must not
@@ -381,7 +498,7 @@ async def _extract(target, *, flat=False):
     """
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(_blocking_extract, target, flat),
+            asyncio.to_thread(_blocking_extract, target, flat, include_cookies),
             timeout=EXTRACT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
@@ -449,25 +566,36 @@ async def _extract_by_search(kind, platform, identifier, requester_id):
         if cached:
             tracks.append(track_from_entry(cached, requester_id, cached.get("_source") or "youtube"))
             continue
-        entry = None
-        source = "youtube"
+        best_entry = None
+        best_source = "youtube"
+        best_score = -100.0
         for prefix, source_name in search_providers():
-            info = await _extract(f"{prefix}{query}", flat=True)
+            info = await _extract(f"{prefix}{query}", flat=True, include_cookies=False)
             entries = (info or {}).get("entries") or []
-            if entries and entries[0]:
-                entry = entries[0]
-                source = source_name
-                break
-            log.warning(
-                "Music search provider %s returned no entries for %r",
-                source_name,
-                query,
-            )
-        if not entry:
+            entry, score = best_search_entry(query, entries, source_name)
+            if entry and score > best_score:
+                best_entry = entry
+                best_source = source_name
+                best_score = score
+            if entry:
+                log.info(
+                    "Music search provider %s best score %.1f for %r -> %s",
+                    source_name,
+                    score,
+                    query,
+                    entry.get("title") or entry.get("webpage_url") or entry.get("url"),
+                )
+            else:
+                log.warning(
+                    "Music search provider %s returned no usable entries for %r",
+                    source_name,
+                    query,
+                )
+        if not best_entry or best_score < MIN_SEARCH_SCORE:
             log.warning("Music search exhausted all providers for %r", query)
             continue
-        cache_put(key, {**entry, "_source": source}, SEARCH_TTL_SECONDS)
-        tracks.append(track_from_entry(entry, requester_id, source))
+        cache_put(key, {**best_entry, "_source": best_source}, SEARCH_TTL_SECONDS)
+        tracks.append(track_from_entry(best_entry, requester_id, best_source))
     return tracks
 
 

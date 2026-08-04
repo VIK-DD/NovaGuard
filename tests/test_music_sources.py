@@ -9,8 +9,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.music_sources import (  # noqa: E402
     classify_input,
+    best_search_entry,
     format_duration,
     normalise_query,
+    search_entry_score,
     search_cache_key,
     spotify_credentials_configured,
     spotify_to_query,
@@ -144,8 +146,47 @@ class CacheKeyTests(unittest.TestCase):
 
     def test_search_and_stream_keys_never_collide(self):
         self.assertNotEqual(search_cache_key("abc"), stream_cache_key("abc"))
-        self.assertTrue(search_cache_key("abc").startswith("search:"))
+        self.assertTrue(search_cache_key("abc").startswith("search:v2:"))
         self.assertTrue(stream_cache_key("abc").startswith("stream:"))
+
+
+class SearchScoringTests(unittest.TestCase):
+    def test_best_search_entry_prefers_the_exact_music_result(self):
+        entries = [
+            {
+                "title": "Nicolae Guta - Toate pozele cu tine Karaoke",
+                "webpage_url": "https://youtube.test/karaoke",
+                "duration": 240,
+            },
+            {
+                "title": "Nicolae Guta - Toate pozele cu tine",
+                "webpage_url": "https://youtube.test/original",
+                "duration": 250,
+                "view_count": 2_000_000,
+            },
+        ]
+
+        entry, score = best_search_entry("toate pozele cu tine nicolae guta", entries, "youtube")
+
+        self.assertEqual(entry["webpage_url"], "https://youtube.test/original")
+        self.assertGreater(score, 70)
+
+    def test_search_score_penalizes_unrequested_cover_terms(self):
+        original = {
+            "title": "Vanilla x Alex Velea - 7 din 7",
+            "webpage_url": "https://youtube.test/original",
+            "duration": 190,
+        }
+        cover = {
+            "title": "Vanilla x Alex Velea - 7 din 7 cover karaoke",
+            "webpage_url": "https://youtube.test/cover",
+            "duration": 190,
+        }
+
+        self.assertGreater(
+            search_entry_score("vanilla alex velea 7 din 7", original, "youtube"),
+            search_entry_score("vanilla alex velea 7 din 7", cover, "youtube"),
+        )
 
 
 class YtDlpRuntimeOptionsTests(unittest.TestCase):

@@ -83,6 +83,8 @@ Searches prefer YouTube. `MUSIC_ENABLE_SOUNDCLOUD_FALLBACK=true` lets the bot
 try SoundCloud when YouTube returns nothing or when a found YouTube result
 cannot resolve a playable stream. Set it to `false` for YouTube-only search
 quality once cookies and EJS are working reliably.
+Search uses multiple candidates and avoids YouTube cookies during the metadata
+lookup, so a rotated cookie file does not poison normal `/play query` searches.
 
 Spotify credentials are optional. Without them a Spotify track link still
 works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes

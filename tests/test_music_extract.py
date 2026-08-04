@@ -118,11 +118,11 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_search_falls_back_to_soundcloud_when_youtube_has_no_entries(self):
         calls = []
 
-        async def fake_extract(target, *, flat=False):
-            calls.append(target)
-            if target.startswith("ytsearch1:"):
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            calls.append((target, flat, include_cookies))
+            if target.startswith("ytsearch"):
                 return {"entries": []}
-            if target.startswith("scsearch1:"):
+            if target.startswith("scsearch"):
                 return {
                     "entries": [
                         {
@@ -142,7 +142,13 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         ):
             tracks = await music_sources._extract_by_search("search", None, "fallback song", "42")
 
-        self.assertEqual(calls, ["ytsearch1:fallback song", "scsearch1:fallback song"])
+        self.assertEqual(
+            calls,
+            [
+                ("ytsearch8:fallback song", True, False),
+                ("scsearch5:fallback song", True, False),
+            ],
+        )
         self.assertEqual(len(tracks), 1)
         self.assertEqual(tracks[0].source, "soundcloud")
         self.assertEqual(tracks[0].title, "Fallback Song")
@@ -152,8 +158,8 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_search_respects_disabled_soundcloud_fallback(self):
         calls = []
 
-        async def fake_extract(target, *, flat=False):
-            calls.append(target)
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            calls.append((target, flat, include_cookies))
             return {"entries": []}
 
         with mock.patch.dict(os.environ, {"MUSIC_ENABLE_SOUNDCLOUD_FALLBACK": "false"}), mock.patch.object(
@@ -163,14 +169,14 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         ):
             tracks = await music_sources._extract_by_search("search", None, "fallback song", "42")
 
-        self.assertEqual(calls, ["ytsearch1:fallback song"])
+        self.assertEqual(calls, [("ytsearch8:fallback song", True, False)])
         self.assertEqual(tracks, [])
 
     async def test_search_uses_flat_extraction_before_playback(self):
-        flat_values = []
+        calls = []
 
-        async def fake_extract(target, *, flat=False):
-            flat_values.append(flat)
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            calls.append((target, flat, include_cookies))
             return {
                 "entries": [
                     {
@@ -187,9 +193,46 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         ), mock.patch.object(music_sources, "_extract", side_effect=fake_extract):
             tracks = await music_sources._extract_by_search("search", None, "found song", "42")
 
-        self.assertEqual(flat_values, [True])
+        self.assertEqual(calls[0], ("ytsearch8:found song", True, False))
         self.assertEqual(tracks[0].url, "https://www.youtube.com/watch?v=f6sRk58Pj6I")
         self.assertIsNone(tracks[0].stream_url)
+
+    async def test_search_chooses_best_scored_youtube_result(self):
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            self.assertEqual(target, "ytsearch8:toate pozele cu tine nicolae guta")
+            self.assertTrue(flat)
+            self.assertFalse(include_cookies)
+            return {
+                "entries": [
+                    {
+                        "_type": "url",
+                        "title": "Toate pozele cu tine karaoke",
+                        "id": "aaaaaaaaaaa",
+                        "url": "aaaaaaaaaaa",
+                        "duration": 200,
+                    },
+                    {
+                        "_type": "url",
+                        "title": "Nicolae Guta - Toate pozele cu tine",
+                        "id": "bbbbbbbbbbb",
+                        "url": "bbbbbbbbbbb",
+                        "duration": 230,
+                        "view_count": 2_000_000,
+                    },
+                ]
+            }
+
+        with mock.patch.object(music_sources, "cache_get", return_value=None), mock.patch.object(
+            music_sources, "cache_put"
+        ), mock.patch.object(music_sources, "soundcloud_fallback_enabled", return_value=False), mock.patch.object(
+            music_sources, "_extract", side_effect=fake_extract
+        ):
+            tracks = await music_sources._extract_by_search(
+                "search", None, "toate pozele cu tine nicolae guta", "42"
+            )
+
+        self.assertEqual(tracks[0].title, "Nicolae Guta - Toate pozele cu tine")
+        self.assertEqual(tracks[0].url, "https://www.youtube.com/watch?v=bbbbbbbbbbb")
 
     async def test_soundcloud_rescue_uses_only_soundcloud_search(self):
         track = track_from_entry(
@@ -198,7 +241,7 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
             source="youtube",
         )
 
-        async def fake_extract(target, *, flat=False):
+        async def fake_extract(target, *, flat=False, include_cookies=True):
             self.assertEqual(target, "scsearch1:Broken YouTube")
             self.assertTrue(flat)
             return {
