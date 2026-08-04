@@ -194,6 +194,7 @@ class Music(commands.Cog):
         "-reconnect_on_http_error 4xx,5xx -rw_timeout 15000000 "
         "-nostdin -loglevel warning"
     )
+    SOUNDCHECK_DURATION_SECONDS = 5
     MAX_CONSECUTIVE_SKIPS = 5
 
     def _ffmpeg_before_options(self, track):
@@ -206,6 +207,24 @@ class Music(commands.Cog):
             header_lines.append(f"{name}: {value}")
         header_blob = "\r\n".join(header_lines) + "\r\n"
         return f"{self.FFMPEG_BEFORE} -headers {shlex.quote(header_blob)}"
+
+    def _soundcheck_source_args(self):
+        """Arguments for a local test tone; no yt-dlp, no network, no CDN."""
+        return (
+            f"sine=frequency=880:duration={self.SOUNDCHECK_DURATION_SECONDS}",
+            "-f lavfi",
+            "-vn",
+        )
+
+    def _soundcheck_source(self):
+        """Build the local test tone source."""
+        source, before_options, options = self._soundcheck_source_args()
+        pcm = discord.FFmpegPCMAudio(
+            source,
+            before_options=before_options,
+            options=options,
+        )
+        return discord.PCMVolumeTransformer(pcm, volume=0.35)
 
     async def cog_load(self):
         self.bot.add_view(MusicControls(self))
@@ -410,6 +429,16 @@ class Music(commands.Cog):
             print(f"Music advance failed in guild {session.guild_id}: {error!r}")
             session.touch()
 
+    async def _on_soundcheck_finished(self, session, error):
+        """Clean up an isolated soundcheck without disturbing a real queue."""
+        if error:
+            print(f"Music soundcheck playback error in guild {session.guild_id}: {error!r}")
+        session.touch()
+        await asyncio.sleep(2)
+        client = session.voice_client
+        if client and not (client.is_playing() or client.is_paused()) and session.queue.current is None:
+            await self._teardown(session)
+
     async def _notify(self, session, text):
         channel = self.bot.get_channel(session.text_channel_id) if session.text_channel_id else None
         if channel is None:
@@ -610,6 +639,47 @@ class Music(commands.Cog):
     @app_commands.guild_only()
     async def nowplaying(self, interaction: discord.Interaction):
         await self.queue_command.callback(self, interaction)
+
+    @app_commands.command(name="soundcheck", description="Play a short local test tone")
+    @app_commands.guild_only()
+    async def soundcheck(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        session, error = await self._connect(interaction)
+        if error is not None:
+            return await respond(interaction, error, ephemeral=True)
+
+        client = session.voice_client
+        if client is None or client.is_playing() or client.is_paused():
+            embed = make_embed(
+                "Soundcheck unavailable",
+                "Stop the current playback first, then run `/soundcheck` again.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Music")
+            return await respond(interaction, embed, ephemeral=True)
+
+        def after_playing(playback_error, session=session):
+            self.bot.loop.create_task(self._on_soundcheck_finished(session, playback_error))
+
+        try:
+            client.play(self._soundcheck_source(), after=after_playing)
+        except discord.ClientException as play_error:
+            embed = make_embed(
+                "Soundcheck failed",
+                f"Discord refused the test tone: `{play_error}`.",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed, "Music")
+            return await respond(interaction, embed, ephemeral=True)
+
+        embed = make_embed(
+            "Soundcheck playing",
+            f"You should hear a short tone for `{self.SOUNDCHECK_DURATION_SECONDS}` seconds. "
+            "If others hear it but you do not, check your local Discord volume/mute for NovaGuard.",
+            color=Palette.SUCCESS,
+        )
+        brand_footer(embed, "Music")
+        await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="volume", description="Set playback volume (0-100)")
     @app_commands.describe(level="Volume percentage")

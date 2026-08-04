@@ -41,6 +41,15 @@ class FfmpegOptionsTests(unittest.TestCase):
 
         self.assertEqual(music._ffmpeg_before_options(track), music.FFMPEG_BEFORE)
 
+    def test_soundcheck_uses_a_local_lavfi_tone(self):
+        music = Music(bot=None)
+
+        source, before_options, options = music._soundcheck_source_args()
+
+        self.assertEqual(source, "sine=frequency=880:duration=5")
+        self.assertEqual(before_options, "-f lavfi")
+        self.assertEqual(options, "-vn")
+
 
 if __name__ == "__main__":
     unittest.main()
