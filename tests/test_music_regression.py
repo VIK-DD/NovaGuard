@@ -63,6 +63,13 @@ class MusicErrorMessageTests(unittest.TestCase):
 
         self.assertTrue(lavalink_music_cog._node_is_connected(Node()))
 
+    def test_lavalink_controls_keep_volume_buttons(self):
+        source = inspect.getsource(lavalink_music_cog.LavalinkControls)
+
+        self.assertIn("ng:lavalink:voldown", source)
+        self.assertIn("ng:lavalink:volup", source)
+        self.assertIn("set_volume", source)
+
 
 class LavalinkSearchBoundaryTests(unittest.IsolatedAsyncioTestCase):
     async def test_plain_queries_use_wavelink_source_without_double_prefix(self):

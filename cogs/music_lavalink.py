@@ -23,6 +23,7 @@ IDLE_CHECK_SECONDS = 30
 MAX_PLAYLIST_TRACKS = 100
 MAX_QUEUE_LENGTH = 500
 NODE_CONNECT_WAIT_SECONDS = 20
+VOLUME_STEP = 10
 
 
 def _track_title(track):
@@ -239,6 +240,23 @@ class LavalinkControls(discord.ui.View):
         session.queue.next_loop()
         session.touch()
         await self.cog.refresh_card(session, interaction)
+
+    async def _set_volume(self, interaction, delta):
+        session = await self._session_or_refusal(interaction)
+        if session is None:
+            return
+        session.volume = min(100, max(0, session.volume + delta))
+        await session.player.set_volume(session.volume)
+        session.touch()
+        await self.cog.refresh_card(session, interaction)
+
+    @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.secondary, row=1, custom_id="ng:lavalink:voldown")
+    async def volume_down(self, interaction, button):
+        await self._set_volume(interaction, -VOLUME_STEP)
+
+    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, row=1, custom_id="ng:lavalink:volup")
+    async def volume_up(self, interaction, button):
+        await self._set_volume(interaction, VOLUME_STEP)
 
 
 class LavalinkMusic(commands.Cog):
