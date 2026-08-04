@@ -80,7 +80,10 @@ def nothing_found_description(query):
             "I could not read that Spotify link or find a playable match for it. "
             "Spotify audio cannot be streamed directly, so I search YouTube for the track."
         )
-    return f"I could not find anything for `{query[:120]}`."
+    return (
+        f"I could not find anything for `{query[:120]}`. If this happens for every song, "
+        "check the host logs for `Music extraction` - YouTube may be blocking yt-dlp there."
+    )
 
 
 class MusicControls(discord.ui.View):

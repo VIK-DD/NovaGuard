@@ -3,9 +3,11 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import core.music_sources as music_sources  # noqa: E402
 from core.music_sources import track_from_entry  # noqa: E402
 
 
@@ -64,6 +66,42 @@ class TrackFromEntryTests(unittest.TestCase):
     def test_the_requester_id_is_always_stored_as_a_string(self):
         track = track_from_entry({"title": "T"}, requester_id=42, source="youtube")
         self.assertEqual(track.requester_id, "42")
+
+
+class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_falls_back_to_soundcloud_when_youtube_has_no_entries(self):
+        calls = []
+
+        async def fake_extract(target, *, flat=False):
+            calls.append(target)
+            if target.startswith("ytsearch1:"):
+                return {"entries": []}
+            if target.startswith("scsearch1:"):
+                return {
+                    "entries": [
+                        {
+                            "title": "Fallback Song",
+                            "webpage_url": "https://soundcloud.com/artist/fallback-song",
+                            "duration": 123,
+                            "url": "https://stream.test/fallback",
+                        }
+                    ]
+                }
+            return None
+
+        with mock.patch.object(music_sources.log, "warning"), mock.patch.object(
+            music_sources, "cache_get", return_value=None
+        ), mock.patch.object(music_sources, "cache_put") as cache_put, mock.patch.object(
+            music_sources, "_extract", side_effect=fake_extract
+        ):
+            tracks = await music_sources._extract_by_search("search", None, "fallback song", "42")
+
+        self.assertEqual(calls, ["ytsearch1:fallback song", "scsearch1:fallback song"])
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0].source, "soundcloud")
+        self.assertEqual(tracks[0].title, "Fallback Song")
+        cache_put.assert_called_once()
+        self.assertEqual(cache_put.call_args.args[1]["_source"], "soundcloud")
 
 
 if __name__ == "__main__":

@@ -131,6 +131,10 @@ SEARCH_TTL_SECONDS = 7 * 86400
 STREAM_TTL_SECONDS = 6 * 3600
 MAX_PLAYLIST_TRACKS = 100
 HTTP_TIMEOUT_SECONDS = 10
+SEARCH_PROVIDERS = (
+    ("ytsearch1:", "youtube"),
+    ("scsearch1:", "soundcloud"),
+)
 
 # `default_search` is deliberately unset: the search prefix is chosen in code
 # so a query that happens to look like a URL cannot send yt-dlp somewhere
@@ -231,10 +235,13 @@ async def extract(text, requester_id):
         target = f"https://www.youtube.com/playlist?list={identifier}" if platform == "youtube" else text
         info = await _extract(target, flat=True)
         entries = [entry for entry in ((info or {}).get("entries") or []) if entry][:MAX_PLAYLIST_TRACKS]
+        if not entries:
+            log.warning("Music playlist extraction returned no entries for %s", target)
         return [track_from_entry(entry, requester_id, platform) for entry in entries]
 
     info = await _extract(text)
     if not info:
+        log.warning("Music track extraction returned no info for %s", text)
         return []
     return [track_from_entry(info, requester_id, platform or "youtube")]
 
@@ -254,13 +261,25 @@ async def _extract_by_search(kind, platform, identifier, requester_id):
         if cached:
             tracks.append(track_from_entry(cached, requester_id, cached.get("_source") or "youtube"))
             continue
-        info = await _extract(f"ytsearch1:{query}")
-        entries = (info or {}).get("entries") or []
-        if not entries or not entries[0]:
+        entry = None
+        source = "youtube"
+        for prefix, source_name in SEARCH_PROVIDERS:
+            info = await _extract(f"{prefix}{query}")
+            entries = (info or {}).get("entries") or []
+            if entries and entries[0]:
+                entry = entries[0]
+                source = source_name
+                break
+            log.warning(
+                "Music search provider %s returned no entries for %r",
+                source_name,
+                query,
+            )
+        if not entry:
+            log.warning("Music search exhausted all providers for %r", query)
             continue
-        entry = entries[0]
-        cache_put(key, {**entry, "_source": "youtube"}, SEARCH_TTL_SECONDS)
-        tracks.append(track_from_entry(entry, requester_id, "youtube"))
+        cache_put(key, {**entry, "_source": source}, SEARCH_TTL_SECONDS)
+        tracks.append(track_from_entry(entry, requester_id, source))
     return tracks
 
 
