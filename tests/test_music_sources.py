@@ -151,14 +151,26 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
     def setUp(self):
         self._saved_file = os.environ.pop("MUSIC_YTDLP_COOKIES_FILE", None)
         self._saved_browser = os.environ.pop("MUSIC_YTDLP_COOKIES_FROM_BROWSER", None)
+        self._saved_js_runtime = os.environ.pop("MUSIC_YTDLP_JS_RUNTIME", None)
+        self._saved_js_runtimes = os.environ.pop("MUSIC_YTDLP_JS_RUNTIMES", None)
+        self._saved_remote_components = os.environ.pop("MUSIC_YTDLP_REMOTE_COMPONENTS", None)
 
     def tearDown(self):
         os.environ.pop("MUSIC_YTDLP_COOKIES_FILE", None)
         os.environ.pop("MUSIC_YTDLP_COOKIES_FROM_BROWSER", None)
+        os.environ.pop("MUSIC_YTDLP_JS_RUNTIME", None)
+        os.environ.pop("MUSIC_YTDLP_JS_RUNTIMES", None)
+        os.environ.pop("MUSIC_YTDLP_REMOTE_COMPONENTS", None)
         if self._saved_file is not None:
             os.environ["MUSIC_YTDLP_COOKIES_FILE"] = self._saved_file
         if self._saved_browser is not None:
             os.environ["MUSIC_YTDLP_COOKIES_FROM_BROWSER"] = self._saved_browser
+        if self._saved_js_runtime is not None:
+            os.environ["MUSIC_YTDLP_JS_RUNTIME"] = self._saved_js_runtime
+        if self._saved_js_runtimes is not None:
+            os.environ["MUSIC_YTDLP_JS_RUNTIMES"] = self._saved_js_runtimes
+        if self._saved_remote_components is not None:
+            os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = self._saved_remote_components
 
     def test_no_cookie_options_are_added_by_default(self):
         self.assertEqual(ydl_runtime_options(), {})
@@ -170,6 +182,31 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
     def test_browser_cookie_spec_is_a_tuple_for_the_python_api(self):
         os.environ["MUSIC_YTDLP_COOKIES_FROM_BROWSER"] = "chrome:Default"
         self.assertEqual(ydl_runtime_options()["cookiesfrombrowser"], ("chrome", "Default"))
+
+    def test_js_runtime_can_be_forced(self):
+        os.environ["MUSIC_YTDLP_JS_RUNTIME"] = "deno:/home/ubuntu/.deno/bin/deno"
+        self.assertEqual(
+            ydl_runtime_options()["js_runtimes"],
+            {"deno": {"path": "/home/ubuntu/.deno/bin/deno"}},
+        )
+
+    def test_bare_js_runtime_path_defaults_to_deno(self):
+        os.environ["MUSIC_YTDLP_JS_RUNTIME"] = "/home/ubuntu/.deno/bin/deno"
+        self.assertEqual(
+            ydl_runtime_options()["js_runtimes"],
+            {"deno": {"path": "/home/ubuntu/.deno/bin/deno"}},
+        )
+
+    def test_multiple_js_runtimes_can_be_configured(self):
+        os.environ["MUSIC_YTDLP_JS_RUNTIMES"] = "node,deno:/opt/deno"
+        self.assertEqual(
+            ydl_runtime_options()["js_runtimes"],
+            {"node": {"path": None}, "deno": {"path": "/opt/deno"}},
+        )
+
+    def test_remote_components_are_passed_to_yt_dlp(self):
+        os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = "ejs:github|ejs:npm"
+        self.assertEqual(ydl_runtime_options()["remote_components"], ["ejs:github", "ejs:npm"])
 
 
 class SearchProviderConfigTests(unittest.TestCase):

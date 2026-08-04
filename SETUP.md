@@ -57,11 +57,20 @@ python3 bot.py
 ### Music (optional)
 
 Music playback needs FFmpeg on the host, plus the Python voice packages from
-`requirements.txt` (`PyNaCl` and `davey`):
+`requirements.txt` (`PyNaCl` and `davey`). YouTube extraction also needs a
+JavaScript runtime for yt-dlp's EJS challenge solver; Deno is the preferred
+runtime:
 
 ```bash
 sudo apt install -y ffmpeg
+curl -fsSL https://deno.land/install.sh | sh
 python -m pip install -r requirements.txt
+```
+
+If PM2 cannot see `deno` in PATH, set the absolute runtime path:
+
+```env
+MUSIC_YTDLP_JS_RUNTIME=/home/ubuntu/.deno/bin/deno
 ```
 
 `MUSIC_MAX_SESSIONS` caps how many servers can play at once (default `3`).
@@ -77,7 +86,7 @@ works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes
 something, so bump it when playback starts failing:
 
 ```bash
-.venv/bin/pip install --upgrade yt-dlp davey PyNaCl
+.venv/bin/pip install --upgrade "yt-dlp[default]" davey PyNaCl
 ```
 
 If YouTube returns `Sign in to confirm you're not a bot`, export YouTube cookies
@@ -91,6 +100,15 @@ MUSIC_YTDLP_COOKIES_FILE=/home/ubuntu/NovaGuard/data/youtube-cookies.txt
 Then restart PM2. For local development only, `MUSIC_YTDLP_COOKIES_FROM_BROWSER`
 can point yt-dlp at a browser profile, for example `firefox` or
 `chrome:Default`.
+
+If YouTube logs `Signature solving failed`, `n challenge solving failed`, or
+`Only images are available for download`, install/update Deno and
+`yt-dlp[default]`. As a last resort while YouTube is changing things, allow
+yt-dlp to fetch fresh EJS scripts dynamically:
+
+```env
+MUSIC_YTDLP_REMOTE_COMPONENTS=ejs:github
+```
 
 ## 3. Raspberry Pi with pm2
 

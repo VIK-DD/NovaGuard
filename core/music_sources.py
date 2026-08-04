@@ -156,15 +156,45 @@ def _parse_cookies_from_browser(value):
     return tuple(part for part in parts if part)
 
 
+def _split_env_list(value):
+    """Split comma/pipe separated env values without keeping empty fragments."""
+    return [part.strip() for part in re.split(r"[,|]", value or "") if part.strip()]
+
+
+def _parse_js_runtimes(value):
+    """Parse runtime[:path] env values into yt-dlp's Python API shape."""
+    runtimes = {}
+    items = _split_env_list(value)
+    for item in items:
+        if len(items) == 1 and (item.startswith("/") or item.startswith("~")):
+            runtimes["deno"] = {"path": os.path.expanduser(item)}
+            continue
+        name, _, path = item.partition(":")
+        name = name.strip().lower()
+        if not name:
+            continue
+        runtimes[name] = {"path": os.path.expanduser(path.strip()) if path.strip() else None}
+    return runtimes
+
+
 def ydl_runtime_options():
     """Environment-driven yt-dlp options that should be read at call time."""
     options = {}
     cookies_file = os.getenv("MUSIC_YTDLP_COOKIES_FILE", "").strip()
     cookies_from_browser = os.getenv("MUSIC_YTDLP_COOKIES_FROM_BROWSER", "").strip()
+    js_runtimes = (
+        os.getenv("MUSIC_YTDLP_JS_RUNTIMES", "").strip()
+        or os.getenv("MUSIC_YTDLP_JS_RUNTIME", "").strip()
+    )
+    remote_components = os.getenv("MUSIC_YTDLP_REMOTE_COMPONENTS", "").strip()
     if cookies_file:
         options["cookiefile"] = os.path.expanduser(cookies_file)
     if cookies_from_browser:
         options["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
+    if js_runtimes:
+        options["js_runtimes"] = _parse_js_runtimes(js_runtimes)
+    if remote_components:
+        options["remote_components"] = _split_env_list(remote_components)
     return options
 
 

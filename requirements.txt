@@ -12,6 +12,6 @@ cryptography>=50.0,<51
 # Music. yt-dlp resolves and streams YouTube/SoundCloud. PyNaCl and davey
 # are discord.py's voice backends. yt-dlp breaks whenever YouTube changes
 # something, so expect to bump it more often than the rest.
-yt-dlp>=2026.7.0
+yt-dlp[default]>=2026.7.0
 PyNaCl>=1.5,<2
 davey>=0.1.6,<0.2
