@@ -39,6 +39,7 @@ COGS = (
     "tickets",
     "automod",
     "economy",
+    "music",
     "ai",
 )
 
