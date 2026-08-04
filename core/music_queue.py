@@ -57,6 +57,11 @@ class MusicQueue:
     def __init__(self):
         self._tracks: list[Track] = []
         self._index = -1
+        # Set once the cursor has walked off the end. Kept as a flag rather
+        # than by parking the index past the last track: a track queued after
+        # the queue ran dry would land exactly under such an index and be
+        # skipped by the next advance, leaving the player silent.
+        self._finished = False
         self.loop = LoopMode.OFF
 
     def __len__(self):
@@ -68,6 +73,8 @@ class MusicQueue:
 
     @property
     def current(self):
+        if self._finished:
+            return None
         if 0 <= self._index < len(self._tracks):
             return self._tracks[self._index]
         return None
@@ -77,8 +84,12 @@ class MusicQueue:
         return self._tracks[self._index + 1 :]
 
     def add(self, track):
-        """Append one track. Returns True when it fit under the cap."""
-        if len(self._tracks) >= self.MAX_QUEUE_LENGTH:
+        """Append one track. Returns True when it fit under the cap.
+
+        The cap counts what is still waiting, not what already played, so a
+        long-lived session cannot lock itself out of queueing anything new.
+        """
+        if len(self.upcoming) >= self.MAX_QUEUE_LENGTH:
             return False
         self._tracks.append(track)
         return True
@@ -99,6 +110,7 @@ class MusicQueue:
         """
         if not self._tracks:
             self._index = -1
+            self._finished = False
             return None
 
         if self.loop == LoopMode.TRACK and self.current is not None:
@@ -106,13 +118,18 @@ class MusicQueue:
 
         if self._index + 1 < len(self._tracks):
             self._index += 1
+            self._finished = False
             return self.current
 
         if self.loop == LoopMode.QUEUE:
             self._index = 0
+            self._finished = False
             return self.current
 
-        self._index = len(self._tracks)
+        # Park on the last track and mark the queue finished. Anything queued
+        # from here lands in `upcoming`, so the next advance plays it.
+        self._index = len(self._tracks) - 1
+        self._finished = True
         return None
 
     def remove(self, position):
@@ -123,7 +140,7 @@ class MusicQueue:
 
     def replace_current(self, track):
         """Replace the track currently under the cursor."""
-        if 0 <= self._index < len(self._tracks):
+        if not self._finished and 0 <= self._index < len(self._tracks):
             self._tracks[self._index] = track
             return True
         return False

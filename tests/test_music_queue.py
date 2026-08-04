@@ -40,6 +40,43 @@ class QueueBasicsTests(unittest.TestCase):
         self.assertIsNone(queue.advance())
         self.assertIsNone(queue.current)
 
+    def test_a_track_queued_after_the_queue_ran_dry_still_plays(self):
+        # Regression: the cursor used to park past the end, so the next track
+        # landed under it and advance() skipped straight back to None -
+        # the player went silent until a reconnect rebuilt the session.
+        queue = MusicQueue()
+        queue.add(track("a"))
+        queue.advance()
+        self.assertIsNone(queue.advance())
+        self.assertIsNone(queue.current)
+
+        queue.add(track("b"))
+
+        self.assertEqual([item.title for item in queue.upcoming], ["b"])
+        self.assertEqual(queue.advance().title, "b")
+        self.assertEqual(queue.current.title, "b")
+
+    def test_a_finished_queue_reports_no_current_track_or_leftovers(self):
+        queue = MusicQueue()
+        queue.add_many([track("a"), track("b")])
+        queue.advance()
+        queue.advance()
+        self.assertIsNone(queue.advance())
+
+        self.assertIsNone(queue.current)
+        self.assertEqual(queue.upcoming, [])
+        self.assertFalse(queue.replace_current(track("x")))
+        queue.clear()
+        self.assertEqual(len(queue), 2)
+
+    def test_the_cap_counts_waiting_tracks_not_played_history(self):
+        queue = MusicQueue()
+        queue.add_many([track(str(i)) for i in range(MusicQueue.MAX_QUEUE_LENGTH)])
+        for _ in range(10):
+            queue.advance()
+
+        self.assertTrue(queue.add(track("late")))
+
     def test_upcoming_excludes_the_current_track(self):
         queue = MusicQueue()
         queue.add_many([track("a"), track("b"), track("c")])
