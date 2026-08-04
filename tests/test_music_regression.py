@@ -1,0 +1,47 @@
+"""Boundary between the music player and the voice attendance reports."""
+
+import inspect
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import cogs.voice as voice_cog  # noqa: E402
+from core.music_session import SessionRegistry, configured_max_sessions  # noqa: E402
+
+
+class VoiceReportBoundaryTests(unittest.TestCase):
+    def test_voice_reports_still_ignore_bots(self):
+        """Music joins voice channels while attendance watches the same events."""
+        source = inspect.getsource(voice_cog.VoiceReports.on_voice_state_update)
+        self.assertIn("member.bot", source)
+
+
+class SessionCapTests(unittest.TestCase):
+    def setUp(self):
+        self._saved = os.environ.pop("MUSIC_MAX_SESSIONS", None)
+
+    def tearDown(self):
+        os.environ.pop("MUSIC_MAX_SESSIONS", None)
+        if self._saved is not None:
+            os.environ["MUSIC_MAX_SESSIONS"] = self._saved
+
+    def test_the_cap_falls_back_to_the_default_when_unset(self):
+        self.assertEqual(configured_max_sessions(), 3)
+
+    def test_a_nonsense_cap_falls_back_rather_than_crashing_at_import(self):
+        os.environ["MUSIC_MAX_SESSIONS"] = "banana"
+        self.assertEqual(configured_max_sessions(), 3)
+
+    def test_the_cap_is_never_below_one(self):
+        os.environ["MUSIC_MAX_SESSIONS"] = "0"
+        self.assertEqual(configured_max_sessions(), 1)
+
+    def test_a_configured_cap_is_honoured(self):
+        os.environ["MUSIC_MAX_SESSIONS"] = "5"
+        self.assertEqual(SessionRegistry().MAX_SESSIONS, 5)
+
+
+if __name__ == "__main__":
+    unittest.main()

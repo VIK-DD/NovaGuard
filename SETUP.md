@@ -54,6 +54,26 @@ pip3 install -r requirements.txt
 python3 bot.py
 ```
 
+### Music (optional)
+
+Music playback needs FFmpeg on the host:
+
+```bash
+sudo apt install -y ffmpeg
+```
+
+`MUSIC_MAX_SESSIONS` caps how many servers can play at once (default `3`).
+The limit exists for CPU, not RAM: YouTube streams are usually copied without
+re-encoding, while SoundCloud has to be transcoded.
+
+Spotify credentials are optional. Without them a Spotify track link still
+works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes
+something, so bump it when playback starts failing:
+
+```bash
+.venv/bin/pip install --upgrade yt-dlp
+```
+
 ## 3. Raspberry Pi with pm2
 
 If your bot already runs in pm2, update the files and restart:
