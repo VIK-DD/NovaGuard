@@ -76,6 +76,18 @@ something, so bump it when playback starts failing:
 .venv/bin/pip install --upgrade yt-dlp davey PyNaCl
 ```
 
+If YouTube returns `Sign in to confirm you're not a bot`, export YouTube cookies
+from a browser in Netscape format, upload the file to the host, keep it private,
+and set:
+
+```env
+MUSIC_YTDLP_COOKIES_FILE=/home/ubuntu/NovaGuard/data/youtube-cookies.txt
+```
+
+Then restart PM2. For local development only, `MUSIC_YTDLP_COOKIES_FROM_BROWSER`
+can point yt-dlp at a browser profile, for example `firefox` or
+`chrome:Default`.
+
 ## 3. Raspberry Pi with pm2
 
 If your bot already runs in pm2, update the files and restart:

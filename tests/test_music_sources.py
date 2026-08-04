@@ -14,6 +14,7 @@ from core.music_sources import (  # noqa: E402
     spotify_credentials_configured,
     spotify_to_query,
     stream_cache_key,
+    ydl_runtime_options,
 )
 
 
@@ -142,6 +143,31 @@ class CacheKeyTests(unittest.TestCase):
         self.assertNotEqual(search_cache_key("abc"), stream_cache_key("abc"))
         self.assertTrue(search_cache_key("abc").startswith("search:"))
         self.assertTrue(stream_cache_key("abc").startswith("stream:"))
+
+
+class YtDlpRuntimeOptionsTests(unittest.TestCase):
+    def setUp(self):
+        self._saved_file = os.environ.pop("MUSIC_YTDLP_COOKIES_FILE", None)
+        self._saved_browser = os.environ.pop("MUSIC_YTDLP_COOKIES_FROM_BROWSER", None)
+
+    def tearDown(self):
+        os.environ.pop("MUSIC_YTDLP_COOKIES_FILE", None)
+        os.environ.pop("MUSIC_YTDLP_COOKIES_FROM_BROWSER", None)
+        if self._saved_file is not None:
+            os.environ["MUSIC_YTDLP_COOKIES_FILE"] = self._saved_file
+        if self._saved_browser is not None:
+            os.environ["MUSIC_YTDLP_COOKIES_FROM_BROWSER"] = self._saved_browser
+
+    def test_no_cookie_options_are_added_by_default(self):
+        self.assertEqual(ydl_runtime_options(), {})
+
+    def test_cookie_file_is_passed_to_yt_dlp(self):
+        os.environ["MUSIC_YTDLP_COOKIES_FILE"] = "~/cookies.txt"
+        self.assertTrue(ydl_runtime_options()["cookiefile"].endswith("/cookies.txt"))
+
+    def test_browser_cookie_spec_is_a_tuple_for_the_python_api(self):
+        os.environ["MUSIC_YTDLP_COOKIES_FROM_BROWSER"] = "chrome:Default"
+        self.assertEqual(ydl_runtime_options()["cookiesfrombrowser"], ("chrome", "Default"))
 
 
 if __name__ == "__main__":

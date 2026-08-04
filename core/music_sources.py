@@ -136,6 +136,38 @@ SEARCH_PROVIDERS = (
     ("scsearch1:", "soundcloud"),
 )
 
+
+class _YtDlpLogger:
+    """Route yt-dlp's own output into the bot logger instead of raw stderr."""
+
+    def debug(self, message):
+        log.debug("yt-dlp: %s", message)
+
+    def warning(self, message):
+        log.warning("yt-dlp warning: %s", message)
+
+    def error(self, message):
+        log.warning("yt-dlp error: %s", message)
+
+
+def _parse_cookies_from_browser(value):
+    """Parse yt-dlp's Python API tuple from browser[:profile[:keyring[:container]]]."""
+    parts = [part.strip() for part in (value or "").split(":")]
+    return tuple(part for part in parts if part)
+
+
+def ydl_runtime_options():
+    """Environment-driven yt-dlp options that should be read at call time."""
+    options = {}
+    cookies_file = os.getenv("MUSIC_YTDLP_COOKIES_FILE", "").strip()
+    cookies_from_browser = os.getenv("MUSIC_YTDLP_COOKIES_FROM_BROWSER", "").strip()
+    if cookies_file:
+        options["cookiefile"] = os.path.expanduser(cookies_file)
+    if cookies_from_browser:
+        options["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
+    return options
+
+
 # `default_search` is deliberately unset: the search prefix is chosen in code
 # so a query that happens to look like a URL cannot send yt-dlp somewhere
 # unexpected.
@@ -149,6 +181,7 @@ YDL_OPTIONS = {
     "socket_timeout": 15,
     "retries": 1,
     "ignoreerrors": True,
+    "logger": _YtDlpLogger(),
     # IPv6-first resolution often stalls on small VPS hosts.
     "source_address": "0.0.0.0",
 }
@@ -179,6 +212,7 @@ def _blocking_extract(target, flat=False):
     import yt_dlp
 
     options = dict(YDL_OPTIONS)
+    options.update(ydl_runtime_options())
     if flat:
         options["extract_flat"] = "in_playlist"
         options["noplaylist"] = False
