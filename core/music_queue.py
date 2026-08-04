@@ -25,6 +25,9 @@ class Track:
     # when playback rejects it. Excluded from equality: two references to the
     # same song are the same track even if one link has gone stale.
     stream_url: str | None = field(default=None, compare=False)
+    # Some CDNs, especially SoundCloud, require the same HTTP headers yt-dlp
+    # used while resolving the signed media URL.
+    http_headers: dict = field(default_factory=dict, compare=False)
 
 
 class LoopMode:

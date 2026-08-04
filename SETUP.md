@@ -104,6 +104,16 @@ Then restart PM2. For local development only, `MUSIC_YTDLP_COOKIES_FROM_BROWSER`
 can point yt-dlp at a browser profile, for example `firefox` or
 `chrome:Default`.
 
+Check the runtime exactly as the bot sees it:
+
+```bash
+venv/bin/python - <<'PY'
+from core.music_sources import detected_deno_path, ydl_runtime_options
+print("deno:", detected_deno_path())
+print("yt-dlp options:", ydl_runtime_options())
+PY
+```
+
 If YouTube logs `Signature solving failed`, `n challenge solving failed`, or
 `Only images are available for download`, install/update Deno and
 `yt-dlp[default]`. As a last resort while YouTube is changing things, allow

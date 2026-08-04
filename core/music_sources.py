@@ -140,6 +140,14 @@ SEARCH_PROVIDERS = (
 )
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 URL_RESULT_TYPES = {"url", "url_transparent"}
+FFMPEG_HEADER_BLOCKLIST = {
+    "accept-encoding",
+    "connection",
+    "content-length",
+    "host",
+    "range",
+    "transfer-encoding",
+}
 YOUTUBE_EJS_FAILURE_MARKERS = (
     "signature solving failed",
     "n challenge solving failed",
@@ -309,6 +317,28 @@ def _entry_stream_url(entry):
     return value if URL_START.match(value) else None
 
 
+def _entry_http_headers(entry):
+    headers = entry.get("http_headers") or {}
+    if not isinstance(headers, dict):
+        return {}
+    safe_headers = {}
+    for name, value in headers.items():
+        name = str(name or "").strip()
+        value = str(value or "").strip()
+        if (
+            not name
+            or name.lower() in FFMPEG_HEADER_BLOCKLIST
+            or not value
+            or "\n" in name
+            or "\r" in name
+            or "\n" in value
+            or "\r" in value
+        ):
+            continue
+        safe_headers[name] = value
+    return safe_headers
+
+
 def track_from_entry(entry, requester_id, source):
     """Build a Track from one yt-dlp result.
 
@@ -326,6 +356,7 @@ def track_from_entry(entry, requester_id, source):
         thumbnail=entry.get("thumbnail"),
         uploader=entry.get("uploader") or entry.get("channel"),
         stream_url=_entry_stream_url(entry),
+        http_headers=_entry_http_headers(entry),
     )
 
 
@@ -372,6 +403,7 @@ async def refresh_stream_url(track):
     if not fresh.stream_url:
         return False
     track.stream_url = fresh.stream_url
+    track.http_headers = fresh.http_headers
     return True
 
 

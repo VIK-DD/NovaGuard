@@ -1,6 +1,7 @@
 """Music category — playback from YouTube and SoundCloud with a button player."""
 
 import asyncio
+import shlex
 
 import discord
 from discord import app_commands
@@ -195,6 +196,17 @@ class Music(commands.Cog):
     )
     MAX_CONSECUTIVE_SKIPS = 5
 
+    def _ffmpeg_before_options(self, track):
+        """Include yt-dlp's HTTP headers so signed CDN URLs do not 403."""
+        headers = getattr(track, "http_headers", None) or {}
+        if not headers:
+            return self.FFMPEG_BEFORE
+        header_lines = []
+        for name, value in headers.items():
+            header_lines.append(f"{name}: {value}")
+        header_blob = "\r\n".join(header_lines) + "\r\n"
+        return f"{self.FFMPEG_BEFORE} -headers {shlex.quote(header_blob)}"
+
     async def cog_load(self):
         self.bot.add_view(MusicControls(self))
         self.idle_watcher.start()
@@ -311,12 +323,13 @@ class Music(commands.Cog):
 
         for attempt in (1, 2):
             try:
+                before_options = self._ffmpeg_before_options(track)
                 if volume >= 100:
                     return await discord.FFmpegOpusAudio.from_probe(
-                        track.stream_url, before_options=self.FFMPEG_BEFORE, options="-vn"
+                        track.stream_url, before_options=before_options, options="-vn"
                     )
                 pcm = discord.FFmpegPCMAudio(
-                    track.stream_url, before_options=self.FFMPEG_BEFORE, options="-vn"
+                    track.stream_url, before_options=before_options, options="-vn"
                 )
                 return discord.PCMVolumeTransformer(pcm, volume=volume / 100)
             except Exception as error:

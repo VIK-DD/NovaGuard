@@ -21,6 +21,7 @@ class TrackFromEntryTests(unittest.TestCase):
                 "thumbnail": "https://img.test/x.jpg",
                 "uploader": "Queen Official",
                 "url": "https://stream.test/audio",
+                "http_headers": {"User-Agent": "NovaTest", "Referer": "https://soundcloud.com/"},
             },
             requester_id="42",
             source="youtube",
@@ -32,6 +33,10 @@ class TrackFromEntryTests(unittest.TestCase):
         self.assertEqual(track.requester_id, "42")
         self.assertEqual(track.source, "youtube")
         self.assertEqual(track.stream_url, "https://stream.test/audio")
+        self.assertEqual(
+            track.http_headers,
+            {"User-Agent": "NovaTest", "Referer": "https://soundcloud.com/"},
+        )
 
     def test_missing_optional_fields_do_not_raise(self):
         track = track_from_entry({"title": "Bare"}, requester_id="1", source="soundcloud")
@@ -89,6 +94,24 @@ class TrackFromEntryTests(unittest.TestCase):
         )
         self.assertEqual(track.url, "https://soundcloud.com/a/b")
         self.assertIsNone(track.stream_url)
+
+    def test_http_headers_are_sanitized_before_ffmpeg(self):
+        track = track_from_entry(
+            {
+                "title": "Headers",
+                "url": "https://stream.test/audio",
+                "http_headers": {
+                    "User-Agent": "NovaTest",
+                    "Accept-Encoding": "gzip",
+                    "Bad\nHeader": "x",
+                    "Referer": "https://soundcloud.com/\r\nInjected: no",
+                    "Empty": "",
+                },
+            },
+            requester_id="1",
+            source="soundcloud",
+        )
+        self.assertEqual(track.http_headers, {"User-Agent": "NovaTest"})
 
 
 class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
