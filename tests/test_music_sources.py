@@ -14,12 +14,14 @@ from core.music_sources import (  # noqa: E402
     normalise_query,
     search_entry_score,
     search_cache_key,
+    search_cache_prefix,
     spotify_credentials_configured,
     spotify_to_query,
     stream_cache_key,
     search_providers,
     soundcloud_fallback_enabled,
     ydl_runtime_options,
+    ydl_format_selector,
 )
 
 
@@ -144,9 +146,12 @@ class CacheKeyTests(unittest.TestCase):
     def test_equivalent_queries_share_a_cache_key(self):
         self.assertEqual(search_cache_key("Daft Punk"), search_cache_key("  daft   punk  "))
 
+    def test_cache_prefix_uses_the_search_cache_version(self):
+        self.assertEqual(search_cache_prefix("Daft"), "search:v3:daft")
+
     def test_search_and_stream_keys_never_collide(self):
         self.assertNotEqual(search_cache_key("abc"), stream_cache_key("abc"))
-        self.assertTrue(search_cache_key("abc").startswith("search:v2:"))
+        self.assertTrue(search_cache_key("abc").startswith("search:v3:"))
         self.assertTrue(stream_cache_key("abc").startswith("stream:"))
 
 
@@ -196,6 +201,8 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         self._saved_js_runtime = os.environ.pop("MUSIC_YTDLP_JS_RUNTIME", None)
         self._saved_js_runtimes = os.environ.pop("MUSIC_YTDLP_JS_RUNTIMES", None)
         self._saved_remote_components = os.environ.pop("MUSIC_YTDLP_REMOTE_COMPONENTS", None)
+        self._saved_min_bitrate = os.environ.pop("MUSIC_MIN_AUDIO_BITRATE_KBPS", None)
+        self._saved_strict_bitrate = os.environ.pop("MUSIC_STRICT_MIN_AUDIO_BITRATE", None)
 
     def tearDown(self):
         os.environ.pop("MUSIC_YTDLP_COOKIES_FILE", None)
@@ -203,6 +210,8 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
         os.environ.pop("MUSIC_YTDLP_JS_RUNTIME", None)
         os.environ.pop("MUSIC_YTDLP_JS_RUNTIMES", None)
         os.environ.pop("MUSIC_YTDLP_REMOTE_COMPONENTS", None)
+        os.environ.pop("MUSIC_MIN_AUDIO_BITRATE_KBPS", None)
+        os.environ.pop("MUSIC_STRICT_MIN_AUDIO_BITRATE", None)
         if self._saved_file is not None:
             os.environ["MUSIC_YTDLP_COOKIES_FILE"] = self._saved_file
         if self._saved_browser is not None:
@@ -213,6 +222,10 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
             os.environ["MUSIC_YTDLP_JS_RUNTIMES"] = self._saved_js_runtimes
         if self._saved_remote_components is not None:
             os.environ["MUSIC_YTDLP_REMOTE_COMPONENTS"] = self._saved_remote_components
+        if self._saved_min_bitrate is not None:
+            os.environ["MUSIC_MIN_AUDIO_BITRATE_KBPS"] = self._saved_min_bitrate
+        if self._saved_strict_bitrate is not None:
+            os.environ["MUSIC_STRICT_MIN_AUDIO_BITRATE"] = self._saved_strict_bitrate
 
     def test_no_cookie_options_are_added_by_default(self):
         with mock.patch("core.music_sources.detected_deno_path", return_value=None):
@@ -259,6 +272,30 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
                 {"deno": {"path": "/usr/local/bin/deno"}},
             )
 
+    def test_format_prefers_direct_audio_over_hls(self):
+        selector = ydl_format_selector()
+
+        self.assertIn("protocol!=m3u8", selector)
+        self.assertIn("protocol!=m3u8_native", selector)
+        self.assertTrue(selector.endswith("/bestaudio/best"))
+
+    def test_min_bitrate_is_a_preference_by_default(self):
+        os.environ["MUSIC_MIN_AUDIO_BITRATE_KBPS"] = "320"
+
+        selector = ydl_format_selector()
+
+        self.assertIn("abr>=320", selector)
+        self.assertTrue(selector.endswith("/bestaudio/best"))
+
+    def test_min_bitrate_can_be_strict_when_requested(self):
+        os.environ["MUSIC_MIN_AUDIO_BITRATE_KBPS"] = "320"
+        os.environ["MUSIC_STRICT_MIN_AUDIO_BITRATE"] = "true"
+
+        selector = ydl_format_selector()
+
+        self.assertIn("abr>=320", selector)
+        self.assertFalse(selector.endswith("/bestaudio/best"))
+
 
 class SearchProviderConfigTests(unittest.TestCase):
     def setUp(self):
@@ -269,14 +306,14 @@ class SearchProviderConfigTests(unittest.TestCase):
         if self._saved is not None:
             os.environ["MUSIC_ENABLE_SOUNDCLOUD_FALLBACK"] = self._saved
 
-    def test_soundcloud_fallback_is_enabled_by_default(self):
-        self.assertTrue(soundcloud_fallback_enabled())
-        self.assertEqual([source for _, source in search_providers()], ["youtube", "soundcloud"])
-
-    def test_soundcloud_fallback_can_be_disabled(self):
-        os.environ["MUSIC_ENABLE_SOUNDCLOUD_FALLBACK"] = "false"
+    def test_soundcloud_fallback_is_disabled_by_default(self):
         self.assertFalse(soundcloud_fallback_enabled())
         self.assertEqual([source for _, source in search_providers()], ["youtube"])
+
+    def test_soundcloud_fallback_can_be_enabled(self):
+        os.environ["MUSIC_ENABLE_SOUNDCLOUD_FALLBACK"] = "true"
+        self.assertTrue(soundcloud_fallback_enabled())
+        self.assertEqual([source for _, source in search_providers()], ["youtube", "soundcloud"])
 
 
 if __name__ == "__main__":

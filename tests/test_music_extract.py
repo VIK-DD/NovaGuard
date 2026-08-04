@@ -135,7 +135,9 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                 }
             return None
 
-        with mock.patch.object(music_sources.log, "warning"), mock.patch.object(
+        with mock.patch.dict(os.environ, {"MUSIC_ENABLE_SOUNDCLOUD_FALLBACK": "true"}), mock.patch.object(
+            music_sources.log, "warning"
+        ), mock.patch.object(
             music_sources, "cache_get", return_value=None
         ), mock.patch.object(music_sources, "cache_put") as cache_put, mock.patch.object(
             music_sources, "_extract", side_effect=fake_extract
@@ -242,7 +244,7 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         )
 
         async def fake_extract(target, *, flat=False, include_cookies=True):
-            self.assertEqual(target, "scsearch1:Broken YouTube")
+            self.assertEqual(target, "scsearch5:Broken YouTube")
             self.assertTrue(flat)
             return {
                 "entries": [
@@ -254,7 +256,9 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                 ]
             }
 
-        with mock.patch.object(music_sources, "_extract", side_effect=fake_extract):
+        with mock.patch.dict(os.environ, {"MUSIC_ENABLE_SOUNDCLOUD_FALLBACK": "true"}), mock.patch.object(
+            music_sources, "_extract", side_effect=fake_extract
+        ):
             fallback = await music_sources.soundcloud_fallback_for(track)
 
         self.assertEqual(fallback.source, "soundcloud")

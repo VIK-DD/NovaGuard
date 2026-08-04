@@ -108,6 +108,10 @@ def search_cache_key(text):
     return f"search:{SEARCH_CACHE_VERSION}:{normalise_query(text)}"
 
 
+def search_cache_prefix(text):
+    return f"search:{SEARCH_CACHE_VERSION}:{normalise_query(text)}"
+
+
 def stream_cache_key(url):
     return f"stream:{(url or '').strip()}"
 
@@ -223,7 +227,7 @@ SEARCH_TTL_SECONDS = 7 * 86400
 STREAM_TTL_SECONDS = 6 * 3600
 MAX_PLAYLIST_TRACKS = 100
 HTTP_TIMEOUT_SECONDS = 10
-SEARCH_CACHE_VERSION = "v2"
+SEARCH_CACHE_VERSION = "v3"
 YOUTUBE_SEARCH_RESULTS = 8
 SOUNDCLOUD_SEARCH_RESULTS = 5
 SEARCH_PROVIDERS = (
@@ -380,9 +384,56 @@ def ydl_runtime_options(*, include_cookies=True):
     return options
 
 
-def soundcloud_fallback_enabled():
-    value = os.getenv("MUSIC_ENABLE_SOUNDCLOUD_FALLBACK", "true").strip().lower()
+def _env_enabled(name, default=False):
+    value = os.getenv(name, "").strip().lower()
+    if not value:
+        return bool(default)
     return value not in {"0", "false", "no", "off"}
+
+
+def configured_min_audio_bitrate():
+    """Preferred minimum audio bitrate in kbps, or None when unset.
+
+    This is a preference unless MUSIC_STRICT_MIN_AUDIO_BITRATE is enabled. A
+    strict 320 kbps requirement would reject many healthy YouTube Opus streams,
+    so the default keeps playback reliable and only prefers higher bitrate.
+    """
+    value = os.getenv("MUSIC_MIN_AUDIO_BITRATE_KBPS", "").strip()
+    if not value:
+        return None
+    try:
+        bitrate = int(value)
+    except ValueError:
+        return None
+    return max(1, min(bitrate, 512))
+
+
+def strict_min_audio_bitrate_enabled():
+    return _env_enabled("MUSIC_STRICT_MIN_AUDIO_BITRATE", default=False)
+
+
+def ydl_format_selector():
+    """Prefer stable direct audio URLs before fragile HLS/DASH segment streams."""
+    stable_audio = (
+        "bestaudio"
+        "[protocol!=m3u8]"
+        "[protocol!=m3u8_native]"
+        "[protocol!=http_dash_segments]"
+    )
+    any_audio = "bestaudio"
+    minimum = configured_min_audio_bitrate()
+    if not minimum:
+        return f"{stable_audio}/{any_audio}/best"
+
+    preferred_stable = f"{stable_audio}[abr>={minimum}]"
+    preferred_any = f"{any_audio}[abr>={minimum}]"
+    if strict_min_audio_bitrate_enabled():
+        return f"{preferred_stable}/{preferred_any}"
+    return f"{preferred_stable}/{preferred_any}/{stable_audio}/{any_audio}/best"
+
+
+def soundcloud_fallback_enabled():
+    return _env_enabled("MUSIC_ENABLE_SOUNDCLOUD_FALLBACK", default=False)
 
 
 def search_providers():
@@ -395,7 +446,7 @@ def search_providers():
 # so a query that happens to look like a URL cannot send yt-dlp somewhere
 # unexpected.
 YDL_OPTIONS = {
-    "format": "bestaudio/best",
+    "format": None,
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
@@ -482,6 +533,7 @@ def _blocking_extract(target, flat=False, include_cookies=True):
     import yt_dlp
 
     options = dict(YDL_OPTIONS)
+    options["format"] = ydl_format_selector()
     options.update(ydl_runtime_options(include_cookies=include_cookies))
     if flat:
         options["extract_flat"] = "in_playlist"
@@ -612,12 +664,13 @@ async def soundcloud_fallback_for(track):
     query = " ".join(part for part in (track.title, track.uploader or "") if part).strip()
     if not query:
         return None
-    info = await _extract(f"scsearch1:{query}", flat=True)
+    info = await _extract(f"scsearch{SOUNDCLOUD_SEARCH_RESULTS}:{query}", flat=True)
     entries = (info or {}).get("entries") or []
-    if not entries or not entries[0]:
+    entry, score = best_search_entry(query, entries, "soundcloud")
+    if not entry or score < MIN_SEARCH_SCORE:
         log.warning("Music SoundCloud rescue returned no entries for %r", query)
         return None
-    return track_from_entry(entries[0], track.requester_id, "soundcloud")
+    return track_from_entry(entry, track.requester_id, "soundcloud")
 
 
 def _fetch_json(url, headers=None, data=None):

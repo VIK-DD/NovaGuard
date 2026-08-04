@@ -15,8 +15,8 @@ from core.music_sources import (
     classify_input,
     extract,
     format_duration,
-    normalise_query,
     refresh_stream_url,
+    search_cache_prefix,
     soundcloud_fallback_for,
     spotify_credentials_configured,
 )
@@ -185,6 +185,7 @@ class Music(commands.Cog):
         self.bot = bot
         self.sessions = SessionRegistry()
         self._prefetch_tasks: set = set()
+        self._early_end_retries = {}
 
     # Reconnect flags matter on a small host: without them a brief network
     # hiccup can end a track silently instead of resuming it.
@@ -196,6 +197,9 @@ class Music(commands.Cog):
     )
     SOUNDCHECK_DURATION_SECONDS = 5
     MAX_CONSECUTIVE_SKIPS = 5
+    EARLY_END_GRACE_SECONDS = 20
+    EARLY_END_RETRY_WINDOW_SECONDS = 90
+    MAX_EARLY_END_RETRIES = 1
 
     def _ffmpeg_before_options(self, track):
         """Include yt-dlp's HTTP headers so signed CDN URLs do not 403."""
@@ -357,6 +361,61 @@ class Music(commands.Cog):
                     return None
         return None
 
+    def _track_retry_key(self, session, track):
+        return (str(session.guild_id), getattr(track, "url", None) or getattr(track, "title", ""))
+
+    def _ended_too_early(self, session, track):
+        """True when FFmpeg ended long before the track should have ended."""
+        import time
+
+        if not track or not track.duration or not session.started_at:
+            return False
+        elapsed = int(time.monotonic() - session.started_at)
+        if elapsed >= self.EARLY_END_RETRY_WINDOW_SECONDS:
+            return False
+        return elapsed + self.EARLY_END_GRACE_SECONDS < int(track.duration)
+
+    async def _retry_early_end(self, session, track):
+        """Refresh one dead CDN URL and replay the same track once."""
+        import time
+
+        if not self._ended_too_early(session, track):
+            return False
+
+        key = self._track_retry_key(session, track)
+        retries = self._early_end_retries.get(key, 0)
+        if retries >= self.MAX_EARLY_END_RETRIES:
+            return False
+        self._early_end_retries[key] = retries + 1
+
+        client = session.voice_client
+        if client is None or not client.is_connected():
+            return False
+
+        track.stream_url = None
+        track.http_headers = {}
+        source = await self._audio_source(track, session.volume)
+        if source is None:
+            return False
+
+        await self._notify(session, f"Stream refreshed for **{track.title}** - retrying playback.")
+
+        def after_playing(error, session=session, track=track):
+            if error:
+                print(f"Music playback error in guild {session.guild_id}: {error!r}")
+            self.bot.loop.create_task(self._on_track_finished(session, track))
+
+        try:
+            client.play(source, after=after_playing)
+        except discord.ClientException as error:
+            print(f"Music retry play call failed in guild {session.guild_id}: {error!r}")
+            return False
+
+        session.started_at = time.monotonic()
+        session.touch()
+        await self.refresh_card(session)
+        return True
+
     async def _play_next(self, session):
         """Advance the queue and start the next track."""
         client = session.voice_client
@@ -387,10 +446,12 @@ class Music(commands.Cog):
                     await self._notify(session, f"Skipped **{track.title}** - it could not be played.")
                     continue
 
-            def after_playing(error, session=session):
+            self._early_end_retries.pop(self._track_retry_key(session, track), None)
+
+            def after_playing(error, session=session, track=track):
                 if error:
                     print(f"Music playback error in guild {session.guild_id}: {error!r}")
-                self.bot.loop.create_task(self._on_track_finished(session))
+                self.bot.loop.create_task(self._on_track_finished(session, track))
 
             try:
                 client.play(source, after=after_playing)
@@ -421,9 +482,11 @@ class Music(commands.Cog):
         except Exception as error:
             print(f"Music prefetch skipped for {track.url}: {error!r}")
 
-    async def _on_track_finished(self, session):
+    async def _on_track_finished(self, session, finished_track=None):
         """Chain to the next track without stranding the session on errors."""
         try:
+            if await self._retry_early_end(session, finished_track):
+                return
             await self._play_next(session)
         except Exception as error:
             print(f"Music advance failed in guild {session.guild_id}: {error!r}")
@@ -520,7 +583,7 @@ class Music(commands.Cog):
             return []
         try:
             rows = await asyncio.to_thread(
-                cache_prefix_search, f"search:{normalise_query(text)}", 20
+                cache_prefix_search, search_cache_prefix(text), 20
             )
         except Exception:
             rows = []
@@ -589,12 +652,13 @@ class Music(commands.Cog):
             await self._play_next(session)
 
         first = tracks[0]
+        source_label = {"youtube": "YouTube", "soundcloud": "SoundCloud"}.get(first.source, first.source.title())
         if accepted == 1:
             title = "Playing now" if was_idle else "Added to the queue"
-            description = f"**{first.title}** `{format_duration(first.duration)}`"
+            description = f"**{first.title}** `{format_duration(first.duration)}`\nSource: `{source_label}`"
         else:
             title = "Playlist added"
-            description = f"Queued `{accepted}` tracks, starting with **{first.title}**."
+            description = f"Queued `{accepted}` tracks from `{source_label}`, starting with **{first.title}**."
         embed = make_embed(title, description, color=Palette.FUN)
         if first.thumbnail:
             embed.set_thumbnail(url=first.thumbnail)

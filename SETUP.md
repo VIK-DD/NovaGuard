@@ -62,7 +62,7 @@ JavaScript runtime for yt-dlp's EJS challenge solver; Deno is the preferred
 runtime:
 
 ```bash
-sudo apt install -y ffmpeg
+sudo apt install -y ffmpeg unzip
 curl -fsSL https://deno.land/install.sh | sh
 python -m pip install -r requirements.txt
 ```
@@ -79,12 +79,22 @@ MUSIC_YTDLP_JS_RUNTIME=/home/ubuntu/.deno/bin/deno
 The limit exists for CPU, not RAM: YouTube streams are usually copied without
 re-encoding, while SoundCloud has to be transcoded.
 
-Searches prefer YouTube. `MUSIC_ENABLE_SOUNDCLOUD_FALLBACK=true` lets the bot
-try SoundCloud when YouTube returns nothing or when a found YouTube result
-cannot resolve a playable stream. Set it to `false` for YouTube-only search
-quality once cookies and EJS are working reliably.
+Searches prefer YouTube. `MUSIC_ENABLE_SOUNDCLOUD_FALLBACK=false` is the
+recommended production default because SoundCloud CDN/HLS links can expire or
+die mid-track. Set it to `true` only if you want the bot to try SoundCloud when
+YouTube cannot resolve a playable stream.
 Search uses multiple candidates and avoids YouTube cookies during the metadata
 lookup, so a rotated cookie file does not poison normal `/play query` searches.
+
+You can prefer higher bitrate audio without making popular YouTube tracks fail:
+
+```env
+MUSIC_MIN_AUDIO_BITRATE_KBPS=192
+MUSIC_STRICT_MIN_AUDIO_BITRATE=false
+```
+
+Avoid strict `320` unless you intentionally want many tracks to fail instead of
+falling back to a stable Opus stream.
 
 Spotify credentials are optional. Without them a Spotify track link still
 works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes
