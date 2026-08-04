@@ -183,6 +183,20 @@ When YouTube challenges the host, NovaGuard now logs a clear
 5 minutes) and `/play` tells the user the server IP is being challenged
 instead of a generic "nothing found".
 
+While the challenge is active (seen in the last 15 minutes), NovaGuard also
+switches itself to SoundCloud automatically: searches go straight to
+SoundCloud, and a YouTube track whose stream cannot resolve is rescued with a
+SoundCloud match — even when `MUSIC_ENABLE_SOUNDCLOUD_FALLBACK` is off. A
+degraded stream beats silence; once YouTube stops challenging the host,
+behaviour returns to normal on its own.
+
+A note on bitrate expectations: SoundCloud free streams top out around
+128 kbps and YouTube Opus around 130–160 kbps, and Discord voice channels cap
+the output at the channel bitrate (64–96 kbps unboosted). A strict 320 kbps
+requirement would therefore reject nearly everything; prefer
+`MUSIC_MIN_AUDIO_BITRATE_KBPS=192` with strict mode off, which picks the best
+available stream without failing tracks.
+
 ## 3. Raspberry Pi with pm2
 
 If your bot already runs in pm2, update the files and restart:

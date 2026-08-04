@@ -412,6 +412,12 @@ class SearchProviderConfigTests(unittest.TestCase):
         self.assertTrue(soundcloud_fallback_enabled())
         self.assertEqual([source for _, source in search_providers()], ["youtube", "soundcloud"])
 
+    def test_soundcloud_becomes_primary_while_youtube_is_challenged(self):
+        # Even with the fallback flag off: a challenged host cannot resolve
+        # YouTube streams, so searching YouTube would only waste time.
+        with mock.patch.object(music_sources, "youtube_bot_check_recent", return_value=True):
+            self.assertEqual([source for _, source in search_providers()], ["soundcloud"])
+
 
 if __name__ == "__main__":
     unittest.main()

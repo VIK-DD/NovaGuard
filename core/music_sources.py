@@ -548,6 +548,11 @@ def soundcloud_fallback_enabled():
 
 
 def search_providers():
+    if youtube_bot_check_recent():
+        # While YouTube is challenging this host its streams will not resolve,
+        # so searching it only delays the answer. Go straight to SoundCloud,
+        # whether or not the fallback flag is set: a degraded stream beats none.
+        return (SEARCH_PROVIDERS[1],)
     if soundcloud_fallback_enabled():
         return SEARCH_PROVIDERS
     return (SEARCH_PROVIDERS[0],)
@@ -769,8 +774,15 @@ async def _extract_by_search(kind, platform, identifier, requester_id):
 
 
 async def soundcloud_fallback_for(track):
-    """Find a SoundCloud candidate when a YouTube stream cannot be resolved."""
-    if not soundcloud_fallback_enabled() or not track or track.source == "soundcloud":
+    """Find a SoundCloud candidate when a YouTube stream cannot be resolved.
+
+    Runs when the operator enabled the fallback, and also whenever YouTube is
+    actively challenging this host — in that state the alternative to a
+    SoundCloud stream is silence.
+    """
+    if not (soundcloud_fallback_enabled() or youtube_bot_check_recent()):
+        return None
+    if not track or track.source == "soundcloud":
         return None
     query = " ".join(part for part in (track.title, track.uploader or "") if part).strip()
     if not query:

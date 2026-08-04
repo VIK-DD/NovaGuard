@@ -325,5 +325,34 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(track.stream_url, "https://stream.test/audio")
 
 
+class BlockedYoutubeRescueTests(unittest.IsolatedAsyncioTestCase):
+    async def test_rescue_runs_while_youtube_is_challenged_even_with_flag_off(self):
+        track = track_from_entry(
+            {"title": "Song", "webpage_url": "https://www.youtube.com/watch?v=abc12345678"},
+            requester_id="1",
+            source="youtube",
+        )
+
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            return {
+                "entries": [
+                    {
+                        "title": "Song",
+                        "webpage_url": "https://soundcloud.com/a/song",
+                        "duration": 200,
+                    }
+                ]
+            }
+
+        with mock.patch.dict(os.environ, {"MUSIC_ENABLE_SOUNDCLOUD_FALLBACK": "false"}), mock.patch.object(
+            music_sources, "youtube_bot_check_recent", return_value=True
+        ), mock.patch.object(music_sources, "_extract", side_effect=fake_extract):
+            rescue = await music_sources.soundcloud_fallback_for(track)
+
+        self.assertIsNotNone(rescue)
+        self.assertEqual(rescue.source, "soundcloud")
+        self.assertEqual(rescue.url, "https://soundcloud.com/a/song")
+
+
 if __name__ == "__main__":
     unittest.main()
