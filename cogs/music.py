@@ -52,14 +52,15 @@ def nothing_playing_embed(detail="There is nothing playing here."):
 
 
 def is_missing_voice_backend_error(error):
-    return "PyNaCl" in str(error or "")
+    text = str(error or "")
+    return "library needed in order to use voice" in text
 
 
 def missing_voice_backend_embed():
     embed = make_embed(
         "Voice support is not installed",
-        "Install the Python voice dependency on the host, then restart the bot: "
-        "`venv/bin/python -m pip install PyNaCl`.",
+        "Install the Python voice dependencies on the host, then restart the bot: "
+        "`venv/bin/python -m pip install -r requirements.txt`.",
         color=Palette.DANGER,
     )
     brand_footer(embed, "Music")

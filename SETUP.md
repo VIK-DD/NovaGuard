@@ -56,10 +56,12 @@ python3 bot.py
 
 ### Music (optional)
 
-Music playback needs FFmpeg on the host:
+Music playback needs FFmpeg on the host, plus the Python voice packages from
+`requirements.txt` (`PyNaCl` and `davey`):
 
 ```bash
 sudo apt install -y ffmpeg
+python -m pip install -r requirements.txt
 ```
 
 `MUSIC_MAX_SESSIONS` caps how many servers can play at once (default `3`).
@@ -71,7 +73,7 @@ works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes
 something, so bump it when playback starts failing:
 
 ```bash
-.venv/bin/pip install --upgrade yt-dlp
+.venv/bin/pip install --upgrade yt-dlp davey PyNaCl
 ```
 
 ## 3. Raspberry Pi with pm2

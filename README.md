@@ -14,7 +14,7 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 
 [![Version](https://img.shields.io/badge/version-3.0.0-0f766e)](https://github.com/VIK-DD/NovaGuard/releases/latest)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![discord.py](https://img.shields.io/badge/discord.py-2.6+-5865F2)](https://discordpy.readthedocs.io/)
+[![discord.py](https://img.shields.io/badge/discord.py-2.7+-5865F2)](https://discordpy.readthedocs.io/)
 [![SQLite](https://img.shields.io/badge/SQLite-config%20%2B%20state-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![PM2](https://img.shields.io/badge/PM2-keep%20alive-2B037A?logo=pm2&logoColor=white)](https://pm2.keymetrics.io/)
 [![Runs on Raspberry Pi](https://img.shields.io/badge/runs%20on-Raspberry%20Pi-A22846?logo=raspberrypi&logoColor=white)](#-running-on-a-raspberry-pi)
@@ -92,7 +92,7 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 | Layer | Choice |
 | --- | --- |
 | Runtime | Python 3.11+ |
-| Discord library | `discord.py` 2.6+ |
+| Discord library | `discord.py` 2.7+ |
 | HTTP | `aiohttp` |
 | State | SQLite + JSON for selected feature data |
 | Hosting | Raspberry Pi, VPS, or any Linux box |

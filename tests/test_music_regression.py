@@ -25,6 +25,10 @@ class MusicErrorMessageTests(unittest.TestCase):
         error = RuntimeError("PyNaCl library needed in order to use voice")
         self.assertTrue(music_cog.is_missing_voice_backend_error(error))
 
+    def test_missing_davey_is_recognised_as_a_voice_dependency_problem(self):
+        error = RuntimeError("davey library needed in order to use voice")
+        self.assertTrue(music_cog.is_missing_voice_backend_error(error))
+
     def test_spotify_playlist_without_credentials_gets_a_setup_hint(self):
         with mock.patch.dict(
             os.environ,
