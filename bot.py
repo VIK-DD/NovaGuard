@@ -23,6 +23,11 @@ from core.github_api import github_api
 from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
 from core.theme import Palette, brand_footer, make_embed
 
+def _music_cog():
+    backend = os.getenv("MUSIC_BACKEND", "yt-dlp").strip().lower()
+    return "music_lavalink" if backend in {"lavalink", "lava", "ll"} else "music"
+
+
 COGS = (
     "setup",
     "system",
@@ -39,7 +44,7 @@ COGS = (
     "tickets",
     "automod",
     "economy",
-    "music",
+    _music_cog(),
     "ai",
 )
 

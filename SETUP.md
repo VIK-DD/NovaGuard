@@ -206,6 +206,74 @@ pm2 restart pythonbot
 pm2 save
 ```
 
+### Optional: Lavalink music backend
+
+NovaGuard can use Lavalink instead of the in-process yt-dlp/FFmpeg player:
+
+```env
+MUSIC_BACKEND=lavalink
+LAVALINK_URI=http://127.0.0.1:2333
+LAVALINK_PASSWORD=use-a-long-random-password
+MUSIC_LAVALINK_SEARCH_SOURCE=ytmsearch
+```
+
+Lavalink v4 works with Wavelink 3.x. The Lavalink documentation notes that v4
+requires Java 17+, and the Wavelink migration docs show the v4 connection model
+through `wavelink.Pool.connect`. The default built-in YouTube source is
+deprecated, so the bundled example config uses the official `youtube-source`
+plugin and disables Lavalink's built-in YouTube source.
+
+Install and start a local node on Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y openjdk-17-jre-headless
+
+mkdir -p /home/ubuntu/lavalink
+cd /home/ubuntu/lavalink
+curl -L -o Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar
+
+cp /home/ubuntu/NovaGuard/deploy/lavalink/application.yml /home/ubuntu/lavalink/application.yml
+sed -i 's|CHANGE_ME_TO_A_LONG_RANDOM_PASSWORD|use-a-long-random-password|' application.yml
+
+pm2 start java --name lavalink --cwd /home/ubuntu/lavalink -- -jar Lavalink.jar
+pm2 save
+```
+
+Then enable the backend in the bot:
+
+```bash
+cd /home/ubuntu/NovaGuard
+venv/bin/python -m pip install -r requirements.txt
+
+grep -q '^MUSIC_BACKEND=' .env \
+  && sed -i 's|^MUSIC_BACKEND=.*|MUSIC_BACKEND=lavalink|' .env \
+  || echo 'MUSIC_BACKEND=lavalink' >> .env
+
+grep -q '^LAVALINK_URI=' .env \
+  && sed -i 's|^LAVALINK_URI=.*|LAVALINK_URI=http://127.0.0.1:2333|' .env \
+  || echo 'LAVALINK_URI=http://127.0.0.1:2333' >> .env
+
+grep -q '^LAVALINK_PASSWORD=' .env \
+  && sed -i 's|^LAVALINK_PASSWORD=.*|LAVALINK_PASSWORD=use-a-long-random-password|' .env \
+  || echo 'LAVALINK_PASSWORD=use-a-long-random-password' >> .env
+
+grep -q '^MUSIC_LAVALINK_SEARCH_SOURCE=' .env \
+  && sed -i 's|^MUSIC_LAVALINK_SEARCH_SOURCE=.*|MUSIC_LAVALINK_SEARCH_SOURCE=ytmsearch|' .env \
+  || echo 'MUSIC_LAVALINK_SEARCH_SOURCE=ytmsearch' >> .env
+
+pm2 restart novaguard --update-env
+pm2 save
+```
+
+If you want to go back instantly:
+
+```bash
+cd /home/ubuntu/NovaGuard
+sed -i 's|^MUSIC_BACKEND=.*|MUSIC_BACKEND=yt-dlp|' .env
+pm2 restart novaguard --update-env
+```
+
 The bot loads `.env` automatically on startup — no manual exports needed.
 
 ### Public website status and dashboard API
