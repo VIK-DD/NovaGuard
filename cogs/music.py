@@ -14,11 +14,13 @@ from core.music_session import IDLE_DISCONNECT_SECONDS, SessionRegistry
 from core.music_sources import (
     classify_input,
     extract,
+    ffmpeg_proxy_url,
     format_duration,
     refresh_stream_url,
     search_cache_prefix,
     soundcloud_fallback_for,
     spotify_credentials_configured,
+    youtube_bot_check_recent,
 )
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
@@ -81,6 +83,13 @@ def nothing_found_description(query):
         return (
             "I could not read that Spotify link or find a playable match for it. "
             "Spotify audio cannot be streamed directly, so I search YouTube for the track."
+        )
+    if youtube_bot_check_recent():
+        return (
+            "YouTube is currently challenging this server's IP "
+            "(\"Sign in to confirm you're not a bot\"), so streams cannot be resolved. "
+            "The host needs a clean egress: set `MUSIC_YTDLP_PROXY` in `.env` or move "
+            "the bot to an unflagged IP - see SETUP.md > Music."
         )
     return (
         f"I could not find anything for `{query[:120]}`. If this happens for every song, "
@@ -188,11 +197,14 @@ class Music(commands.Cog):
         self._early_end_retries = {}
 
     # Reconnect flags matter on a small host: without them a brief network
-    # hiccup can end a track silently instead of resuming it.
+    # hiccup can end a track silently instead of resuming it. 403/404 are
+    # deliberately not retried: a dead signed CDN URL never recovers, and
+    # retrying it holds the track in silent "playing" limbo instead of letting
+    # the early-end logic refresh the stream URL.
     FFMPEG_BEFORE = (
         "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
         "-reconnect_at_eof 1 -reconnect_on_network_error 1 "
-        "-reconnect_on_http_error 4xx,5xx -rw_timeout 15000000 "
+        "-reconnect_on_http_error 429,5xx -rw_timeout 15000000 "
         "-nostdin -loglevel warning"
     )
     SOUNDCHECK_DURATION_SECONDS = 5
@@ -203,14 +215,20 @@ class Music(commands.Cog):
 
     def _ffmpeg_before_options(self, track):
         """Include yt-dlp's HTTP headers so signed CDN URLs do not 403."""
+        parts = [self.FFMPEG_BEFORE]
+        proxy = ffmpeg_proxy_url()
+        if proxy and getattr(track, "source", "") == "youtube":
+            # YouTube CDN URLs are bound to the IP that resolved them, so the
+            # stream must ride the same proxy yt-dlp used.
+            parts.append(f"-http_proxy {shlex.quote(proxy)}")
         headers = getattr(track, "http_headers", None) or {}
-        if not headers:
-            return self.FFMPEG_BEFORE
-        header_lines = []
-        for name, value in headers.items():
-            header_lines.append(f"{name}: {value}")
-        header_blob = "\r\n".join(header_lines) + "\r\n"
-        return f"{self.FFMPEG_BEFORE} -headers {shlex.quote(header_blob)}"
+        if headers:
+            header_lines = []
+            for name, value in headers.items():
+                header_lines.append(f"{name}: {value}")
+            header_blob = "\r\n".join(header_lines) + "\r\n"
+            parts.append(f"-headers {shlex.quote(header_blob)}")
+        return " ".join(parts)
 
     def _soundcheck_source_args(self):
         """Arguments for a local test tone; no yt-dlp, no network, no CDN."""
@@ -650,6 +668,24 @@ class Music(commands.Cog):
         was_idle = not (client.is_playing() or client.is_paused())
         if was_idle:
             await self._play_next(session)
+            client = session.voice_client
+            if client is None or not (client.is_playing() or client.is_paused()):
+                # Every queued track failed to start; saying "Playing now"
+                # here is exactly the silent-player confusion we avoid.
+                if youtube_bot_check_recent():
+                    detail = (
+                        "YouTube is challenging this server's IP right now, so the "
+                        "stream could not be started. The host needs `MUSIC_YTDLP_PROXY` "
+                        "or a clean IP - see SETUP.md > Music."
+                    )
+                else:
+                    detail = (
+                        "The track was found but its audio stream could not be started. "
+                        "Check the host logs for `Music` errors."
+                    )
+                embed = make_embed("Could not start playback", detail, color=Palette.DANGER)
+                brand_footer(embed, "Music")
+                return await respond(interaction, embed, ephemeral=True)
 
         first = tracks[0]
         source_label = {"youtube": "YouTube", "soundcloud": "SoundCloud"}.get(first.source, first.source.title())

@@ -43,6 +43,49 @@ class FfmpegOptionsTests(unittest.TestCase):
 
         self.assertEqual(music._ffmpeg_before_options(track), music.FFMPEG_BEFORE)
 
+    def test_youtube_streams_ride_the_configured_proxy(self):
+        music = Music(bot=None)
+        track = Track(
+            title="Song",
+            url="https://youtube.com/watch?v=abc",
+            duration=1,
+            source="youtube",
+            requester_id="1",
+        )
+
+        os.environ["MUSIC_YTDLP_PROXY"] = "http://user:pass@proxy.test:3128"
+        try:
+            options = music._ffmpeg_before_options(track)
+        finally:
+            os.environ.pop("MUSIC_YTDLP_PROXY", None)
+
+        self.assertIn("-http_proxy", options)
+        self.assertIn("proxy.test:3128", options)
+
+    def test_soundcloud_streams_do_not_use_the_youtube_proxy(self):
+        music = Music(bot=None)
+        track = Track(
+            title="Song",
+            url="https://soundcloud.com/a/song",
+            duration=1,
+            source="soundcloud",
+            requester_id="1",
+        )
+
+        os.environ["MUSIC_YTDLP_PROXY"] = "http://user:pass@proxy.test:3128"
+        try:
+            options = music._ffmpeg_before_options(track)
+        finally:
+            os.environ.pop("MUSIC_YTDLP_PROXY", None)
+
+        self.assertNotIn("-http_proxy", options)
+
+    def test_dead_cdn_urls_are_not_retried_by_ffmpeg(self):
+        # 403/404 never recover on signed CDN URLs; retrying them leaves the
+        # player saying "playing" while producing silence.
+        self.assertIn("-reconnect_on_http_error 429,5xx", Music.FFMPEG_BEFORE)
+        self.assertNotIn("4xx", Music.FFMPEG_BEFORE)
+
     def test_soundcheck_uses_a_local_lavfi_tone(self):
         music = Music(bot=None)
 
