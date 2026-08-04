@@ -14,6 +14,8 @@ from core.music_sources import (  # noqa: E402
     spotify_credentials_configured,
     spotify_to_query,
     stream_cache_key,
+    search_providers,
+    soundcloud_fallback_enabled,
     ydl_runtime_options,
 )
 
@@ -168,6 +170,25 @@ class YtDlpRuntimeOptionsTests(unittest.TestCase):
     def test_browser_cookie_spec_is_a_tuple_for_the_python_api(self):
         os.environ["MUSIC_YTDLP_COOKIES_FROM_BROWSER"] = "chrome:Default"
         self.assertEqual(ydl_runtime_options()["cookiesfrombrowser"], ("chrome", "Default"))
+
+
+class SearchProviderConfigTests(unittest.TestCase):
+    def setUp(self):
+        self._saved = os.environ.pop("MUSIC_ENABLE_SOUNDCLOUD_FALLBACK", None)
+
+    def tearDown(self):
+        os.environ.pop("MUSIC_ENABLE_SOUNDCLOUD_FALLBACK", None)
+        if self._saved is not None:
+            os.environ["MUSIC_ENABLE_SOUNDCLOUD_FALLBACK"] = self._saved
+
+    def test_soundcloud_fallback_is_enabled_by_default(self):
+        self.assertTrue(soundcloud_fallback_enabled())
+        self.assertEqual([source for _, source in search_providers()], ["youtube", "soundcloud"])
+
+    def test_soundcloud_fallback_can_be_disabled(self):
+        os.environ["MUSIC_ENABLE_SOUNDCLOUD_FALLBACK"] = "false"
+        self.assertFalse(soundcloud_fallback_enabled())
+        self.assertEqual([source for _, source in search_providers()], ["youtube"])
 
 
 if __name__ == "__main__":

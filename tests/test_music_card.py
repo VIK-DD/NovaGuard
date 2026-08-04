@@ -74,6 +74,10 @@ class CardFieldsTests(unittest.TestCase):
         self.assertIn("40%", result["footer"])
         self.assertIn("queue", result["footer"].lower())
 
+    def test_the_footer_reports_the_current_source(self):
+        result = fields(current=track("Current"))
+        self.assertIn("Source YouTube", result["footer"])
+
     def test_a_livestream_shows_LIVE_rather_than_a_zero_length(self):
         self.assertIn("LIVE", fields(current=track(duration=0))["progress"])
 

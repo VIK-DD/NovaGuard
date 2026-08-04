@@ -168,6 +168,17 @@ def ydl_runtime_options():
     return options
 
 
+def soundcloud_fallback_enabled():
+    value = os.getenv("MUSIC_ENABLE_SOUNDCLOUD_FALLBACK", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def search_providers():
+    if soundcloud_fallback_enabled():
+        return SEARCH_PROVIDERS
+    return (SEARCH_PROVIDERS[0],)
+
+
 # `default_search` is deliberately unset: the search prefix is chosen in code
 # so a query that happens to look like a URL cannot send yt-dlp somewhere
 # unexpected.
@@ -297,7 +308,7 @@ async def _extract_by_search(kind, platform, identifier, requester_id):
             continue
         entry = None
         source = "youtube"
-        for prefix, source_name in SEARCH_PROVIDERS:
+        for prefix, source_name in search_providers():
             info = await _extract(f"{prefix}{query}")
             entries = (info or {}).get("entries") or []
             if entries and entries[0]:

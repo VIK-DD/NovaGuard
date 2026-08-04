@@ -68,6 +68,10 @@ python -m pip install -r requirements.txt
 The limit exists for CPU, not RAM: YouTube streams are usually copied without
 re-encoding, while SoundCloud has to be transcoded.
 
+Searches prefer YouTube. `MUSIC_ENABLE_SOUNDCLOUD_FALLBACK=true` lets the bot
+try SoundCloud only when YouTube returns nothing. Set it to `false` for
+YouTube-only search quality once cookies are working reliably.
+
 Spotify credentials are optional. Without them a Spotify track link still
 works; with them, playlists work too. `yt-dlp` breaks whenever YouTube changes
 something, so bump it when playback starts failing:

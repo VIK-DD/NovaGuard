@@ -103,6 +103,23 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         cache_put.assert_called_once()
         self.assertEqual(cache_put.call_args.args[1]["_source"], "soundcloud")
 
+    async def test_search_respects_disabled_soundcloud_fallback(self):
+        calls = []
+
+        async def fake_extract(target, *, flat=False):
+            calls.append(target)
+            return {"entries": []}
+
+        with mock.patch.dict(os.environ, {"MUSIC_ENABLE_SOUNDCLOUD_FALLBACK": "false"}), mock.patch.object(
+            music_sources.log, "warning"
+        ), mock.patch.object(music_sources, "cache_get", return_value=None), mock.patch.object(
+            music_sources, "_extract", side_effect=fake_extract
+        ):
+            tracks = await music_sources._extract_by_search("search", None, "fallback song", "42")
+
+        self.assertEqual(calls, ["ytsearch1:fallback song"])
+        self.assertEqual(tracks, [])
+
 
 if __name__ == "__main__":
     unittest.main()

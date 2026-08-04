@@ -20,6 +20,12 @@ LOOP_LABELS = {
     LoopMode.QUEUE: "looping queue",
 }
 
+SOURCE_LABELS = {
+    "youtube": "YouTube",
+    "soundcloud": "SoundCloud",
+    "spotify": "Spotify",
+}
+
 
 def progress_bar(elapsed, total, slots=14):
     if total <= 0:
@@ -31,7 +37,8 @@ def progress_bar(elapsed, total, slots=14):
 
 def card_fields(*, current, upcoming, elapsed, volume, loop, paused):
     """Everything the embed needs, as plain strings."""
-    footer = f"Volume {volume}% • {LOOP_LABELS.get(loop, 'loop off')}"
+    source = SOURCE_LABELS.get(getattr(current, "source", None), "Unknown") if current else "Idle"
+    footer = f"Source {source} • Volume {volume}% • {LOOP_LABELS.get(loop, 'loop off')}"
 
     if current is None:
         return {

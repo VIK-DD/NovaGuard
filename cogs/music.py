@@ -188,6 +188,8 @@ class Music(commands.Cog):
     # hiccup can end a track silently instead of resuming it.
     FFMPEG_BEFORE = (
         "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
+        "-reconnect_at_eof 1 -reconnect_on_network_error 1 "
+        "-reconnect_on_http_error 4xx,5xx -rw_timeout 15000000 "
         "-nostdin -loglevel warning"
     )
     MAX_CONSECUTIVE_SKIPS = 5
