@@ -8,6 +8,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import discord  # noqa: E402
+
 import cogs.music as music_cog  # noqa: E402
 import cogs.music_lavalink as lavalink_music_cog  # noqa: E402
 import cogs.voice as voice_cog  # noqa: E402
@@ -84,6 +86,150 @@ class MusicErrorMessageTests(unittest.TestCase):
         self.assertIn("ng:lavalink:voldown", source)
         self.assertIn("ng:lavalink:volup", source)
         self.assertIn("set_volume", source)
+
+
+class LavalinkQueueTests(unittest.TestCase):
+    def test_a_track_queued_after_the_queue_ran_dry_still_plays(self):
+        # Regression for the player going silent after the last track: the
+        # cursor parked past the end, so a newly queued track landed under it
+        # and the next advance skipped it. /disconnect was the only way out.
+        queue = lavalink_music_cog.LavalinkQueue()
+        queue.add_many(["a"])
+        queue.advance()
+        self.assertIsNone(queue.advance())
+        self.assertIsNone(queue.current)
+
+        queue.add_many(["b"])
+
+        self.assertEqual(queue.upcoming, ["b"])
+        self.assertEqual(queue.advance(), "b")
+        self.assertEqual(queue.current, "b")
+
+    def test_a_finished_queue_has_no_current_track_or_leftovers(self):
+        queue = lavalink_music_cog.LavalinkQueue()
+        queue.add_many(["a", "b"])
+        queue.advance()
+        queue.advance()
+        self.assertIsNone(queue.advance())
+
+        self.assertIsNone(queue.current)
+        self.assertEqual(queue.upcoming, [])
+
+    def test_loop_modes_still_repeat_after_the_fix(self):
+        queue = lavalink_music_cog.LavalinkQueue()
+        queue.add_many(["a", "b"])
+        queue.loop = "queue"
+
+        self.assertEqual(queue.advance(), "a")
+        self.assertEqual(queue.advance(), "b")
+        self.assertEqual(queue.advance(), "a")
+
+    def test_the_cap_counts_waiting_tracks_not_played_history(self):
+        queue = lavalink_music_cog.LavalinkQueue()
+        queue.add_many([str(index) for index in range(lavalink_music_cog.MAX_QUEUE_LENGTH)])
+        for _ in range(10):
+            queue.advance()
+
+        self.assertEqual(queue.add_many(["late"]), 1)
+
+
+class LavalinkTrackEndGatingTests(unittest.TestCase):
+    def test_a_failed_track_does_not_advance_twice(self):
+        # Lavalink reports a failure as an exception AND an end event. Acting
+        # on both ate the following song - the "sometimes it skips" symptom.
+        self.assertFalse(lavalink_music_cog._should_advance_on_end("loadfailed"))
+        self.assertFalse(lavalink_music_cog._should_advance_on_end("replaced"))
+        self.assertFalse(lavalink_music_cog._should_advance_on_end("cleanup"))
+
+    def test_natural_ends_and_skips_still_advance(self):
+        self.assertTrue(lavalink_music_cog._should_advance_on_end("finished"))
+        self.assertTrue(lavalink_music_cog._should_advance_on_end("stopped"))
+
+    def test_an_unknown_reason_still_advances(self):
+        self.assertTrue(lavalink_music_cog._should_advance_on_end(""))
+
+    def test_end_reasons_are_normalised_from_enums_and_case(self):
+        class Reason:
+            value = "LoadFailed"
+
+        class Payload:
+            reason = Reason()
+
+        self.assertEqual(lavalink_music_cog._end_reason(Payload()), "loadfailed")
+
+    def test_tracks_are_matched_by_identifier_not_object_identity(self):
+        class Track:
+            def __init__(self, identifier):
+                self.identifier = identifier
+
+        self.assertTrue(lavalink_music_cog._same_track(Track("abc"), Track("abc")))
+        self.assertFalse(lavalink_music_cog._same_track(Track("abc"), Track("xyz")))
+        self.assertFalse(lavalink_music_cog._same_track(None, Track("abc")))
+
+
+class LavalinkFooterTests(unittest.TestCase):
+    def test_the_music_footer_carries_the_brand_only(self):
+        embed = discord.Embed()
+
+        lavalink_music_cog._music_footer(embed)
+
+        self.assertNotIn("Lavalink ready", embed.footer.text or "")
+        self.assertNotIn(lavalink_music_cog.MUSIC_LABEL, embed.footer.text or "")
+
+
+class LavalinkPlaybackRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    def _cog_with_session(self):
+        class FakePlayer:
+            connected = True
+
+            def __init__(self):
+                self.played = []
+
+            async def play(self, track, volume=100):
+                self.played.append(track)
+
+        cog = lavalink_music_cog.LavalinkMusic(bot=mock.Mock())
+        session = lavalink_music_cog.LavalinkSession("1")
+        session.player = FakePlayer()
+        cog.sessions["1"] = session
+        return cog, session
+
+    async def test_playback_resumes_after_the_queue_ran_dry(self):
+        # The reported failure end to end: last track finishes, the queue is
+        # empty, then someone runs /play again. Before the fix nothing played
+        # until /disconnect threw the session away.
+        cog, session = self._cog_with_session()
+
+        with mock.patch.object(cog, "_announce_track", new=mock.AsyncMock()), mock.patch.object(
+            cog, "refresh_card", new=mock.AsyncMock()
+        ):
+            session.queue.add_many(["a"])
+            self.assertTrue(await cog._play_next(session))
+            self.assertFalse(await cog._play_next(session))
+
+            session.queue.add_many(["b"])
+            self.assertTrue(await cog._play_next(session))
+
+        self.assertEqual(session.player.played, ["a", "b"])
+
+    async def test_a_run_of_failing_tracks_stops_instead_of_recursing(self):
+        cog, session = self._cog_with_session()
+
+        async def always_fail(track, volume=100):
+            raise RuntimeError("node refused the track")
+
+        session.player.play = always_fail
+        session.queue.add_many([str(index) for index in range(20)])
+
+        with mock.patch.object(cog, "_announce_track", new=mock.AsyncMock()), mock.patch.object(
+            cog, "refresh_card", new=mock.AsyncMock()
+        ), mock.patch.object(cog, "_notify", new=mock.AsyncMock()) as notify:
+            self.assertFalse(await cog._play_next(session))
+
+        self.assertIn(
+            "Too many tracks in a row failed",
+            " ".join(str(call) for call in notify.call_args_list),
+        )
 
 
 class LavalinkSearchBoundaryTests(unittest.IsolatedAsyncioTestCase):

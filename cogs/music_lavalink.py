@@ -23,6 +23,7 @@ IDLE_CHECK_SECONDS = 30
 MAX_PLAYLIST_TRACKS = 100
 MAX_QUEUE_LENGTH = 500
 NODE_CONNECT_WAIT_SECONDS = 20
+MAX_CONSECUTIVE_FAILURES = 5
 VOLUME_STEP = 10
 MUSIC_LABEL = "VIK Dev Music"
 LOOP_LABELS = {
@@ -35,6 +36,15 @@ SOURCE_COLORS = {
     "youtubemusic": 0xFF0033,
     "soundcloud": Palette.ORANGE,
 }
+SOURCE_ICONS = {
+    "youtube": "📺",
+    "youtubemusic": "🎬",
+    "soundcloud": "🟠",
+    "spotify": "🟢",
+    "bandcamp": "🔵",
+    "twitch": "🟣",
+}
+_STATE_ICONS = {"playing": "▶️", "paused": "⏸️", "idle": "💤"}
 
 
 def _track_title(track):
@@ -98,6 +108,25 @@ def _queue_count_label(count):
     return f"{count} queued"
 
 
+def _source_icon(track):
+    return SOURCE_ICONS.get(_track_source_key(track), "🎧")
+
+
+def _queue_runtime_label(tracks):
+    """How long everything still queued would take to play."""
+    total = sum(_track_length_seconds(track) for track in tracks)
+    if total <= 0:
+        return "0:00"
+    return format_duration(total)
+
+
+def _time_left_label(position, length):
+    if length <= 0:
+        return "live"
+    remaining = max(0, length - position)
+    return f"`-{format_duration(remaining)}` left"
+
+
 def _volume_meter(volume, slots=10):
     clamped = min(100, max(0, int(volume or 0)))
     filled = round((clamped / 100) * slots)
@@ -108,8 +137,13 @@ def _music_title(title):
     return f"{MUSIC_LABEL} • {title}"
 
 
-def _music_footer(embed, label=None):
-    brand_footer(embed, label or MUSIC_LABEL)
+def _music_footer(embed):
+    """Brand only.
+
+    Playback state lives in the card's own fields, so repeating it in the
+    footer just made a long line nobody read.
+    """
+    brand_footer(embed)
 
 
 def _nothing_found_description(query):
@@ -154,6 +188,42 @@ def _track_failure_notice(payload):
     return "Lavalink reported a track error; moving to the next item."
 
 
+def _end_reason(payload):
+    """Normalise Lavalink's track-end reason to a lowercase string."""
+    reason = getattr(payload, "reason", None)
+    return str(getattr(reason, "value", reason) or "").strip().lower()
+
+
+def _should_advance_on_end(reason):
+    """Whether a track-end event should pull the next track.
+
+    Lavalink reports a failed track twice: once as an exception and once as an
+    end with reason ``loadFailed``. Advancing on both silently eats the track
+    after it. ``replaced`` and ``cleanup`` are our own doing and must not
+    advance either. An unknown reason still advances so a future Lavalink
+    version cannot strand the player.
+    """
+    return reason not in {"loadfailed", "replaced", "cleanup"}
+
+
+def _track_identity(track):
+    for key in ("identifier", "uri", "title"):
+        value = getattr(track, key, None)
+        if value:
+            return str(value)
+    return ""
+
+
+def _same_track(left, right):
+    """True when two payload/queue tracks refer to the same song."""
+    if left is None or right is None:
+        return False
+    if left is right:
+        return True
+    left_id, right_id = _track_identity(left), _track_identity(right)
+    return bool(left_id and right_id and left_id == right_id)
+
+
 def _node_is_connected(node):
     status = getattr(node, "status", None)
     status_name = str(getattr(status, "name", "") or "").lower()
@@ -167,10 +237,18 @@ class LavalinkQueue:
     def __init__(self):
         self._tracks = []
         self._index = -1
+        # Set once the cursor has walked off the end. Kept as a flag rather
+        # than by parking the index past the last track: a track queued after
+        # the queue ran dry would land exactly under such an index and be
+        # skipped by the next advance, leaving the player silent until a
+        # reconnect rebuilt the session.
+        self._finished = False
         self.loop = "off"
 
     @property
     def current(self):
+        if self._finished:
+            return None
         if 0 <= self._index < len(self._tracks):
             return self._tracks[self._index]
         return None
@@ -182,7 +260,9 @@ class LavalinkQueue:
     def add_many(self, tracks):
         accepted = 0
         for track in tracks:
-            if len(self._tracks) >= MAX_QUEUE_LENGTH:
+            # The cap counts what is still waiting, not what already played,
+            # so a long session cannot lock itself out of queueing anything.
+            if len(self.upcoming) >= MAX_QUEUE_LENGTH:
                 break
             self._tracks.append(track)
             accepted += 1
@@ -191,16 +271,22 @@ class LavalinkQueue:
     def advance(self):
         if not self._tracks:
             self._index = -1
+            self._finished = False
             return None
         if self.loop == "track" and self.current is not None:
             return self.current
         if self._index + 1 < len(self._tracks):
             self._index += 1
+            self._finished = False
             return self.current
         if self.loop == "queue":
             self._index = 0
+            self._finished = False
             return self.current
-        self._index = len(self._tracks)
+        # Park on the last track and mark the queue finished. Anything queued
+        # from here lands in `upcoming`, so the next advance plays it.
+        self._index = len(self._tracks) - 1
+        self._finished = True
         return None
 
     def remove(self, position):
@@ -232,6 +318,13 @@ class LavalinkSession:
         self.text_channel_id = None
         self.card_message_id = None
         self.volume = 100
+        # Who queued each track, keyed by object identity so the same song
+        # queued twice keeps a separate requester. Dropped with the session.
+        self.requesters = {}
+        # Track-end, track-exception and /play can all reach for the next
+        # track at once. Serialising them keeps two advances from racing and
+        # skipping a song.
+        self.advance_lock = asyncio.Lock()
         self._idle_since = time.monotonic()
 
     def touch(self):
@@ -287,7 +380,13 @@ class LavalinkControls(discord.ui.View):
         if session is None:
             return
         await self.cog._teardown(session)
-        await interaction.response.edit_message(content="Playback stopped.", embed=None, view=None)
+        embed = make_embed(
+            _music_title("Stopped"),
+            "Playback stopped and the queue was cleared.",
+            color=Palette.DARK,
+        )
+        _music_footer(embed)
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
 
     @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, custom_id="ng:lavalink:shuffle")
     async def shuffle_button(self, interaction, button):
@@ -336,14 +435,28 @@ class LavalinkMusic(commands.Cog):
         self.bot = bot
         self.sessions = {}
         self._node_error = None
+        self._node_task = None
 
     async def cog_load(self):
         self.bot.add_view(LavalinkControls(self))
         self.idle_watcher.start()
-        await self._ensure_node()
+        # Wavelink needs the bot's own user id, which only exists after login,
+        # so the first connect waits for ready instead of failing at import.
+        self._node_task = self.bot.loop.create_task(self._connect_node_when_ready())
+
+    async def _connect_node_when_ready(self):
+        try:
+            await self.bot.wait_until_ready()
+            await self._ensure_node()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            print(f"Lavalink startup connect failed: {error!r}")
 
     async def cog_unload(self):
         self.idle_watcher.cancel()
+        if self._node_task is not None:
+            self._node_task.cancel()
         for session in list(self.sessions.values()):
             await self._teardown(session)
         if wavelink is not None:
@@ -356,41 +469,53 @@ class LavalinkMusic(commands.Cog):
         if wavelink is None:
             self._node_error = "Install `wavelink>=3.4,<4` in the venv."
             return False
+
+        node = None
         try:
             node = wavelink.Pool.get_node()
-            if _node_is_connected(node):
+        except Exception:
+            node = None
+
+        if node is not None and _node_is_connected(node):
+            self._node_error = None
+            return True
+
+        if node is None:
+            # Only register a node the pool does not have yet; re-adding a
+            # known node raises while Wavelink is already retrying it.
+            try:
+                node = wavelink.Node(uri=lavalink_uri(), password=lavalink_password(), retries=10)
+                await wavelink.Pool.connect(nodes=[node], client=self.bot, cache_capacity=100)
+            except Exception as error:
+                self._node_error = str(error) or repr(error)
+                print(f"Lavalink node unavailable: {error!r}")
+                return False
+
+        for _ in range(NODE_CONNECT_WAIT_SECONDS * 2):
+            try:
+                candidate = wavelink.Pool.get_node()
+            except Exception:
+                candidate = node
+            if _node_is_connected(candidate):
                 self._node_error = None
                 return True
-        except Exception:
-            pass
+            await asyncio.sleep(0.5)
 
-        try:
-            node = wavelink.Node(uri=lavalink_uri(), password=lavalink_password(), retries=10)
-            await wavelink.Pool.connect(nodes=[node], client=self.bot, cache_capacity=100)
-            for _ in range(NODE_CONNECT_WAIT_SECONDS * 2):
-                try:
-                    candidate = wavelink.Pool.get_node()
-                except Exception:
-                    candidate = node
-                if _node_is_connected(candidate):
-                    self._node_error = None
-                    return True
-                await asyncio.sleep(0.5)
-            self._node_error = (
-                f"Lavalink at `{lavalink_uri()}` did not reach CONNECTED state yet. "
-                "Wait until Lavalink says ready, then try again."
-            )
-            return False
-        except Exception as error:
-            self._node_error = str(error) or repr(error)
-            print(f"Lavalink node unavailable: {error!r}")
-            return False
+        self._node_error = (
+            f"Lavalink at `{lavalink_uri()}` did not reach CONNECTED state yet. "
+            "Check `pm2 logs lavalink` and make sure the password matches."
+        )
+        return False
 
     def _session(self, guild_id):
         key = str(guild_id)
         if key not in self.sessions:
             self.sessions[key] = LavalinkSession(key)
         return self.sessions[key]
+
+    def _requester_mention(self, session, track):
+        user_id = session.requesters.get(id(track))
+        return f"<@{user_id}>" if user_id else ""
 
     def _can_control(self, interaction, session):
         if interaction.user.guild_permissions.manage_guild:
@@ -428,7 +553,18 @@ class LavalinkMusic(commands.Cog):
 
         player = interaction.guild.voice_client
         try:
-            if player is None or not isinstance(player, wavelink.Player):
+            # A player left over from a kick, a node restart or a manual
+            # disconnect still hangs off the guild but can no longer play.
+            # Drop it rather than handing it back a queue it will never start.
+            if player is not None and (
+                not isinstance(player, wavelink.Player) or not getattr(player, "connected", False)
+            ):
+                try:
+                    await player.disconnect(force=True)
+                except Exception:
+                    pass
+                player = None
+            if player is None:
                 player = await voice.channel.connect(cls=wavelink.Player, self_deaf=True, timeout=20)
             elif getattr(player, "channel", None) and player.channel.id != voice.channel.id:
                 if not interaction.user.guild_permissions.manage_guild:
@@ -479,23 +615,39 @@ class LavalinkMusic(commands.Cog):
         return list(results[:MAX_PLAYLIST_TRACKS]) if kind == "playlist" else [results[0]]
 
     async def _play_next(self, session):
-        player = session.player
-        if player is None or not getattr(player, "connected", False):
-            await self._teardown(session)
-            return
-        track = session.queue.advance()
-        if track is None:
-            await self.refresh_card(session)
-            return
-        try:
-            await player.play(track, volume=session.volume)
-        except Exception as error:
-            print(f"Lavalink play failed in guild {session.guild_id}: {error!r}")
-            await self._notify(session, f"Skipped **{_track_title(track)}** - Lavalink could not play it.")
-            await self._play_next(session)
-            return
-        session.touch()
-        await self._announce_track(session)
+        """Start the next track. Returns True when playback actually began.
+
+        Runs under the session lock so a track-end and a track-exception for
+        the same song cannot advance the queue twice.
+        """
+        async with session.advance_lock:
+            if self.sessions.get(str(session.guild_id)) is not session:
+                return False
+
+            player = session.player
+            if player is None or not getattr(player, "connected", False):
+                await self._teardown(session)
+                return False
+
+            for _ in range(MAX_CONSECUTIVE_FAILURES):
+                track = session.queue.advance()
+                if track is None:
+                    await self.refresh_card(session)
+                    return False
+                try:
+                    await player.play(track, volume=session.volume)
+                except Exception as error:
+                    print(f"Lavalink play failed in guild {session.guild_id}: {error!r}")
+                    await self._notify(
+                        session, f"Skipped **{_track_title(track)}** - Lavalink could not play it."
+                    )
+                    continue
+                session.touch()
+                await self._announce_track(session)
+                return True
+
+            await self._notify(session, "Too many tracks in a row failed. Stopping here.")
+            return False
 
     async def _notify(self, session, text):
         channel = self.bot.get_channel(session.text_channel_id) if session.text_channel_id else None
@@ -509,35 +661,46 @@ class LavalinkMusic(commands.Cog):
     def build_card(self, session):
         player = session.player
         current = session.queue.current
-        queue_count = len(session.queue.upcoming)
+        upcoming = session.queue.upcoming
+        queue_count = len(upcoming)
+
         if current is None:
             embed = make_embed(
-                MUSIC_LABEL,
-                "Queue is idle. Use `/play` with a YouTube link or search to start.",
+                _music_title("Idle"),
+                "Nothing is playing. Use `/play` with a link or a few words to start.",
                 color=Palette.DARK,
             )
-            embed.add_field(name="Progress", value=progress_bar(0, 0, slots=14), inline=False)
             embed.add_field(
-                name="Session",
+                name="Player",
                 value=(
-                    f"Volume `{session.volume}%` {_volume_meter(session.volume, slots=8)}\n"
-                    f"Queue `{_queue_count_label(queue_count)}`\n"
-                    f"Loop `{_loop_label(session.queue.loop)}`"
+                    f"{_STATE_ICONS['idle']} `standby`\n"
+                    f"🔊 `{session.volume}%` {_volume_meter(session.volume, slots=8)}\n"
+                    f"🔁 `{_loop_label(session.queue.loop)}`"
                 ),
                 inline=True,
             )
-            embed.add_field(name="Next up", value="The queue is empty.", inline=False)
-            _music_footer(embed, f"{MUSIC_LABEL} • Lavalink ready")
+            embed.add_field(
+                name="Queue",
+                value=f"📋 `{_queue_count_label(queue_count)}`",
+                inline=True,
+            )
+            _music_footer(embed)
             return embed
 
         length = _track_length_seconds(current)
         position = int((getattr(player, "position", 0) or 0) / 1000)
         paused = bool(getattr(player, "paused", False))
-        author = _track_author(current)
-        source_label = _track_source_label(current)
-        description = f"**{_track_link(current)}**"
-        if author:
-            description += f"\n{author}"
+        state = "paused" if paused else "playing"
+
+        # Anything after the heading goes on its own subtext line; appending
+        # to the `###` line would swallow it into the heading.
+        description = f"### {_track_link(current)}"
+        meta = [part for part in (_track_author(current),) if part]
+        requester = self._requester_mention(session, current)
+        if requester:
+            meta.append(f"requested by {requester}")
+        if meta:
+            description += "\n-# " + "  •  ".join(meta)
 
         embed = make_embed(
             _music_title("Paused") if paused else _music_title("Now playing"),
@@ -547,32 +710,47 @@ class LavalinkMusic(commands.Cog):
         artwork = _track_artwork(current)
         if artwork:
             embed.set_thumbnail(url=artwork)
-        timing = f"`{format_duration(position)} / {format_duration(length, live_label='LIVE')}`"
-        embed.add_field(name="Progress", value=f"{progress_bar(position, length, slots=14)} {timing}", inline=False)
+
+        timing = f"`{format_duration(position)}` / `{format_duration(length, live_label='LIVE')}`"
         embed.add_field(
-            name="Session",
+            name="​",
+            value=f"{progress_bar(position, length, slots=16)}\n{timing}  •  {_time_left_label(position, length)}",
+            inline=False,
+        )
+        embed.add_field(
+            name="Player",
             value=(
-                f"Source `{source_label}`\n"
-                f"Volume `{session.volume}%` {_volume_meter(session.volume, slots=8)}\n"
-                f"Loop `{_loop_label(session.queue.loop)}`"
+                f"{_STATE_ICONS[state]} `{state}`\n"
+                f"🔊 `{session.volume}%` {_volume_meter(session.volume, slots=8)}\n"
+                f"🔁 `{_loop_label(session.queue.loop)}`"
             ),
             inline=True,
         )
-        embed.add_field(name="Queue", value=f"`{_queue_count_label(queue_count)}`", inline=True)
-        upcoming = session.queue.upcoming[:5]
-        if upcoming:
-            lines = [f"`{index}.` {_track_title(track)}" for index, track in enumerate(upcoming, start=1)]
-            remaining = queue_count - len(upcoming)
-            if remaining > 0:
-                lines.append(f"...and `{remaining}` more")
-            next_up = "\n".join(lines)
-        else:
-            next_up = "Nothing queued after this."
-        embed.add_field(name="Next up", value=next_up, inline=False)
-        brand_footer(
-            embed,
-            f"{MUSIC_LABEL} • {source_label} • Volume {session.volume}% • {_loop_label(session.queue.loop)}",
+        embed.add_field(
+            name="Track",
+            value=(
+                f"{_source_icon(current)} `{_track_source_label(current)}`\n"
+                f"📋 `{_queue_count_label(queue_count)}`\n"
+                f"⏳ `{_queue_runtime_label(upcoming)}`"
+            ),
+            inline=True,
         )
+
+        if upcoming:
+            lines = []
+            for index, track in enumerate(upcoming[:5], start=1):
+                title = _track_title(track)
+                if len(title) > 42:
+                    title = f"{title[:41]}…"
+                lines.append(
+                    f"`{index}.` {title} `{format_duration(_track_length_seconds(track), live_label='LIVE')}`"
+                )
+            remaining = queue_count - len(lines)
+            if remaining > 0:
+                lines.append(f"-# and `{remaining}` more")
+            embed.add_field(name="Up next", value="\n".join(lines), inline=False)
+
+        _music_footer(embed)
         return embed
 
     async def refresh_card(self, session, interaction=None):
@@ -624,6 +802,9 @@ class LavalinkMusic(commands.Cog):
                 playing = bool(getattr(player, "playing", False) or getattr(player, "paused", False))
                 if humans and playing:
                     session.touch()
+                    # Redraw so the progress bar advances on its own instead
+                    # of freezing at whatever it read when the track started.
+                    await self.refresh_card(session)
                     continue
                 if session.idle_seconds() >= IDLE_DISCONNECT_SECONDS:
                     await self._teardown(session)
@@ -636,33 +817,60 @@ class LavalinkMusic(commands.Cog):
     async def before_idle_watcher(self):
         await self.bot.wait_until_ready()
 
-    @commands.Cog.listener()
-    async def on_wavelink_track_end(self, payload):
+    def _session_for_payload(self, payload):
+        """The session this event belongs to, or None when it is stale."""
         player = getattr(payload, "player", None)
         guild = getattr(player, "guild", None)
         if guild is None:
-            return
+            return None
         session = self.sessions.get(str(guild.id))
-        if session and session.player is player:
+        if session is None or session.player is not player:
+            return None
+        # An event for a song the queue has already moved past is a duplicate
+        # (Lavalink reports a failure as both an exception and an end).
+        track = getattr(payload, "track", None)
+        current = session.queue.current
+        if track is not None and current is not None and not _same_track(track, current):
+            return None
+        return session
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, payload):
+        reason = _end_reason(payload)
+        if not _should_advance_on_end(reason):
+            return
+        session = self._session_for_payload(payload)
+        if session is not None:
             await self._play_next(session)
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(self, payload):
-        player = getattr(payload, "player", None)
-        guild = getattr(player, "guild", None)
-        if guild is None:
+        session = self._session_for_payload(payload)
+        if session is None:
             return
-        session = self.sessions.get(str(guild.id))
-        if session:
-            details = _payload_error_text(payload).replace("\n", " ")[:240]
-            if details:
-                print(f"Lavalink track exception in guild {guild.id}: {details}")
-            await self._notify(session, _track_failure_notice(payload))
-            await self._play_next(session)
+        details = _payload_error_text(payload).replace("\n", " ")[:240]
+        if details:
+            print(f"Lavalink track exception in guild {session.guild_id}: {details}")
+        await self._notify(session, _track_failure_notice(payload))
+        await self._play_next(session)
 
     @commands.Cog.listener()
     async def on_wavelink_track_stuck(self, payload):
         await self.on_wavelink_track_exception(payload)
+
+    async def remove_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Offer the queued tracks by position; no Lavalink call is needed."""
+        session = self.sessions.get(str(interaction.guild_id))
+        if session is None:
+            return []
+        text = (current or "").lower()
+        choices = []
+        for position, track in enumerate(session.queue.upcoming[:25], start=1):
+            label = f"{position}. {_track_title(track)}"[:100]
+            if text and text not in label.lower():
+                continue
+            choices.append(app_commands.Choice(name=label, value=position))
+        return choices[:25]
 
     @app_commands.command(name="play", description="Play a song through Lavalink")
     @app_commands.describe(query="A YouTube link, playlist, or words to search for")
@@ -685,26 +893,61 @@ class LavalinkMusic(commands.Cog):
             _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
+        for track in tracks[:accepted]:
+            session.requesters[id(track)] = interaction.user.id
+
         player = session.player
         was_idle = not bool(getattr(player, "playing", False) or getattr(player, "paused", False))
-        if was_idle:
-            await self._play_next(session)
+        if was_idle and not await self._play_next(session):
+            # Saying "Playing now" while the channel stays silent is the
+            # confusion this branch exists to prevent.
+            embed = make_embed(
+                _music_title("Could not start playback"),
+                "The track was queued but Lavalink did not start it. "
+                "Check `pm2 logs lavalink` - the node usually says why.",
+                color=Palette.DANGER,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
 
         first = tracks[0]
-        title = "Playing now" if was_idle and accepted == 1 else "Added to the queue"
+        queued_after = len(session.queue.upcoming)
         if accepted > 1:
             title = "Playlist added"
-            description = f"Queued `{accepted}` tracks from Lavalink, starting with **{_track_link(first)}**."
+            description = f"### {_track_link(first)}\n-# and `{accepted - 1}` more tracks"
         else:
-            description = f"**{_track_link(first)}**"
+            title = "Playing now" if was_idle else "Added to the queue"
+            description = f"### {_track_link(first)}"
+            author = _track_author(first)
+            if author:
+                description += f"\n-# {author}"
+
         embed = make_embed(_music_title(title), description, color=_track_color(first))
-        embed.add_field(name="Source", value=f"`{_track_source_label(first)} via Lavalink`", inline=True)
-        embed.add_field(name="Length", value=f"`{format_duration(_track_length_seconds(first), live_label='LIVE')}`", inline=True)
         embed.add_field(
-            name="Queue",
-            value=f"`{_queue_count_label(len(session.queue.upcoming))}`",
+            name="Source",
+            value=f"{_source_icon(first)} `{_track_source_label(first)}`",
             inline=True,
         )
+        embed.add_field(
+            name="Length",
+            value=f"⏱️ `{format_duration(_track_length_seconds(first), live_label='LIVE')}`",
+            inline=True,
+        )
+        embed.add_field(
+            name="Queue",
+            value=f"📋 `{_queue_count_label(queued_after)}`",
+            inline=True,
+        )
+        if not was_idle and queued_after:
+            # Time until the first newly queued track starts: what is left of
+            # the current track, plus everything already waiting ahead of it.
+            playing = session.queue.current
+            position = int((getattr(player, "position", 0) or 0) / 1000)
+            wait = max(0, _track_length_seconds(playing) - position) if playing else 0
+            wait += sum(
+                _track_length_seconds(track) for track in session.queue.upcoming[:-accepted]
+            )
+            embed.add_field(name="Starts in", value=f"⏳ `{format_duration(wait)}`", inline=False)
         artwork = _track_artwork(first)
         if artwork:
             embed.set_thumbnail(url=artwork)
@@ -785,6 +1028,7 @@ class LavalinkMusic(commands.Cog):
 
     @app_commands.command(name="remove", description="Remove a track from the queue")
     @app_commands.describe(position="Which queued track to remove")
+    @app_commands.autocomplete(position=remove_autocomplete)
     @app_commands.guild_only()
     async def remove(self, interaction: discord.Interaction, position: int):
         await defer_interaction(interaction, ephemeral=True)
