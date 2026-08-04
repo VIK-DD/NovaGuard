@@ -24,6 +24,17 @@ MAX_PLAYLIST_TRACKS = 100
 MAX_QUEUE_LENGTH = 500
 NODE_CONNECT_WAIT_SECONDS = 20
 VOLUME_STEP = 10
+MUSIC_LABEL = "VIK Dev Music"
+LOOP_LABELS = {
+    "off": "loop off",
+    "track": "looping track",
+    "queue": "looping queue",
+}
+SOURCE_COLORS = {
+    "youtube": 0xFF0033,
+    "youtubemusic": 0xFF0033,
+    "soundcloud": Palette.ORANGE,
+}
 
 
 def _track_title(track):
@@ -48,14 +59,57 @@ def _track_length_seconds(track):
 
 
 def _track_source_label(track):
-    source = getattr(track, "source", None)
-    name = getattr(source, "name", None) or str(source or "Lavalink")
     labels = {
         "youtube": "YouTube",
         "youtubemusic": "YouTube Music",
         "soundcloud": "SoundCloud",
     }
-    return labels.get(name.replace(" ", "").lower(), name)
+    return labels.get(_track_source_key(track), _track_source_name(track))
+
+
+def _track_source_name(track):
+    source = getattr(track, "source", None)
+    return getattr(source, "name", None) or str(source or "Lavalink")
+
+
+def _track_source_key(track):
+    return _track_source_name(track).replace(" ", "").lower()
+
+
+def _track_color(track):
+    return SOURCE_COLORS.get(_track_source_key(track), Palette.FUN)
+
+
+def _track_link(track):
+    title = _track_title(track)
+    url = _track_url(track)
+    return f"[{title}]({url})" if url else title
+
+
+def _loop_label(loop):
+    return LOOP_LABELS.get(str(loop or "off"), "loop off")
+
+
+def _queue_count_label(count):
+    if count <= 0:
+        return "empty"
+    if count == 1:
+        return "1 queued"
+    return f"{count} queued"
+
+
+def _volume_meter(volume, slots=10):
+    clamped = min(100, max(0, int(volume or 0)))
+    filled = round((clamped / 100) * slots)
+    return "▰" * filled + "▱" * (slots - filled)
+
+
+def _music_title(title):
+    return f"{MUSIC_LABEL} • {title}"
+
+
+def _music_footer(embed, label=None):
+    brand_footer(embed, label or MUSIC_LABEL)
 
 
 def _nothing_found_description(query):
@@ -78,10 +132,22 @@ def _payload_error_text(payload):
 
 def _track_failure_notice(payload):
     details = _payload_error_text(payload).lower()
-    if "requires login" in details or "sign in" in details or "all clients failed" in details:
+    if any(
+        marker in details
+        for marker in (
+            "requires login",
+            "sign in",
+            "all clients failed",
+            "must find sig function",
+            "signature",
+            "cipher",
+            "403",
+            "forbidden",
+        )
+    ):
         return (
-            "YouTube rejected this track on the Lavalink node because it requires login. "
-            "Enable youtube-source OAuth on Lavalink, then try again."
+            "YouTube rejected this stream on the Lavalink node. NovaGuard skipped it; "
+            "check OAuth/remoteCipher if this repeats."
         )
     if "video is unavailable" in details:
         return "YouTube says this video is unavailable from the Lavalink node; moving to the next item."
@@ -339,21 +405,21 @@ class LavalinkMusic(commands.Cog):
     async def _connect(self, interaction):
         if not await self._ensure_node():
             embed = make_embed(
-                "Lavalink is not ready",
+                _music_title("Lavalink is not ready"),
                 f"The Lavalink backend is enabled, but the node is unavailable: `{self._node_error}`",
                 color=Palette.DANGER,
             )
-            brand_footer(embed, "Music")
+            _music_footer(embed)
             return None, embed
 
         voice = getattr(interaction.user, "voice", None)
         if voice is None or voice.channel is None:
             embed = make_embed(
-                "Join a voice channel first",
+                _music_title("Join voice first"),
                 "Hop into a voice channel and run the command again.",
                 color=Palette.WARNING,
             )
-            brand_footer(embed, "Music")
+            _music_footer(embed)
             return None, embed
 
         session = self._session(interaction.guild_id)
@@ -367,20 +433,20 @@ class LavalinkMusic(commands.Cog):
             elif getattr(player, "channel", None) and player.channel.id != voice.channel.id:
                 if not interaction.user.guild_permissions.manage_guild:
                     embed = make_embed(
-                        "Join my voice channel",
+                        _music_title("Join my voice channel"),
                         "I am already playing somewhere else in this server.",
                         color=Palette.WARNING,
                     )
-                    brand_footer(embed, "Music")
+                    _music_footer(embed)
                     return None, embed
                 await player.move_to(voice.channel)
         except Exception as error:
             embed = make_embed(
-                "Could not join",
+                _music_title("Could not join"),
                 f"Lavalink could not connect to that voice channel: `{error}`",
                 color=Palette.DANGER,
             )
-            brand_footer(embed, "Music")
+            _music_footer(embed)
             return None, embed
 
         session.player = player
@@ -443,31 +509,60 @@ class LavalinkMusic(commands.Cog):
     def build_card(self, session):
         player = session.player
         current = session.queue.current
+        queue_count = len(session.queue.upcoming)
         if current is None:
-            embed = make_embed("🎵 Nothing playing", "Use `/play` with a link or a search to start.", color=Palette.FUN)
+            embed = make_embed(
+                MUSIC_LABEL,
+                "Queue is idle. Use `/play` with a YouTube link or search to start.",
+                color=Palette.DARK,
+            )
             embed.add_field(name="Progress", value=progress_bar(0, 0, slots=14), inline=False)
+            embed.add_field(
+                name="Session",
+                value=(
+                    f"Volume `{session.volume}%` {_volume_meter(session.volume, slots=8)}\n"
+                    f"Queue `{_queue_count_label(queue_count)}`\n"
+                    f"Loop `{_loop_label(session.queue.loop)}`"
+                ),
+                inline=True,
+            )
             embed.add_field(name="Next up", value="The queue is empty.", inline=False)
-            brand_footer(embed, "Source Lavalink")
+            _music_footer(embed, f"{MUSIC_LABEL} • Lavalink ready")
             return embed
 
         length = _track_length_seconds(current)
         position = int((getattr(player, "position", 0) or 0) / 1000)
         paused = bool(getattr(player, "paused", False))
         author = _track_author(current)
-        description = f"**[{_track_title(current)}]({_track_url(current)})**"
+        source_label = _track_source_label(current)
+        description = f"**{_track_link(current)}**"
         if author:
             description += f"\n{author}"
 
-        embed = make_embed("⏸️ Paused" if paused else "🎵 Now playing", description, color=Palette.FUN)
+        embed = make_embed(
+            _music_title("Paused") if paused else _music_title("Now playing"),
+            description,
+            color=_track_color(current),
+        )
         artwork = _track_artwork(current)
         if artwork:
             embed.set_thumbnail(url=artwork)
         timing = f"`{format_duration(position)} / {format_duration(length, live_label='LIVE')}`"
         embed.add_field(name="Progress", value=f"{progress_bar(position, length, slots=14)} {timing}", inline=False)
+        embed.add_field(
+            name="Session",
+            value=(
+                f"Source `{source_label}`\n"
+                f"Volume `{session.volume}%` {_volume_meter(session.volume, slots=8)}\n"
+                f"Loop `{_loop_label(session.queue.loop)}`"
+            ),
+            inline=True,
+        )
+        embed.add_field(name="Queue", value=f"`{_queue_count_label(queue_count)}`", inline=True)
         upcoming = session.queue.upcoming[:5]
         if upcoming:
             lines = [f"`{index}.` {_track_title(track)}" for index, track in enumerate(upcoming, start=1)]
-            remaining = len(session.queue.upcoming) - len(upcoming)
+            remaining = queue_count - len(upcoming)
             if remaining > 0:
                 lines.append(f"...and `{remaining}` more")
             next_up = "\n".join(lines)
@@ -476,7 +571,7 @@ class LavalinkMusic(commands.Cog):
         embed.add_field(name="Next up", value=next_up, inline=False)
         brand_footer(
             embed,
-            f"Source {_track_source_label(current)} via Lavalink • Volume {session.volume}% • loop {session.queue.loop}",
+            f"{MUSIC_LABEL} • {source_label} • Volume {session.volume}% • {_loop_label(session.queue.loop)}",
         )
         return embed
 
@@ -559,6 +654,9 @@ class LavalinkMusic(commands.Cog):
             return
         session = self.sessions.get(str(guild.id))
         if session:
+            details = _payload_error_text(payload).replace("\n", " ")[:240]
+            if details:
+                print(f"Lavalink track exception in guild {guild.id}: {details}")
             await self._notify(session, _track_failure_notice(payload))
             await self._play_next(session)
 
@@ -577,14 +675,14 @@ class LavalinkMusic(commands.Cog):
 
         tracks = await self._load_tracks(query)
         if not tracks:
-            embed = make_embed("Nothing found", _nothing_found_description(query), color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing found"), _nothing_found_description(query), color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
         accepted = session.queue.add_many(tracks)
         if accepted == 0:
-            embed = make_embed("Queue is full", "The music queue is full right now.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Queue is full"), "The music queue is full right now.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
         player = session.player
@@ -596,17 +694,21 @@ class LavalinkMusic(commands.Cog):
         title = "Playing now" if was_idle and accepted == 1 else "Added to the queue"
         if accepted > 1:
             title = "Playlist added"
-            description = f"Queued `{accepted}` tracks from Lavalink, starting with **{_track_title(first)}**."
+            description = f"Queued `{accepted}` tracks from Lavalink, starting with **{_track_link(first)}**."
         else:
-            description = (
-                f"**{_track_title(first)}** `{format_duration(_track_length_seconds(first))}`\n"
-                f"Source: `{_track_source_label(first)} via Lavalink`"
-            )
-        embed = make_embed(title, description, color=Palette.FUN)
+            description = f"**{_track_link(first)}**"
+        embed = make_embed(_music_title(title), description, color=_track_color(first))
+        embed.add_field(name="Source", value=f"`{_track_source_label(first)} via Lavalink`", inline=True)
+        embed.add_field(name="Length", value=f"`{format_duration(_track_length_seconds(first), live_label='LIVE')}`", inline=True)
+        embed.add_field(
+            name="Queue",
+            value=f"`{_queue_count_label(len(session.queue.upcoming))}`",
+            inline=True,
+        )
         artwork = _track_artwork(first)
         if artwork:
             embed.set_thumbnail(url=artwork)
-        brand_footer(embed, "Music")
+        _music_footer(embed)
         await respond(interaction, embed)
 
     @app_commands.command(name="skip", description="Skip the current track")
@@ -615,17 +717,25 @@ class LavalinkMusic(commands.Cog):
         await defer_interaction(interaction, ephemeral=True)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None or session.player is None:
-            embed = make_embed("Nothing playing", "There is nothing to skip.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing playing"), "There is nothing to skip.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         if not self._can_control(interaction, session):
-            embed = make_embed("Join my voice channel", "You have to be with me to control playback.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         current = session.queue.current
         await session.player.skip(force=True)
-        embed = make_embed("Skipped", f"**{_track_title(current)}** was skipped." if current else "Moving on.", color=Palette.SUCCESS)
-        brand_footer(embed, "Music")
+        embed = make_embed(
+            _music_title("Skipped"),
+            f"**{_track_link(current)}** was skipped." if current else "Moving on.",
+            color=Palette.SUCCESS,
+        )
+        _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="queue", description="Show what is playing and what comes next")
@@ -634,8 +744,8 @@ class LavalinkMusic(commands.Cog):
         await defer_interaction(interaction)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None or session.queue.current is None:
-            embed = make_embed("Nothing playing", "Use `/play` to start.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing playing"), "Use `/play` to start.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         await respond(interaction, self.build_card(session), view=LavalinkControls(self))
 
@@ -651,18 +761,26 @@ class LavalinkMusic(commands.Cog):
         await defer_interaction(interaction, ephemeral=True)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None or session.player is None:
-            embed = make_embed("Nothing playing", "There is nothing to adjust.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing playing"), "There is nothing to adjust.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         if not self._can_control(interaction, session):
-            embed = make_embed("Join my voice channel", "You have to be with me to control playback.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         session.volume = int(level)
         await session.player.set_volume(int(level))
         await self.refresh_card(session)
-        embed = make_embed("Volume set", f"Playback volume is now `{int(level)}%`.", color=Palette.SUCCESS)
-        brand_footer(embed, "Music")
+        embed = make_embed(
+            _music_title("Volume set"),
+            f"Playback volume is now `{int(level)}%` {_volume_meter(level, slots=8)}.",
+            color=Palette.SUCCESS,
+        )
+        _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="remove", description="Remove a track from the queue")
@@ -672,20 +790,24 @@ class LavalinkMusic(commands.Cog):
         await defer_interaction(interaction, ephemeral=True)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None:
-            embed = make_embed("Nothing playing", "There is nothing to remove.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing playing"), "There is nothing to remove.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         if not self._can_control(interaction, session):
-            embed = make_embed("Join my voice channel", "You have to be with me to control playback.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         removed = session.queue.remove(position)
         if removed is None:
-            embed = make_embed("Not in the queue", f"There is no track at position `{position}`.", color=Palette.WARNING)
+            embed = make_embed(_music_title("Not in the queue"), f"There is no track at position `{position}`.", color=Palette.WARNING)
         else:
-            embed = make_embed("Removed", f"**{_track_title(removed)}** left the queue.", color=Palette.SUCCESS)
+            embed = make_embed(_music_title("Removed"), f"**{_track_link(removed)}** left the queue.", color=Palette.SUCCESS)
             await self.refresh_card(session)
-        brand_footer(embed, "Music")
+        _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="clear", description="Clear the queue without stopping the current track")
@@ -694,18 +816,22 @@ class LavalinkMusic(commands.Cog):
         await defer_interaction(interaction, ephemeral=True)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None:
-            embed = make_embed("Nothing playing", "The queue is already empty.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing playing"), "The queue is already empty.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         if not self._can_control(interaction, session):
-            embed = make_embed("Join my voice channel", "You have to be with me to control playback.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         removed = len(session.queue.upcoming)
         session.queue.clear()
         await self.refresh_card(session)
-        embed = make_embed("Queue cleared", f"Removed `{removed}` queued track(s).", color=Palette.SUCCESS)
-        brand_footer(embed, "Music")
+        embed = make_embed(_music_title("Queue cleared"), f"Removed `{removed}` queued track(s).", color=Palette.SUCCESS)
+        _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="disconnect", description="Stop the music and leave the voice channel")
@@ -714,16 +840,20 @@ class LavalinkMusic(commands.Cog):
         await defer_interaction(interaction, ephemeral=True)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None or session.player is None:
-            embed = make_embed("Nothing playing", "I am not in a voice channel here.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(_music_title("Nothing playing"), "I am not in a voice channel here.", color=Palette.WARNING)
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         if not self._can_control(interaction, session):
-            embed = make_embed("Join my voice channel", "You have to be with me to control playback.", color=Palette.WARNING)
-            brand_footer(embed, "Music")
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
         await self._teardown(session)
-        embed = make_embed("Disconnected", "Playback stopped and the queue was cleared.", color=Palette.SUCCESS)
-        brand_footer(embed, "Music")
+        embed = make_embed(_music_title("Disconnected"), "Playback stopped and the queue was cleared.", color=Palette.SUCCESS)
+        _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)
 
 

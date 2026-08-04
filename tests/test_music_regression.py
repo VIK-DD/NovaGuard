@@ -48,8 +48,23 @@ class MusicErrorMessageTests(unittest.TestCase):
 
         notice = lavalink_music_cog._track_failure_notice(Payload())
 
-        self.assertIn("requires login", notice)
         self.assertIn("OAuth", notice)
+        self.assertIn("remoteCipher", notice)
+
+    def test_lavalink_signature_failures_get_a_remote_cipher_hint(self):
+        class Payload:
+            exception = "Must find sig function for YouTube signature cipher."
+
+        notice = lavalink_music_cog._track_failure_notice(Payload())
+
+        self.assertIn("remoteCipher", notice)
+
+    def test_lavalink_player_helpers_keep_labels_compact(self):
+        self.assertEqual(lavalink_music_cog._queue_count_label(0), "empty")
+        self.assertEqual(lavalink_music_cog._queue_count_label(1), "1 queued")
+        self.assertEqual(lavalink_music_cog._queue_count_label(3), "3 queued")
+        self.assertEqual(lavalink_music_cog._loop_label("queue"), "looping queue")
+        self.assertEqual(lavalink_music_cog._volume_meter(50, slots=4), "▰▰▱▱")
 
     def test_lavalink_node_status_accepts_connected_name_or_text(self):
         class Status:
