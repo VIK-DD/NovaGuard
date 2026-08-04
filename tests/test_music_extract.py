@@ -260,6 +260,66 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fallback.source, "soundcloud")
         self.assertEqual(fallback.url, "https://soundcloud.com/a/broken-youtube")
 
+    async def test_youtube_direct_link_retries_without_cookies(self):
+        calls = []
+
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            calls.append((target, include_cookies))
+            if include_cookies:
+                return None
+            return {
+                "title": "Recovered",
+                "webpage_url": "https://www.youtube.com/watch?v=f6sRk58Pj6I",
+                "url": "https://stream.test/audio",
+            }
+
+        with mock.patch.object(music_sources.log, "warning"), mock.patch.object(
+            music_sources, "_extract", side_effect=fake_extract
+        ):
+            tracks = await music_sources.extract("https://youtu.be/f6sRk58Pj6I", "42")
+
+        self.assertEqual(
+            calls,
+            [
+                ("https://youtu.be/f6sRk58Pj6I", True),
+                ("https://youtu.be/f6sRk58Pj6I", False),
+            ],
+        )
+        self.assertEqual(tracks[0].title, "Recovered")
+
+    async def test_youtube_stream_refresh_retries_without_cookies(self):
+        calls = []
+        track = track_from_entry(
+            {"title": "Recovered", "webpage_url": "https://www.youtube.com/watch?v=f6sRk58Pj6I"},
+            requester_id="42",
+            source="youtube",
+        )
+
+        async def fake_extract(target, *, flat=False, include_cookies=True):
+            calls.append((target, include_cookies))
+            if include_cookies:
+                return None
+            return {
+                "title": "Recovered",
+                "webpage_url": target,
+                "url": "https://stream.test/audio",
+            }
+
+        with mock.patch.object(music_sources.log, "warning"), mock.patch.object(
+            music_sources, "_extract", side_effect=fake_extract
+        ):
+            ok = await music_sources.refresh_stream_url(track)
+
+        self.assertTrue(ok)
+        self.assertEqual(
+            calls,
+            [
+                ("https://www.youtube.com/watch?v=f6sRk58Pj6I", True),
+                ("https://www.youtube.com/watch?v=f6sRk58Pj6I", False),
+            ],
+        )
+        self.assertEqual(track.stream_url, "https://stream.test/audio")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -514,6 +514,9 @@ async def refresh_stream_url(track):
     if not track.url:
         return False
     info = await _extract(track.url)
+    if not info and track.source == "youtube":
+        log.warning("YouTube stream resolve failed with cookies; retrying without cookies for %s", track.url)
+        info = await _extract(track.url, include_cookies=False)
     if not info:
         return False
     fresh = track_from_entry(info, track.requester_id, track.source)
@@ -545,6 +548,9 @@ async def extract(text, requester_id):
         return [track_from_entry(entry, requester_id, platform) for entry in entries]
 
     info = await _extract(text)
+    if not info and platform == "youtube":
+        log.warning("YouTube direct extraction failed with cookies; retrying without cookies for %s", text)
+        info = await _extract(text, include_cookies=False)
     if not info:
         log.warning("Music track extraction returned no info for %s", text)
         return []
