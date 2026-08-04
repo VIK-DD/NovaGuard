@@ -288,8 +288,9 @@ is still challenged by YouTube. At that point Lavalink is working, but YouTube
 will not stream anonymously from that host. Use one of these fixes:
 
 1. Enable `plugins.youtube.oauth.enabled: true` in
-   `/home/ubuntu/lavalink/application.yml`, restart Lavalink, and follow the
-   OAuth code printed in `pm2 logs lavalink`. Use a burner YouTube account.
+   `/home/ubuntu/lavalink/application.yml`, make sure the YouTube client list
+   includes `TV`, restart Lavalink, and follow the OAuth code printed in
+   `pm2 logs lavalink`. Use a burner YouTube account.
 2. After Lavalink prints a refresh token, paste it under
    `plugins.youtube.oauth.refreshToken` so future restarts do not ask again.
 3. If OAuth is not acceptable, run the music node through a cleaner egress
