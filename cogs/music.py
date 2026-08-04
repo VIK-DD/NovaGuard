@@ -6,10 +6,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.database import cache_prefix_search
 from core.music_card import card_fields
 from core.music_queue import LoopMode
 from core.music_session import IDLE_DISCONNECT_SECONDS, SessionRegistry
-from core.music_sources import extract, format_duration, refresh_stream_url
+from core.music_sources import extract, format_duration, normalise_query, refresh_stream_url
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
 
@@ -409,8 +410,46 @@ class Music(commands.Cog):
         except discord.HTTPException as error:
             print(f"Music card could not be posted in guild {session.guild_id}: {error!r}")
 
+    async def play_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Suggestions from the cache only; never call yt-dlp from autocomplete."""
+        text = (current or "").strip()
+        if not text:
+            return []
+        try:
+            rows = await asyncio.to_thread(
+                cache_prefix_search, f"search:{normalise_query(text)}", 20
+            )
+        except Exception:
+            rows = []
+
+        choices = []
+        for _, payload in rows:
+            title = (payload or {}).get("title")
+            if not title:
+                continue
+            choices.append(app_commands.Choice(name=title[:100], value=title[:100]))
+            if len(choices) == 24:
+                break
+        if not choices:
+            return [app_commands.Choice(name=f"Press Enter to search \"{text}\""[:100], value=text[:100])]
+        return choices
+
+    async def remove_autocomplete(self, interaction: discord.Interaction, current: str):
+        session = self.sessions.get(interaction.guild_id)
+        if session is None:
+            return []
+        text = (current or "").lower()
+        choices = []
+        for position, track in enumerate(session.queue.upcoming[:25], start=1):
+            label = f"{position}. {track.title}"[:100]
+            if text and text not in label.lower():
+                continue
+            choices.append(app_commands.Choice(name=label, value=position))
+        return choices[:25]
+
     @app_commands.command(name="play", description="Play a song from a link or a search")
     @app_commands.describe(query="A YouTube/SoundCloud/Spotify link, or words to search for")
+    @app_commands.autocomplete(query=play_autocomplete)
     @app_commands.guild_only()
     async def play(self, interaction: discord.Interaction, query: str):
         await defer_interaction(interaction, thinking=True)
@@ -476,6 +515,93 @@ class Music(commands.Cog):
             "Skipped",
             f"**{current.title}** was skipped." if current else "Moving on.",
             color=Palette.SUCCESS,
+        )
+        brand_footer(embed, "Music")
+        await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="queue", description="Show what is playing and what comes next")
+    @app_commands.guild_only()
+    async def queue_command(self, interaction: discord.Interaction):
+        await defer_interaction(interaction)
+        session = self.sessions.get(interaction.guild_id)
+        if session is None or session.queue.current is None:
+            return await respond(
+                interaction, nothing_playing_embed("Use `/play` to start."), ephemeral=True
+            )
+        await respond(interaction, self.build_card(session), view=MusicControls(self))
+
+    @app_commands.command(name="nowplaying", description="Show the player card")
+    @app_commands.guild_only()
+    async def nowplaying(self, interaction: discord.Interaction):
+        await self.queue_command.callback(self, interaction)
+
+    @app_commands.command(name="volume", description="Set playback volume (0-100)")
+    @app_commands.describe(level="Volume percentage")
+    @app_commands.guild_only()
+    async def volume(self, interaction: discord.Interaction, level: app_commands.Range[int, 0, 100]):
+        await defer_interaction(interaction, ephemeral=True)
+        session = self.sessions.get(interaction.guild_id)
+        if session is None or session.voice_client is None:
+            return await respond(
+                interaction, nothing_playing_embed("There is nothing to adjust."), ephemeral=True
+            )
+        if not in_voice_with_bot(interaction, session):
+            return await respond(interaction, not_in_voice_embed(), ephemeral=True)
+
+        session.volume = int(level)
+        session.touch()
+        await self.refresh_card(session)
+        embed = make_embed(
+            "Volume set",
+            f"Playback volume is now `{int(level)}%`. It applies from the next track.",
+            color=Palette.SUCCESS,
+        )
+        brand_footer(embed, "Music")
+        await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="remove", description="Remove a track from the queue")
+    @app_commands.describe(position="Which queued track to remove")
+    @app_commands.autocomplete(position=remove_autocomplete)
+    @app_commands.guild_only()
+    async def remove(self, interaction: discord.Interaction, position: int):
+        await defer_interaction(interaction, ephemeral=True)
+        session = self.sessions.get(interaction.guild_id)
+        if session is None:
+            return await respond(
+                interaction, nothing_playing_embed("There is nothing to remove."), ephemeral=True
+            )
+        if not in_voice_with_bot(interaction, session):
+            return await respond(interaction, not_in_voice_embed(), ephemeral=True)
+
+        removed = session.queue.remove(position)
+        if removed is None:
+            embed = make_embed(
+                "Not in the queue", f"There is no track at position `{position}`.", color=Palette.WARNING
+            )
+        else:
+            embed = make_embed("Removed", f"**{removed.title}** left the queue.", color=Palette.SUCCESS)
+            await self.refresh_card(session)
+        brand_footer(embed, "Music")
+        await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="clear", description="Clear the queue without stopping the current track")
+    @app_commands.guild_only()
+    async def clear(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        session = self.sessions.get(interaction.guild_id)
+        if session is None:
+            return await respond(
+                interaction, nothing_playing_embed("The queue is already empty."), ephemeral=True
+            )
+        if not in_voice_with_bot(interaction, session):
+            return await respond(interaction, not_in_voice_embed(), ephemeral=True)
+
+        removed = len(session.queue.upcoming)
+        session.queue.clear()
+        session.touch()
+        await self.refresh_card(session)
+        embed = make_embed(
+            "Queue cleared", f"Removed `{removed}` queued track(s).", color=Palette.SUCCESS
         )
         brand_footer(embed, "Music")
         await respond(interaction, embed, ephemeral=True)
