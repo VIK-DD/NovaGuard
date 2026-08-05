@@ -21,15 +21,19 @@ lavalink:
       http: false
       local: false
 
+    # Filters the /filter presets need. A disabled filter is ignored silently
+    # by the node, so the effect appears to apply and nothing changes.
+    # distortion and channelMix stay off: no preset uses them, and every
+    # enabled filter is more work the node may end up doing.
     filters:
       volume: true
       equalizer: true
-      karaoke: false
+      karaoke: true
       timescale: true
       tremolo: false
       vibrato: false
       distortion: false
-      rotation: false
+      rotation: true
       channelMix: false
       lowPass: false
 

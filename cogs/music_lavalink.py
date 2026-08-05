@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core.lavalink_config import lavalink_password, lavalink_uri, lavalink_wavelink_search
+from core.music_filters import FILTER_PRESETS, is_reset, preset_label, resolve_preset
 from core.music_card import progress_bar
 from core.music_sources import classify_input, format_duration, spotify_credentials_configured
 from core.music_session import IDLE_DISCONNECT_SECONDS
@@ -318,6 +319,7 @@ class LavalinkSession:
         self.text_channel_id = None
         self.card_message_id = None
         self.volume = 100
+        self.filter_preset = "off"
         # Who queued each track, keyed by object identity so the same song
         # queued twice keeps a separate requester. Dropped with the session.
         self.requesters = {}
@@ -732,6 +734,11 @@ class LavalinkMusic(commands.Cog):
                 f"{_source_icon(current)} `{_track_source_label(current)}`\n"
                 f"📋 `{_queue_count_label(queue_count)}`\n"
                 f"⏳ `{_queue_runtime_label(upcoming)}`"
+                + (
+                    f"\n{preset_label(session.filter_preset)}"
+                    if not is_reset(getattr(session, "filter_preset", "off"))
+                    else ""
+                )
             ),
             inline=True,
         )
@@ -1025,6 +1032,103 @@ class LavalinkMusic(commands.Cog):
         )
         _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="filter", description="Apply an audio effect to playback")
+    @app_commands.describe(preset="Which effect to apply, or Off to clear")
+    @app_commands.choices(
+        preset=[
+            app_commands.Choice(name=f"{spec['emoji']} {spec['label']}", value=key)
+            for key, spec in FILTER_PRESETS.items()
+        ]
+    )
+    @app_commands.guild_only()
+    async def filter_command(self, interaction: discord.Interaction, preset: str):
+        await defer_interaction(interaction, ephemeral=True)
+        session = self.sessions.get(str(interaction.guild_id))
+        if session is None or session.player is None:
+            embed = make_embed(
+                _music_title("Nothing playing"), "There is nothing to filter.", color=Palette.WARNING
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+        if not self._can_control(interaction, session):
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        spec = resolve_preset(preset)
+        if spec is None:
+            embed = make_embed(
+                _music_title("Unknown effect"),
+                f"There is no `{preset[:40]}` effect. Pick one from the list.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        try:
+            await self._apply_filters(session, preset)
+        except Exception as error:
+            print(f"Lavalink filter {preset!r} failed in guild {session.guild_id}: {error!r}")
+            embed = make_embed(
+                _music_title("Effect failed"),
+                f"Lavalink refused the effect: `{error}`. Check that it is enabled under "
+                "`lavalink.server.filters` in `application.yml`.",
+                color=Palette.DANGER,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        session.filter_preset = "off" if is_reset(preset) else preset
+        session.touch()
+        await self.refresh_card(session)
+
+        if is_reset(preset):
+            description = "Effects cleared. Playing the track as recorded."
+        else:
+            description = f"### {preset_label(preset)}\n-# {spec['description']}"
+        embed = make_embed(
+            _music_title("Effect applied"),
+            description,
+            color=Palette.SUCCESS if not is_reset(preset) else Palette.DARK,
+        )
+        if not is_reset(preset):
+            embed.add_field(
+                name="Heads up",
+                value=(
+                    "-# Effects take a moment to settle and make Lavalink re-encode audio, "
+                    "so they cost a little CPU."
+                ),
+                inline=False,
+            )
+        _music_footer(embed)
+        await respond(interaction, embed, ephemeral=True)
+
+    async def _apply_filters(self, session, preset):
+        """Translate a preset into Wavelink's filter objects and send it."""
+        player = session.player
+        filters = player.filters
+        # Always start from a clean slate: presets are a choice of one effect,
+        # not a stack, so switching must not leave the previous one underneath.
+        filters.reset()
+
+        spec = resolve_preset(preset) or {}
+        wanted = spec.get("filters") or {}
+
+        if "equalizer" in wanted:
+            filters.equalizer.set(bands=wanted["equalizer"])
+        if "timescale" in wanted:
+            filters.timescale.set(**wanted["timescale"])
+        if "rotation" in wanted:
+            filters.rotation.set(**wanted["rotation"])
+        if "karaoke" in wanted:
+            filters.karaoke.set(**wanted["karaoke"])
+
+        await player.set_filters(filters)
 
     @app_commands.command(name="remove", description="Remove a track from the queue")
     @app_commands.describe(position="Which queued track to remove")
