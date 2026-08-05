@@ -19,6 +19,7 @@ from discord.ext import commands
 
 from core.config import BOT_CODENAME, BOT_VERSION
 from core.error_digest import send_error_digest
+from core.config_check import report_config
 from core.github_api import github_api
 from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
 from core.theme import Palette, brand_footer, make_embed
@@ -265,6 +266,11 @@ def is_transient_startup_error(error):
 
 
 def main():
+    # Before connecting: say plainly which settings are missing or wrong.
+    # These all fail silently otherwise, and the expensive ones only reveal
+    # themselves the day a host is lost.
+    report_config()
+
     token = os.getenv("TOKEN")
     if not token:
         raise ValueError("TOKEN nu este setat.")
