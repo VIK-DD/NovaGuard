@@ -1,0 +1,34 @@
+# Continuous replication of the NovaGuard SQLite database.
+#
+# The scheduled zip backups in `backups/` run twice a day, so losing a host
+# between them loses up to twelve hours. Litestream streams the write-ahead
+# log to object storage continuously, which turns that window into seconds.
+# The two are complementary: keep both.
+#
+# Credentials come from the environment (see litestream.service and
+# /etc/litestream.env) so this file stays safe to commit.
+
+dbs:
+  - path: ${NOVAGUARD_DB_PATH}
+    replicas:
+      - name: b2
+        type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: novaguard
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+        # Keep a month of history: long enough to notice and undo a bad
+        # migration or a mistaken bulk delete, short enough to stay cheap.
+        retention: 720h
+        retention-check-interval: 12h
+
+        # A fresh snapshot every six hours bounds how much WAL has to be
+        # replayed during a restore.
+        snapshot-interval: 6h
+
+        # Upload roughly every ten seconds. This is the real recovery point
+        # objective: at worst you lose the last few seconds of writes.
+        sync-interval: 10s

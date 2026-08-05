@@ -2,6 +2,11 @@
 
 NovaGuard creates local zip backups in `backups/` at 07:00 and 19:00 Europe/Chisinau by default, and keeps the newest archives on disk. These backups include the SQLite database, remaining JSON feature state, update state and GitHub watcher state. Voice report state lives in SQLite.
 
+> Lost the host entirely — deleted, reclaimed or locked out? This page assumes
+> the server still exists. See [DISASTER-RECOVERY.md](DISASTER-RECOVERY.md) for
+> rebuilding from nothing, including the pieces these archives deliberately do
+> **not** contain: `.env`, `rclone.conf` and the Litestream credentials.
+
 ## Check Backup Health
 
 Use these in Discord before touching files:

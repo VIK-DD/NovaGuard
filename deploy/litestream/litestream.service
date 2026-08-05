@@ -1,0 +1,30 @@
+[Unit]
+Description=Litestream continuous replication for the NovaGuard database
+Documentation=https://litestream.io
+# Replication is pointless before the network is up, and it must outlive the
+# bot: the database still needs replicating while the bot is stopped.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+
+# Bucket name, endpoint, region and keys live here, root-readable only:
+#   sudo install -m 600 /dev/null /etc/litestream.env
+# See docs/DISASTER-RECOVERY.md for the exact contents.
+EnvironmentFile=/etc/litestream.env
+
+ExecStart=/usr/bin/litestream replicate -config /home/ubuntu/NovaGuard/deploy/litestream/litestream.yml
+
+# A replication process that stays down silently is the whole failure mode
+# this service exists to prevent, so restart it forever.
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
