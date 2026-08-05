@@ -10,7 +10,12 @@ from discord.ext import commands, tasks
 from core.lavalink_config import lavalink_password, lavalink_uri, lavalink_wavelink_search
 from core.music_filters import FILTER_PRESETS, is_reset, preset_label, resolve_preset
 from core.music_card import progress_bar
-from core.music_sources import classify_input, format_duration, spotify_credentials_configured
+from core.music_sources import (
+    classify_input,
+    format_duration,
+    parse_position,
+    spotify_credentials_configured,
+)
 from core.music_session import IDLE_DISCONNECT_SECONDS
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
@@ -1029,6 +1034,190 @@ class LavalinkMusic(commands.Cog):
             _music_title("Volume set"),
             f"Playback volume is now `{int(level)}%` {_volume_meter(level, slots=8)}.",
             color=Palette.SUCCESS,
+        )
+        _music_footer(embed)
+        await respond(interaction, embed, ephemeral=True)
+
+    async def _controlled_session(self, interaction, idle_detail):
+        """Session the caller may drive, or None after sending the refusal."""
+        session = self.sessions.get(str(interaction.guild_id))
+        if session is None or session.player is None:
+            embed = make_embed(_music_title("Nothing playing"), idle_detail, color=Palette.WARNING)
+            _music_footer(embed)
+            await respond(interaction, embed, ephemeral=True)
+            return None
+        if not self._can_control(interaction, session):
+            embed = make_embed(
+                _music_title("Join my voice channel"),
+                "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            await respond(interaction, embed, ephemeral=True)
+            return None
+        return session
+
+    @app_commands.command(name="shuffle", description="Shuffle the queued tracks")
+    @app_commands.guild_only()
+    async def shuffle(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+        session = await self._controlled_session(interaction, "There is nothing to shuffle.")
+        if session is None:
+            return
+
+        queued = len(session.queue.upcoming)
+        if queued < 2:
+            embed = make_embed(
+                _music_title("Nothing to shuffle"),
+                "Queue at least two tracks first.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        session.queue.shuffle()
+        session.touch()
+        await self.refresh_card(session)
+        embed = make_embed(
+            _music_title("Shuffled"),
+            f"🔀 Reordered `{queued}` queued track(s). The current track keeps playing.",
+            color=Palette.SUCCESS,
+        )
+        _music_footer(embed)
+        await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="loop", description="Set the repeat mode")
+    @app_commands.describe(mode="What to repeat")
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="🚫 Off", value="off"),
+            app_commands.Choice(name="🔂 This track", value="track"),
+            app_commands.Choice(name="🔁 Whole queue", value="queue"),
+        ]
+    )
+    @app_commands.guild_only()
+    async def loop(self, interaction: discord.Interaction, mode: str):
+        await defer_interaction(interaction, ephemeral=True)
+        session = await self._controlled_session(interaction, "There is nothing to loop.")
+        if session is None:
+            return
+
+        session.queue.loop = mode
+        session.touch()
+        await self.refresh_card(session)
+        embed = make_embed(
+            _music_title("Repeat set"),
+            f"🔁 Now `{_loop_label(mode)}`.",
+            color=Palette.SUCCESS if mode != "off" else Palette.DARK,
+        )
+        _music_footer(embed)
+        await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="seek", description="Jump to a position in the current track")
+    @app_commands.describe(position="Where to jump, like 1:30, 90 or 1:02:03")
+    @app_commands.guild_only()
+    async def seek(self, interaction: discord.Interaction, position: str):
+        await defer_interaction(interaction, ephemeral=True)
+        session = await self._controlled_session(interaction, "There is nothing to seek.")
+        if session is None:
+            return
+
+        seconds = parse_position(position)
+        if seconds is None:
+            embed = make_embed(
+                _music_title("Position not understood"),
+                f"`{position[:40]}` is not a position. Try `1:30`, `90` or `1:02:03`.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        current = session.queue.current
+        length = _track_length_seconds(current)
+        if current is None:
+            embed = make_embed(
+                _music_title("Nothing playing"), "There is nothing to seek.", color=Palette.WARNING
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+        if length and seconds >= length:
+            embed = make_embed(
+                _music_title("Past the end"),
+                f"This track is only `{format_duration(length)}` long. Use `/skip` to move on.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        try:
+            await session.player.seek(seconds * 1000)
+        except Exception as error:
+            print(f"Lavalink seek failed in guild {session.guild_id}: {error!r}")
+            embed = make_embed(
+                _music_title("Seek failed"),
+                f"Lavalink refused the jump: `{error}`. Live streams cannot be seeked.",
+                color=Palette.DANGER,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        session.touch()
+        await self.refresh_card(session)
+        embed = make_embed(
+            _music_title("Jumped"),
+            f"⏩ Now at `{format_duration(seconds)}` of `{format_duration(length, live_label='LIVE')}`.",
+            color=Palette.SUCCESS,
+        )
+        _music_footer(embed)
+        await respond(interaction, embed, ephemeral=True)
+
+    @app_commands.command(name="soundcheck", description="Check the music path end to end")
+    @app_commands.guild_only()
+    async def soundcheck(self, interaction: discord.Interaction):
+        await defer_interaction(interaction, ephemeral=True)
+
+        node_ok = await self._ensure_node()
+        session = self.sessions.get(str(interaction.guild_id))
+        player = session.player if session else None
+        connected = bool(player and getattr(player, "connected", False))
+        current = session.queue.current if session else None
+
+        lines = [
+            f"{'✅' if node_ok else '❌'} **Lavalink node** — "
+            + (f"connected at `{lavalink_uri()}`" if node_ok else f"`{self._node_error}`"),
+            f"{'✅' if connected else '💤'} **Voice** — "
+            + (
+                f"connected to `{getattr(getattr(player, 'channel', None), 'name', 'unknown')}`"
+                if connected
+                else "not in a voice channel here"
+            ),
+        ]
+        if current is not None:
+            lines.append(
+                f"▶️ **Playing** — {_track_link(current)} via `{_track_source_label(current)}`"
+            )
+        elif connected:
+            lines.append("💤 **Playing** — nothing right now")
+
+        if node_ok and connected and current is not None:
+            verdict = "Everything is working. If you still hear nothing, check your own Discord volume and whether you muted the bot locally."
+            color = Palette.SUCCESS
+        elif node_ok:
+            verdict = "The node is healthy. Join a voice channel and run `/play` to test the rest."
+            color = Palette.INFO
+        else:
+            verdict = "The node is the problem, not Discord. Check `pm2 logs lavalink`."
+            color = Palette.DANGER
+
+        embed = make_embed(_music_title("Soundcheck"), "\n".join(lines), color=color)
+        embed.add_field(name="Verdict", value=verdict, inline=False)
+        embed.add_field(
+            name="Note",
+            value=(
+                "-# Lavalink streams from the node, so there is no local test tone on this "
+                "backend. This checks the whole path instead: node, voice, and source."
+            ),
+            inline=False,
         )
         _music_footer(embed)
         await respond(interaction, embed, ephemeral=True)

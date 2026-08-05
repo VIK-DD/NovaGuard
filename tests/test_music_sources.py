@@ -143,6 +143,33 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(format_duration(-5), "0:00")
 
 
+class ParsePositionTests(unittest.TestCase):
+    def test_bare_seconds_are_read_as_seconds(self):
+        self.assertEqual(music_sources.parse_position("90"), 90)
+
+    def test_minutes_and_seconds_are_read(self):
+        self.assertEqual(music_sources.parse_position("1:30"), 90)
+
+    def test_hours_are_read(self):
+        self.assertEqual(music_sources.parse_position("1:02:03"), 3723)
+
+    def test_it_round_trips_with_format_duration(self):
+        for seconds in (7, 59, 60, 90, 599, 3600, 3723):
+            with self.subTest(seconds=seconds):
+                self.assertEqual(
+                    music_sources.parse_position(format_duration(seconds)), seconds
+                )
+
+    def test_surrounding_whitespace_is_ignored(self):
+        self.assertEqual(music_sources.parse_position("  2:05  "), 125)
+
+    def test_nonsense_is_refused_rather_than_guessed(self):
+        # Seeking to the wrong place is worse than refusing to seek.
+        for value in ("", "   ", None, "abc", "1:ab", "-30", "1.5", "1:2:3:4", "1:60"):
+            with self.subTest(value=value):
+                self.assertIsNone(music_sources.parse_position(value))
+
+
 class CacheKeyTests(unittest.TestCase):
     def test_queries_normalise_case_and_whitespace(self):
         self.assertEqual(normalise_query("  Bohemian   RHAPSODY "), "bohemian rhapsody")

@@ -99,6 +99,35 @@ def format_duration(seconds, live_label=None):
     return f"{minutes}:{secs:02d}"
 
 
+def parse_position(text):
+    """Read a seek position like ``90``, ``1:30`` or ``1:02:03`` into seconds.
+
+    The inverse of :func:`format_duration`, so whatever the player prints can
+    be typed straight back. Returns None for anything unparseable rather than
+    guessing, because seeking to the wrong spot is worse than refusing.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return None
+
+    parts = [part.strip() for part in cleaned.split(":")]
+    if len(parts) > 3:
+        return None
+
+    total = 0
+    for index, part in enumerate(parts):
+        # Reject signs and decimals: only plain digits make sense per field.
+        if not part.isdigit():
+            return None
+        value = int(part)
+        # Past the leading field, anything above 59 is a typo rather than a
+        # position - "1:75" means nothing, while a bare "75" is fine.
+        if index > 0 and value > 59:
+            return None
+        total = total * 60 + value
+    return total
+
+
 def normalise_query(text):
     """Fold a query so trivially different spellings share a cache entry."""
     return " ".join((text or "").lower().split())

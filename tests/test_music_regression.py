@@ -167,6 +167,23 @@ class LavalinkTrackEndGatingTests(unittest.TestCase):
         self.assertFalse(lavalink_music_cog._same_track(None, Track("abc")))
 
 
+class LavalinkCommandSurfaceTests(unittest.TestCase):
+    def _command_names(self):
+        return {command.name for command in lavalink_music_cog.LavalinkMusic.__cog_app_commands__}
+
+    def test_the_lavalink_backend_matches_the_ytdlp_command_surface(self):
+        # Switching MUSIC_BACKEND should not quietly remove commands people
+        # already use.
+        ytdlp = {command.name for command in music_cog.Music.__cog_app_commands__}
+
+        self.assertEqual(ytdlp - self._command_names(), set())
+
+    def test_the_new_playback_commands_exist(self):
+        self.assertLessEqual(
+            {"shuffle", "loop", "seek", "filter", "soundcheck"}, self._command_names()
+        )
+
+
 class LavalinkFooterTests(unittest.TestCase):
     def test_the_music_footer_carries_the_brand_only(self):
         embed = discord.Embed()
