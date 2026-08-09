@@ -47,9 +47,10 @@ from aiohttp import web
 
 from .automod_settings import resolve_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
-from .config import BOT_CODENAME, BOT_VERSION, github_config
+from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import connect, load_levels_data, load_voice_store
 from .levels_settings import resolve_levels, validate_levels
+from .release_versions import current_project_release
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
@@ -943,9 +944,14 @@ class WebServer:
         guilds = list(self.bot.guilds)
         launched_at = getattr(self.bot, "launched_at", None)
         uptime = int((datetime.now(UTC) - launched_at).total_seconds()) if launched_at else 0
+        release = await asyncio.to_thread(current_project_release)
         return web.json_response(
             {
-                "version": BOT_VERSION,
+                "version": release["version"],
+                "phase": release["phase"],
+                "phase_label": release["phase_label"],
+                "release_label": f'{release["version"]} {release["phase_label"]}',
+                "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "guilds": len(guilds),
                 "members": sum(g.member_count or 0 for g in guilds),
@@ -968,7 +974,13 @@ class WebServer:
             history=state.get("history"),
             latest=state.get("latest"),
         )
-        return web.json_response({"updates": updates, "count": len(updates)})
+        return web.json_response(
+            {
+                "updates": updates,
+                "count": len(updates),
+                "release": current_project_release(state),
+            }
+        )
 
     # ── session endpoints ────────────────────────────────────────────
 
@@ -1066,6 +1078,7 @@ class WebServer:
 
         levels_data = await asyncio.to_thread(load_levels_data)
         guild_levels = levels_data.get(str(guild.id), {})
+        total_xp = sum(max(int(record.get("xp", 0) or 0), 0) for record in guild_levels.values())
         leaderboard = []
         for position, (user_id, record) in enumerate(
             sorted(guild_levels.items(), key=lambda item: item[1].get("xp", 0), reverse=True)[
@@ -1124,6 +1137,7 @@ class WebServer:
             history=update_state.get("history"),
             latest=update_state.get("latest"),
         )
+        release = current_project_release(update_state)
 
         automod = resolve_automod(settings)
         modules = [
@@ -1138,7 +1152,11 @@ class WebServer:
         return {
             "status": {
                 "ready": self.bot.is_ready(),
-                "version": BOT_VERSION,
+                "version": release["version"],
+                "phase": release["phase"],
+                "phase_label": release["phase_label"],
+                "release_label": f'{release["version"]} {release["phase_label"]}',
+                "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "uptime_seconds": uptime,
                 "commands": len(list(self.bot.tree.walk_commands())),
@@ -1166,6 +1184,7 @@ class WebServer:
             "levels": {
                 "enabled": bool(levels_settings.get("enabled")),
                 "tracked_members": len(guild_levels),
+                "total_xp": total_xp,
                 "leaderboard": leaderboard,
             },
             "voice": {

@@ -13,6 +13,7 @@ from core.release_versions import (  # noqa: E402
     alpha_slot_sizes,
     assign_releases,
     clean_text,
+    current_project_release,
     current_release,
     is_significant,
     release_groups,
@@ -90,6 +91,10 @@ class SignificanceTests(unittest.TestCase):
     def test_an_update_with_no_highlights_does_not_count(self):
         self.assertFalse(is_significant(entry(1)))
         self.assertFalse(is_significant({}))
+
+    def test_explicit_feed_classification_survives_cleaned_display_text(self):
+        self.assertTrue(is_significant({"significant": True, "highlights": ["Clean text"]}))
+        self.assertFalse(is_significant({"significant": False, "highlights": [FEATURE]}))
 
 
 class AlphaTests(unittest.TestCase):
@@ -248,6 +253,26 @@ class GroupingTests(unittest.TestCase):
     def test_an_empty_history_still_reports_a_starting_version(self):
         self.assertEqual(release_groups([]), [])
         self.assertEqual(current_release([])["version"], "2.0")
+
+    def test_closed_alpha_is_never_reported_as_the_current_release(self):
+        alpha_groups = release_groups(history(HISTORICAL_BUILDS))
+
+        self.assertFalse(any(group["current"] for group in alpha_groups))
+        self.assertEqual(
+            current_release(history(HISTORICAL_BUILDS)),
+            {"version": "2.0", "phase": BETA_PHASE, "phase_label": "Open Beta"},
+        )
+
+    def test_project_release_merges_the_archive_with_live_engine_state(self):
+        state = {
+            "history": [beta_entry(offset, [FEATURE]) for offset in range(1, 7)],
+            "latest": None,
+        }
+
+        live = current_project_release(state, archive=history(HISTORICAL_BUILDS))
+
+        self.assertEqual(live["version"], "2.1")
+        self.assertEqual(live["phase_label"], "Open Beta")
 
 
 class PresentationTests(unittest.TestCase):

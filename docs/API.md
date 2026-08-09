@@ -65,7 +65,9 @@ Public. `200` when the DB is reachable, `503` otherwise.
 ### `GET /stats`
 Public. Bot-wide counters.
 ```json
-{ "version": "…", "codename": "…", "guilds": 3, "members": 512,
+{ "version": "2.0", "phase": "open-beta", "phase_label": "Open Beta",
+  "release_label": "2.0 Open Beta", "runtime_version": "3.1.0",
+  "codename": "Nova", "guilds": 3, "members": 512,
   "commands": 78, "uptime_seconds": 8123, "ready": true }
 ```
 
@@ -80,7 +82,8 @@ deduplicated by `created_at`. `limit` defaults to 50 and is clamped to 200.
                  "created_at": "2026-07-24T01:28:56+00:00",
                  "highlights": ["..."], "changes": ["..."],
                  "added_lines": 48, "removed_lines": 8, "changed_files": 1 } ],
-  "count": 29 }
+  "count": 29,
+  "release": { "version": "2.0", "phase": "open-beta", "phase_label": "Open Beta" } }
 ```
 
 `version`, `codename`, `highlights`, `changes` and the line counts are all
@@ -180,14 +183,16 @@ reports and newest update-feed entries.
 
 ```json
 {
-  "status": { "ready": true, "version": "3.1.0", "codename": "Nova",
+  "status": { "ready": true, "version": "2.0", "phase": "open-beta",
+              "phase_label": "Open Beta", "release_label": "2.0 Open Beta",
+              "runtime_version": "3.1.0", "codename": "Nova",
     "uptime_seconds": 1200, "commands": 66, "guilds": 5, "members": 132 },
   "guild": { "id": "…", "name": "…", "icon": "…|null", "member_count": 42 },
   "setup": { "configured_channels": 6, "total_channels": 7,
     "recommended_done": 4, "recommended_total": 4 },
   "modules": [ { "key": "voice", "label": "Voice reports", "enabled": true } ],
   "automod": { "invites": true, "spam": true, "badwords_count": 3 },
-  "levels": { "enabled": true, "tracked_members": 139,
+  "levels": { "enabled": true, "tracked_members": 139, "total_xp": 20420,
     "leaderboard": [ { "position": 1, "user_id": "…", "display_name": "…",
       "xp": 4400, "messages": 2200, "level": 37 } ] },
   "voice": { "configured": true, "report_channel_id": "…", "pending_count": 0,

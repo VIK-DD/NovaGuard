@@ -12,7 +12,7 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 
 <br/>
 
-[![Version](https://img.shields.io/badge/version-3.0.0-0f766e)](https://github.com/VIK-DD/NovaGuard/releases/latest)
+[![Release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.novaguard.fun%2Fapi%2Fv1%2Fstats&query=%24.release_label&label=release&color=0f766e)](https://novaguard.fun/updates)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![discord.py](https://img.shields.io/badge/discord.py-2.7+-5865F2)](https://discordpy.readthedocs.io/)
 [![SQLite](https://img.shields.io/badge/SQLite-config%20%2B%20state-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)

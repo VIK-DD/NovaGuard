@@ -4,6 +4,10 @@ import { z } from "zod";
 
 export const StatsSchema = z.object({
   version: z.string(),
+  phase: z.string().optional(),
+  phase_label: z.string().optional(),
+  release_label: z.string().optional(),
+  runtime_version: z.string().optional(),
   codename: z.string(),
   guilds: z.number(),
   members: z.number(),
@@ -114,6 +118,10 @@ export const DashboardSchema = z.object({
   status: z.object({
     ready: z.boolean(),
     version: z.string(),
+    phase: z.string().optional(),
+    phase_label: z.string().optional(),
+    release_label: z.string().optional(),
+    runtime_version: z.string().optional(),
     codename: z.string(),
     uptime_seconds: z.number(),
     commands: z.number(),
@@ -141,6 +149,7 @@ export const DashboardSchema = z.object({
   levels: z.object({
     enabled: z.boolean(),
     tracked_members: z.number(),
+    total_xp: z.number().optional(),
     leaderboard: z.array(
       z.object({
         position: z.number(),

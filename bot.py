@@ -17,11 +17,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.config import BOT_CODENAME, BOT_VERSION
 from core.error_digest import send_error_digest
 from core.config_check import report_config
 from core.github_api import github_api
 from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
+from core.release_versions import current_project_release
 from core.theme import Palette, brand_footer, make_embed
 
 def _music_cog():
@@ -158,7 +158,11 @@ class DevBot(commands.Bot):
         await self.webserver.start()
 
         self.command_sync_task = asyncio.create_task(self.sync_commands_later())
-        print(f"v{BOT_VERSION} \"{BOT_CODENAME}\" • loaded {len(COGS)} cogs • command sync scheduled")
+        release = current_project_release()
+        print(
+            f"v{release['version']} {release['phase_label']} • "
+            f"loaded {len(COGS)} cogs • command sync scheduled"
+        )
 
     async def sync_commands_later(self):
         await self.wait_until_ready()
@@ -178,7 +182,11 @@ class DevBot(commands.Bot):
             print(f"Command sync skipped: Discord API issue ({error}) • {scope}")
             return
 
-        print(f"v{BOT_VERSION} \"{BOT_CODENAME}\" • synced {len(synced)} slash commands • {scope}")
+        release = current_project_release()
+        print(
+            f"v{release['version']} {release['phase_label']} • "
+            f"synced {len(synced)} slash commands • {scope}"
+        )
 
     async def close(self):
         if self.command_sync_task and not self.command_sync_task.done():

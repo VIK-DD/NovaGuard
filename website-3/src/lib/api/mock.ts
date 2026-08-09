@@ -220,7 +220,11 @@ function dashboardPayload(id: string): Json | null {
   return {
     status: {
       ready: true,
-      version: "3.1.0",
+      version: "2.0",
+      phase: "open-beta",
+      phase_label: "Open Beta",
+      release_label: "2.0 Open Beta",
+      runtime_version: "3.1.0",
       codename: "Nova",
       uptime_seconds: 142_331,
       commands: 70,
@@ -259,6 +263,7 @@ function dashboardPayload(id: string): Json | null {
     levels: {
       enabled: settings.levels.enabled,
       tracked_members: 139,
+      total_xp: 20_420,
       leaderboard: [
         { position: 1, user_id: "1", display_name: "Razban", xp: 4400, messages: 2200, level: 37 },
         { position: 2, user_id: "2", display_name: "Sorin", xp: 4240, messages: 2120, level: 35 },

@@ -1,6 +1,8 @@
 # NovaGuard — Setup
 
-Modern, fully slash-command Discord bot (v3.0.0 "Nova").
+Modern, fully slash-command Discord bot. Its public release (currently 2.0 Open Beta)
+is derived automatically from the update history and is shared by Discord, the API,
+dashboard and website.
 Colorful embeds, interactive buttons & menus, automatic update changelogs, GitHub intelligence, XP levels, voice session reports and more.
 
 ## 1. Configure the bot

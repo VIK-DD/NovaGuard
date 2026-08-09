@@ -1,10 +1,9 @@
-"""Public release numbering for the website.
+"""Canonical public release numbering for NovaGuard.
 
-The bot keeps its own version for Discord; this is a separate, derived
-numbering that groups builds into releases people can browse. Deriving it
-rather than storing it means the numbers can never drift out of sync with the
-updates they describe - there is one source of truth, the build history, and
-the version is a view over it.
+The public version shown by Discord, the API, dashboard and website is derived
+from the update history. Deriving it rather than storing it means those
+surfaces cannot drift apart: there is one source of truth, the build history,
+and the version is a view over it.
 
 Two phases:
 
@@ -105,6 +104,10 @@ def is_significant(entry):
     A new command or a feature-level highlight counts. Everything else is
     still published, just not as a reason to renumber.
     """
+    explicit = (entry or {}).get("significant")
+    if isinstance(explicit, bool):
+        return explicit
+
     for item in _highlights_of(entry):
         text = str(item or "").strip()
         if not text:
@@ -250,14 +253,18 @@ def release_groups(entries):
     ordered = [groups[version] for version in order]
     ordered.reverse()
     for index, group in enumerate(ordered):
-        group["current"] = index == 0
+        # Once alpha closed, 1.9 became history even if the local archive has
+        # not recorded its first open-beta update yet. In that state the
+        # project is 2.0, but no historical group should be falsely marked as
+        # current.
+        group["current"] = index == 0 and group["phase"] == BETA_PHASE
     return ordered
 
 
 def current_release(entries):
     """The version the project is on right now."""
     groups = release_groups(entries)
-    if not groups:
+    if not groups or groups[0]["phase"] != BETA_PHASE:
         return {
             "version": format_version(BETA_MAJOR, 0),
             "phase": BETA_PHASE,
@@ -269,3 +276,29 @@ def current_release(entries):
         "phase": newest["phase"],
         "phase_label": newest["phase_label"],
     }
+
+
+def current_project_release(state=None, archive=None):
+    """Return the canonical live release from the committed archive + engine state.
+
+    Imports stay local so the update engine can call this helper without a
+    module-import cycle. ``state`` and ``archive`` are injectable for tests and
+    for code that already loaded them.
+    """
+    if state is None:
+        from .config import UPDATE_STATE_FILE
+        from .storage import load_json_file
+
+        state = load_json_file(UPDATE_STATE_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+
+    from .update_feed import MAX_LIMIT, merged_update_feed
+
+    feed = merged_update_feed(
+        limit=MAX_LIMIT,
+        archive=archive,
+        history=state.get("history"),
+        latest=state.get("latest"),
+    )
+    return current_release(feed)

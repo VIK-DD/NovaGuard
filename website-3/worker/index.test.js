@@ -47,7 +47,11 @@ describe("password session", () => {
       const pathname = new URL(typeof request === "string" ? request : request.url).pathname;
       if (pathname.endsWith("/stats")) {
         return Response.json({
-          version: "3.0.0",
+          version: "2.0",
+          phase: "open-beta",
+          phase_label: "Open Beta",
+          release_label: "2.0 Open Beta",
+          runtime_version: "3.1.0",
           codename: "Nova",
           guilds: 5,
           members: 132,
@@ -79,7 +83,11 @@ describe("password session", () => {
       const pathname = new URL(typeof request === "string" ? request : request.url).pathname;
       if (pathname.endsWith("/stats")) {
         return Response.json({
-          version: "3.1.0",
+          version: "2.0",
+          phase: "open-beta",
+          phase_label: "Open Beta",
+          release_label: "2.0 Open Beta",
+          runtime_version: "3.1.0",
           codename: "Nova",
           guilds: 5,
           members: 169,

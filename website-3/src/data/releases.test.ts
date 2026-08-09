@@ -59,6 +59,11 @@ describe("significance", () => {
   it("does not count an update with nothing in it", () => {
     expect(isSignificant(entry(1))).toBe(false);
   });
+
+  it("keeps the feed classification after display text was cleaned", () => {
+    expect(isSignificant({ ...entry(1, ["Clean text"]), significant: true })).toBe(true);
+    expect(isSignificant({ ...entry(1, [FEATURE]), significant: false })).toBe(false);
+  });
 });
 
 describe("alpha phase", () => {
@@ -193,6 +198,13 @@ describe("grouping", () => {
   it("survives an empty archive", () => {
     expect(releaseGroups([])).toEqual([]);
     expect(currentRelease([]).version).toBe("2.0");
+  });
+
+  it("never reports closed alpha as the current release", () => {
+    const alphaOnly = history(31);
+
+    expect(releaseGroups(alphaOnly).every((group) => !group.current)).toBe(true);
+    expect(currentRelease(alphaOnly)).toEqual({ version: "2.0", phaseLabel: "Open Beta" });
   });
 });
 

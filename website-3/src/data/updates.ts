@@ -9,6 +9,7 @@
 
 export interface Release {
   build: number;
+  significant?: boolean;
   version?: string;
   codename?: string;
   created_at: string;

@@ -48,6 +48,11 @@ def _bullets(value):
 
 def _clean_feed_entry(entry):
     cleaned = dict(entry)
+    # Preserve the classification before presentation cleanup removes the
+    # leading release emoji used by the update engine.
+    from .release_versions import is_significant
+
+    cleaned["significant"] = is_significant(entry)
     changes = _bullets(cleaned.get("changes"))
     highlights = _bullets(cleaned.get("highlights"))
     if changes:
@@ -72,7 +77,13 @@ def normalize_engine_entry(entry):
     if _timestamp(entry.get("created_at")) is None:
         return None
 
-    normalized = {"created_at": entry["created_at"]}
+    from .release_versions import is_significant
+
+    normalized = {
+        "created_at": entry["created_at"],
+        # The public text is cleaned below, so carry this decision as data.
+        "significant": is_significant(entry),
+    }
     if isinstance(entry.get("build"), int):
         normalized["build"] = entry["build"]
     for key in STAT_KEYS:

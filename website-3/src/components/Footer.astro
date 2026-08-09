@@ -42,7 +42,8 @@
       const getLiveStats = window.__ngGetLiveStats;
       if (typeof getLiveStats !== "function") return;
       const s = await getLiveStats();
-      text.textContent = `Bot online · v${s.version} · ${s.guilds} servers`;
+      const release = s.release_label ?? `${s.version} ${s.phase_label ?? "Open Beta"}`;
+      text.textContent = `Bot online · v${release} · ${s.guilds} servers`;
       link.hidden = false;
     } catch {}
   };

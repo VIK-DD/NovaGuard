@@ -32,8 +32,6 @@ from core.backups import (
     upload_json_to_remote,
 )
 from core.config import (
-    BOT_CODENAME,
-    BOT_VERSION,
     BASE_DIR,
     ERROR_LOG_CHANNEL_ID,
     GITHUB_STATE_FILE,
@@ -53,6 +51,7 @@ from core.maintenance import (
     save_maintenance_state,
     user_can_bypass_maintenance,
 )
+from core.release_versions import current_project_release
 from core.storage import DATA_DIR, get_guild_settings, load_data
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
@@ -105,6 +104,7 @@ def build_category_embed(cog):
 
 
 def build_help_home_embed(bot):
+    release = current_project_release()
     lines = []
     total = 0
     for name, cog in bot.cogs.items():
@@ -122,7 +122,10 @@ def build_help_home_embed(bot):
     )
     embed.add_field(
         name="Quick Stats",
-        value=f"Categories: `{len(bot.cogs)}` • Commands: `{total}` • Version: `v{BOT_VERSION} \"{BOT_CODENAME}\"`",
+        value=(
+            f"Categories: `{len(bot.cogs)}` • Commands: `{total}` • "
+            f"Version: `v{release['version']} {release['phase_label']}`"
+        ),
         inline=False,
     )
     brand_footer(embed, "Help hub")
@@ -832,12 +835,13 @@ class System(commands.Cog):
     async def botinfo(self, interaction: discord.Interaction):
         await defer_interaction(interaction)
         history = updates.load_update_state().get("history", [])
+        release = current_project_release()
         total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
         command_count = len(list(self.bot.tree.walk_commands()))
 
         embed = make_embed(
             f"🤖 {self.bot.user.name}",
-            f"v`{BOT_VERSION}` **\"{BOT_CODENAME}\"** — the slash-command era.",
+            f"v`{release['version']}` **{release['phase_label']}** — the slash-command era.",
             color=Palette.PRIMARY,
         )
         if self.bot.user.display_avatar:
@@ -877,6 +881,7 @@ class System(commands.Cog):
     @app_commands.command(name="status", description="Public bot status: uptime, latency and project links")
     async def status(self, interaction: discord.Interaction):
         await defer_interaction(interaction)
+        release = current_project_release()
         gateway_ms = round(self.bot.latency * 1000)
         uptime = datetime.now(UTC) - self.bot.launched_at
         lag = self.loop_lag_snapshot()
@@ -907,7 +912,10 @@ class System(commands.Cog):
         embed.add_field(name="Uptime", value=f"`{format_timedelta(uptime)}`", inline=True)
         embed.add_field(
             name="Build",
-            value=f"v`{BOT_VERSION}` **\"{BOT_CODENAME}\"**\nSlash commands: `{len(list(self.bot.tree.walk_commands()))}`",
+            value=(
+                f"v`{release['version']}` **{release['phase_label']}**\n"
+                f"Slash commands: `{len(list(self.bot.tree.walk_commands()))}`"
+            ),
             inline=True,
         )
         embed.add_field(
