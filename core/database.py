@@ -127,6 +127,39 @@ def init_database():
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_music_cache_expiry ON music_cache (expires_at)"
         )
+        # Only the hash of the admin key is ever stored. A leaked database
+        # must not hand anyone the key itself; the plaintext exists only in
+        # the operator's password manager.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS admin_key (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                key_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                created_by TEXT
+            )
+            """
+        )
+        # Append-only trail of privileged actions. Without it, "who ran that
+        # restore?" has no answer after the fact.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS admin_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                actor_id TEXT NOT NULL,
+                actor_name TEXT,
+                action TEXT NOT NULL,
+                target TEXT,
+                outcome TEXT NOT NULL,
+                detail TEXT
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_audit_time ON admin_audit (created_at DESC)"
+        )
         connection.commit()
     _INITIALIZED = True
 
