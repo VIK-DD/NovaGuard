@@ -197,6 +197,45 @@ requirement would therefore reject nearly everything; prefer
 `MUSIC_MIN_AUDIO_BITRATE_KBPS=192` with strict mode off, which picks the best
 available stream without failing tracks.
 
+## 2b. Owner commands and the admin key
+
+Some commands reach past a single server: `/backup` archives every guild's
+data at once, `/maintenance` is a global kill switch, `/resync` republishes
+commands everywhere. Those need the Discord application owner **and** a key,
+because owning the account is not proof of who is at the keyboard — a stolen
+Discord session passes the first check and fails the second.
+
+Generate the key once, on the host:
+
+```bash
+cd /home/ubuntu/NovaGuard && venv/bin/python -m tools.admin_key
+```
+
+It is printed once and stored only as a hash. **Put it in your password
+manager before closing the terminal** — losing it costs a rotation, but there
+is no way to read it back.
+
+Then, in a **DM with the bot** (never in a server channel, where the command
+lands in Discord's audit log):
+
+```text
+/admin unlock key:ng_admin_...
+```
+
+The unlock lasts 15 minutes and ends early on `/admin lock` or a bot restart.
+`/admin status` shows whether a key exists and how long you have left, and
+`/admin audit` lists recent privileged actions, including refused ones.
+
+To rotate — after a leak, or if you typed the key in a channel by mistake:
+
+```bash
+cd /home/ubuntu/NovaGuard && venv/bin/python -m tools.admin_key --force
+```
+
+Server admins are unaffected: `/setup`, `/config view` and `/config export`
+still work on `Manage Server`, so every guild keeps a way to configure itself
+and to take its own data out.
+
 ## 3. Raspberry Pi with pm2
 
 If your bot already runs in pm2, update the files and restart:

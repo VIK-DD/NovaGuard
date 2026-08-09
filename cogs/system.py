@@ -14,6 +14,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core import updates
+from cogs.admin import require_admin
 from core.backups import (
     BACKUP_DIR,
     backup_max_expected_age_seconds,
@@ -1103,6 +1104,10 @@ class System(commands.Cog):
         message: str | None = None,
     ):
         await defer_interaction(interaction, ephemeral=True)
+        # A global kill switch for every guild at once, so it takes the key
+        # as well as the owner account.
+        if not await require_admin(interaction, self.bot, action="maintenance"):
+            return
         if not await self.ensure_maintenance_manager(interaction):
             return
 
@@ -1213,14 +1218,8 @@ class System(commands.Cog):
     @app_commands.guild_only()
     async def resync(self, interaction: discord.Interaction, scope: str = "server"):
         await defer_interaction(interaction, ephemeral=True)
-        if not await user_can_bypass_maintenance(self.bot, interaction.user):
-            embed = make_embed(
-                "🔒 Owner Only",
-                "Only the bot owner can re-sync slash commands.",
-                color=Palette.DANGER,
-            )
-            brand_footer(embed, "Command resync")
-            return await respond(interaction, embed, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="resync"):
+            return
 
         guild = discord.Object(id=interaction.guild_id)
         try:
