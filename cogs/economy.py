@@ -9,6 +9,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from cogs.admin import require_admin
+from core.admin_auth import record_audit
 from core.database import load_economy_data, upsert_economy_wallets
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import humanize_number, respond
@@ -378,6 +380,64 @@ class Economy(commands.Cog):
         embed = make_embed("🛍️ Purchase complete!", f"{label} is now on your shelf. Flex responsibly. 😎", color=Palette.SUCCESS)
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins")
         await respond(interaction, embed)
+
+    @app_commands.command(name="grant", description="Owner: add or remove coins from a member")
+    @app_commands.describe(
+        member="Who to adjust",
+        amount="Coins to add, or a negative number to take away",
+    )
+    # Minting currency devalues everything anyone earned, so it is the bot
+    # owner's alone - not a server admin's - and takes the key on top.
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def grant(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        amount: app_commands.Range[int, -1_000_000, 1_000_000],
+    ):
+        if not await require_admin(interaction, self.bot, action="economy.grant"):
+            return
+
+        if amount == 0:
+            embed = make_embed("Nothing to do", "Pick a non-zero amount.", color=Palette.WARNING)
+            brand_footer(embed, "Economy")
+            return await respond(interaction, embed, ephemeral=True)
+
+        data = self.data
+        wallet = get_wallet(data, interaction.guild_id, member.id)
+        before = wallet["coins"]
+        # Balances never go negative: taking more than someone holds empties
+        # the wallet rather than putting them in debt.
+        wallet["coins"] = max(0, before + amount)
+        applied = wallet["coins"] - before
+        await self._save(interaction.guild_id, member.id)
+
+        record_audit(
+            interaction.user.id,
+            "economy.grant",
+            actor_name=str(interaction.user),
+            target=f"{member.id} in {interaction.guild_id}",
+            detail=f"{applied:+d} coins, balance {before} -> {wallet['coins']}",
+        )
+
+        given = applied >= 0
+        embed = make_embed(
+            "🪙 Coins granted" if given else "🪙 Coins removed",
+            f"{member.mention} {'received' if given else 'lost'} "
+            f"{CURRENCY} `{humanize_number(abs(applied))}`.",
+            color=Palette.SUCCESS if given else Palette.WARNING,
+        )
+        embed.add_field(name="Before", value=f"`{humanize_number(before)}`", inline=True)
+        embed.add_field(name="After", value=f"`{humanize_number(wallet['coins'])}`", inline=True)
+        if applied != amount:
+            embed.add_field(
+                name="Adjusted",
+                value=f"-# Asked for `{amount:+d}`, but the balance stops at zero.",
+                inline=False,
+            )
+        brand_footer(embed, "Economy")
+        await respond(interaction, embed, ephemeral=True)
 
 
 async def setup(bot):

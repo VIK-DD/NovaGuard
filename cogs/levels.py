@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from cogs.admin import require_admin
 from core.backups import create_backup
 from core.database import load_levels_data, save_levels_data, upsert_level_records
 from core.levels_settings import resolve_levels
@@ -400,7 +401,9 @@ class Levels(commands.Cog):
         xp_per_message="XP awarded for each eligible historical message",
         cap_per_user="Maximum historical XP one member can receive",
     )
-    @app_commands.checks.has_permissions(manage_guild=True)
+    # Replaces every member's XP and scans up to 700 days of history, which
+    # is both destructive and heavy on the host, so it is the bot owner's.
+    @app_commands.default_permissions(administrator=True)
     async def backfill_run(
         self,
         interaction: discord.Interaction,
@@ -410,6 +413,8 @@ class Levels(commands.Cog):
         cap_per_user: app_commands.Range[int, 500, 100000] = BACKFILL_DEFAULT_CAP_PER_USER,
     ):
         await defer_interaction(interaction, ephemeral=True, thinking=True)
+        if not await require_admin(interaction, self.bot, action="levels.backfill"):
+            return
         if not confirm:
             embed = make_embed(
                 "Confirmation needed",

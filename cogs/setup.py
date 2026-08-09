@@ -22,6 +22,7 @@ from core.backups import (
 )
 from cogs.admin import require_admin
 from core.config import github_config
+from core.database import export_guild_data
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, respond
@@ -162,14 +163,16 @@ def build_config_embed(guild):
 
 
 def export_config_file(guild):
-    settings = get_guild_settings(guild.id)
-    payload = {
-        "guild_id": guild.id,
-        "guild_name": guild.name,
-        "settings": settings,
-    }
+    """A server owner's own backup: their settings, levels and wallets.
+
+    The /backup group archives every guild at once and is the bot owner's,
+    so this is how a single server takes its own data out - scoped by
+    guild_id, with nothing from anyone else in it.
+    """
+    payload = export_guild_data(guild.id)
+    payload["guild_name"] = guild.name
     data = json.dumps(payload, indent=2, ensure_ascii=True).encode("utf-8")
-    return discord.File(io.BytesIO(data), filename=f"novaguard-config-{guild.id}.json")
+    return discord.File(io.BytesIO(data), filename=f"novaguard-{guild.id}.json")
 
 
 def backup_integrity_line(report):

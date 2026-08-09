@@ -164,6 +164,53 @@ def init_database():
     _INITIALIZED = True
 
 
+def export_guild_data(guild_id):
+    """Everything the bot stores for one guild, and nothing from any other.
+
+    This is what a server owner is entitled to: their settings, their
+    members' levels and wallets. Every query filters on guild_id, so no full
+    archive of the database has to leave the host to satisfy them.
+    """
+    init_database()
+    key = str(guild_id)
+    with connect() as connection:
+        settings = {
+            row["key"]: decode_value(row["value"])
+            for row in connection.execute(
+                "SELECT key, value FROM guild_settings WHERE guild_id = ?", (key,)
+            )
+        }
+        levels = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT user_id, xp, messages, last_gain FROM level_records"
+                " WHERE guild_id = ? ORDER BY xp DESC",
+                (key,),
+            )
+        ]
+        wallets = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT user_id, coins, daily_streak, last_daily, last_work, trophies"
+                " FROM economy_wallets WHERE guild_id = ? ORDER BY coins DESC",
+                (key,),
+            )
+        ]
+
+    return {
+        "guild_id": key,
+        "exported_at": utc_now(),
+        "settings": settings,
+        "levels": levels,
+        "economy": wallets,
+        "counts": {
+            "settings": len(settings),
+            "levels": len(levels),
+            "economy": len(wallets),
+        },
+    }
+
+
 def encode_value(value):
     return json.dumps(value, ensure_ascii=True)
 
