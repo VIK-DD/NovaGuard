@@ -429,6 +429,21 @@ def refresh_latest_remote_check(backup_name=None):
     return remote_backup_status(backup_name or (latest.get("backup_name") if latest else None))
 
 
+def _is_missing_remote_dir(completed):
+    """True when rclone only failed because the folder is not there yet.
+
+    A prefix that has never been written to - `guilds/` before the first
+    per-server export - makes `rclone delete` exit non-zero. Nothing to prune
+    is success, and reporting it as a retention failure buries the real ones.
+    Matched narrowly on purpose: auth errors and a missing config section
+    must stay failures.
+    """
+    if completed["ok"]:
+        return False
+    haystack = f"{completed['stderr']} {completed['stdout']}".lower()
+    return "directory not found" in haystack
+
+
 def prune_remote_backups():
     config = remote_backup_config()
     summary = {
@@ -469,19 +484,20 @@ def prune_remote_backups():
             ],
             action=f"retention {prefix}",
         )
+        nothing_to_prune = _is_missing_remote_dir(completed)
         target = {
             "prefix": prefix,
             "pattern": pattern,
             "keep_days": keep_days,
             "remote_path": remote_path,
-            "ok": completed["ok"],
-            "message": completed["message"],
+            "ok": completed["ok"] or nothing_to_prune,
+            "message": "Nothing to prune yet." if nothing_to_prune else completed["message"],
             "returncode": completed["returncode"],
             "stdout": completed["stdout"],
             "stderr": completed["stderr"],
         }
         summary["targets"].append(target)
-        all_ok = all_ok and completed["ok"]
+        all_ok = all_ok and target["ok"]
     summary["ok"] = all_ok
     summary["message"] = "Remote retention completed." if all_ok else "Remote retention finished with errors."
     update_remote_backup_state(latest_retention=summary)

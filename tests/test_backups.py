@@ -214,5 +214,33 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertEqual(backups.backup_max_expected_age_seconds(), 14 * 3600)
 
 
+class RemoteRetentionTests(unittest.TestCase):
+    """A folder that was never written to is not a retention failure."""
+
+    def _result(self, ok, stderr="", stdout=""):
+        return {"ok": ok, "stderr": stderr, "stdout": stdout}
+
+    def test_a_folder_that_does_not_exist_yet_is_not_a_failure(self):
+        # `guilds/` only appears after the first per-server export, so before
+        # that rclone exits non-zero and nothing is actually wrong.
+        completed = self._result(False, stderr="2026/08/09 ERROR : directory not found")
+
+        self.assertTrue(backups._is_missing_remote_dir(completed))
+
+    def test_a_successful_run_is_never_treated_as_missing(self):
+        self.assertFalse(backups._is_missing_remote_dir(self._result(True)))
+
+    def test_real_failures_still_count_as_failures(self):
+        # These would otherwise be swallowed, and silent backup breakage is
+        # exactly what the retention report exists to surface.
+        for stderr in (
+            "didn't find section in config file",
+            "failed to authenticate: token expired",
+            "quota exceeded",
+        ):
+            with self.subTest(stderr=stderr):
+                self.assertFalse(backups._is_missing_remote_dir(self._result(False, stderr)))
+
+
 if __name__ == "__main__":
     unittest.main()
