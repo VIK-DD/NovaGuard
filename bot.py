@@ -47,6 +47,7 @@ COGS = (
     "economy",
     _music_cog(),
     "ai",
+    "admin",
 )
 
 logging.basicConfig(

@@ -254,6 +254,38 @@ def recent_audit(limit=20):
 # ── policy ───────────────────────────────────────────────────────────
 
 
+# One set of unlocks for the whole process, so /admin unlock in the admin cog
+# also opens the /backup group that lives in the setup cog.
+SESSIONS = AdminSessions()
+
+# Why a privileged command was refused. The cog turns these into messages;
+# keeping the decision here makes it testable without Discord.
+GATE_OK = "ok"
+GATE_NOT_OWNER = "not_owner"
+GATE_NO_KEY = "no_key"
+GATE_LOCKED_OUT = "locked_out"
+GATE_LOCKED = "locked"
+
+
+def gate_state(is_owner, user_id, *, sessions=None, key_configured=None):
+    """Decide whether a privileged command may run.
+
+    Owner first, then the key. A non-owner is never told whether a key
+    exists, and never learns that the key is the second factor at all.
+    """
+    sessions = SESSIONS if sessions is None else sessions
+    if not is_owner:
+        return GATE_NOT_OWNER
+    configured = key_is_configured() if key_configured is None else key_configured
+    if not configured:
+        return GATE_NO_KEY
+    if sessions.is_locked_out(user_id):
+        return GATE_LOCKED_OUT
+    if not sessions.is_unlocked(user_id):
+        return GATE_LOCKED
+    return GATE_OK
+
+
 def env_owner_ids():
     """Extra owner ids from BOT_OWNER_IDS, for team setups or break-glass.
 

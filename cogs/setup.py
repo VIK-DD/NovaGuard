@@ -20,6 +20,7 @@ from core.backups import (
     refresh_latest_remote_check,
     remote_backup_status,
 )
+from cogs.admin import require_admin
 from core.config import github_config
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -709,6 +710,11 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def config_backup(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
+        # Archives every guild's data, not just this one, so it is the bot
+        # owner's to run. Server admins export their own guild with
+        # /config export.
+        if not await require_admin(interaction, self.bot, action="backup.create"):
+            return
         backup = await self.bot.loop.run_in_executor(None, create_backup, "manual")
         embed = make_embed(
             "🧳 Backup created",
@@ -722,6 +728,8 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_create(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="backup.create"):
+            return
         backup = await asyncio.to_thread(create_backup, "manual")
         latest = {
             "name": backup["name"],
@@ -736,6 +744,8 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_status(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="backup.status"):
+            return
         latest = latest_backup()
         report = await asyncio.to_thread(inspect_backup, latest["path"]) if latest else None
         await respond(interaction, backup_status_embed(latest, report), ephemeral=True)
@@ -744,6 +754,10 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_remote(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
+        # Exposes the off-site destination path, which is worth protecting on
+        # its own.
+        if not await require_admin(interaction, self.bot, action="backup.remote"):
+            return
         latest = latest_backup()
         current_status = remote_backup_status(latest["name"] if latest else None)
         if current_status.get("configured") and current_status.get("latest"):
@@ -756,6 +770,8 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_list(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="backup.list"):
+            return
         backups = await asyncio.to_thread(list_backups, 8)
         await respond(interaction, backup_list_embed(backups), ephemeral=True)
 
@@ -764,6 +780,8 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_inspect(self, interaction: discord.Interaction, name: str | None = None):
         await defer_interaction(interaction, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="backup.inspect"):
+            return
         backup = await asyncio.to_thread(find_backup, name)
         if not backup:
             embed = make_embed(
@@ -780,6 +798,8 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_test(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="backup.test"):
+            return
         latest = latest_backup()
         if not latest:
             return await respond(interaction, backup_status_embed(None), ephemeral=True)
@@ -791,6 +811,8 @@ class Setup(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def backup_restore(self, interaction: discord.Interaction, name: str | None = None):
         await defer_interaction(interaction, ephemeral=True)
+        if not await require_admin(interaction, self.bot, action="backup.restore"):
+            return
         backup = await asyncio.to_thread(find_backup, name)
         if not backup:
             embed = make_embed(
