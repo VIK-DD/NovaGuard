@@ -1,0 +1,289 @@
+---
+// One expandable card per version. Closed, it reads as a row in a changelog
+// index; open, it becomes the full list of updates that version contained.
+//
+// Built on <details>/<summary> so it works before any JavaScript runs and
+// stays keyboard- and screen-reader-native. The script only adds the height
+// animation, which the element cannot do on its own - without it the panel
+// still opens, just instantly.
+import type { ReleaseGroup } from "../data/releases";
+import { formatReleaseDate } from "../data/updates";
+
+interface Props {
+  groups: ReleaseGroup[];
+}
+
+const { groups } = Astro.props;
+
+function span(group: ReleaseGroup): string {
+  if (!group.startedAt || !group.releasedAt) return "";
+  const from = formatReleaseDate(group.startedAt);
+  const to = formatReleaseDate(group.releasedAt);
+  return from === to ? from : `${from} — ${to}`;
+}
+---
+
+<div class="release-accordion flex flex-col gap-3">
+  {
+    groups.map((group, index) => (
+      <details
+        class="group release-item rounded-[var(--radius)] border border-line bg-card transition-colors duration-300 hover:border-line-strong"
+        open={index === 0}
+      >
+        <summary class="flex cursor-pointer list-none items-center gap-4 px-5 py-4 outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:px-6">
+          <span class="flex min-w-0 flex-1 items-center gap-3">
+            <span class="font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl">
+              {group.version}
+            </span>
+            <span
+              class:list={[
+                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wider uppercase",
+                group.current ? "bg-primary-soft text-primary" : "border border-line text-ink-faint",
+              ]}
+            >
+              {group.phaseLabel}
+            </span>
+            {group.current && (
+              <span class="hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex">
+                <span class="live-dot size-1.5 rounded-full bg-good" />
+                Current
+              </span>
+            )}
+          </span>
+
+          <span class="hidden text-right text-xs leading-relaxed text-ink-faint md:block">
+            <span class="block text-ink-muted">
+              {group.updateCount} {group.updateCount === 1 ? "update" : "updates"}
+            </span>
+            <span class="block">{span(group)}</span>
+          </span>
+
+          <svg
+            class="chevron size-5 shrink-0 text-ink-faint transition-transform duration-300"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 7.5 10 12.5 15 7.5" />
+          </svg>
+        </summary>
+
+        <div class="release-panel">
+          <div class="release-panel-inner border-t border-line px-5 pt-1 pb-5 sm:px-6">
+            <ol class="flex flex-col">
+              {group.updates.map((update) => (
+                <li class="release-update relative flex gap-4 pt-5">
+                  <span class="relative flex w-3 shrink-0 justify-center" aria-hidden="true">
+                    <span class="thread absolute top-2 bottom-[-1.25rem] w-px bg-line" />
+                    <span
+                      class:list={[
+                        "relative mt-1.5 size-2 rounded-full ring-4 ring-card",
+                        update.significant ? "bg-primary" : "bg-line-strong",
+                      ]}
+                    />
+                  </span>
+
+                  <div class="min-w-0 flex-1 pb-1">
+                    <p class="text-xs text-ink-faint">
+                      {formatReleaseDate(update.created_at)}
+                      {update.significant && <span class="ml-2 text-primary">New</span>}
+                    </p>
+                    {update.highlights?.length ? (
+                      <ul class="mt-1.5 flex flex-col gap-1.5">
+                        {update.highlights.map((line) => (
+                          <li class="text-sm leading-relaxed text-ink-muted">{line}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p class="mt-1.5 text-sm text-ink-faint">Internal improvements.</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </details>
+    ))
+  }
+</div>
+
+<style>
+  .release-panel {
+    overflow: hidden;
+  }
+
+  /* The thread joins the dots; it must not hang below the last one. */
+  .release-update:last-child .thread {
+    display: none;
+  }
+
+  /* `open` keeps the content in the DOM; `data-open` carries the visual
+     state. They are separate because removing `open` hides the panel
+     instantly, leaving nothing to animate on the way out - so the script
+     holds `open` for the whole collapse and drops `data-open` first.
+
+     Only animate once the script has measured the panel. Before that it
+     just opens, which is the correct no-JavaScript behaviour: the content
+     is never hidden from anyone. */
+  .release-accordion[data-enhanced] .release-panel {
+    height: 0;
+    opacity: 0;
+    transition:
+      height 380ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 260ms ease;
+  }
+
+  .release-accordion[data-enhanced] details[data-open] .release-panel {
+    height: var(--panel-height, auto);
+    opacity: 1;
+  }
+
+  details[open] .chevron {
+    transform: rotate(180deg);
+  }
+
+  .release-accordion[data-enhanced] details[open]:not([data-open]) .chevron {
+    transform: none;
+  }
+
+  details[data-open] {
+    border-color: hsl(var(--border-strong));
+  }
+
+  /* Updates rise in behind the panel as it opens. The stagger is small on
+     purpose: long enough to read as one motion, short enough that the last
+     row is not still arriving after the panel has settled. */
+  .release-accordion[data-enhanced] details[data-open] .release-update {
+    animation: release-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: calc(var(--row, 0) * 45ms + 90ms);
+  }
+
+  @keyframes release-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  .live-dot {
+    animation: live-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes live-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 hsl(var(--good) / 0.45);
+    }
+    50% {
+      opacity: 0.75;
+      box-shadow: 0 0 0 4px hsl(var(--good) / 0);
+    }
+  }
+
+  /* Motion is decoration here: the content reads identically without it. */
+  @media (prefers-reduced-motion: reduce) {
+    .release-accordion[data-enhanced] .release-panel,
+    .chevron {
+      transition: none;
+    }
+    .release-accordion[data-enhanced] details[data-open] .release-update,
+    .live-dot {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  // <details> jumps open. To animate it we hold the element open for the
+  // whole transition and drive the height ourselves, removing the attribute
+  // only once the collapse has finished - otherwise the browser tears the
+  // content out before it has a chance to shrink.
+  function enhance(root: HTMLElement) {
+    const items = Array.from(root.querySelectorAll<HTMLDetailsElement>("details"));
+
+    for (const row of root.querySelectorAll<HTMLElement>(".release-update")) {
+      // The stagger restarts inside each panel rather than running across the
+      // page, or the tenth version would wait for the first nine.
+      const position = Array.from(row.parentElement?.children ?? []).indexOf(row);
+      row.style.setProperty("--row", String(Math.max(position, 0)));
+    }
+
+    const measure = (item: HTMLDetailsElement) => {
+      const panel = item.querySelector<HTMLElement>(".release-panel");
+      const inner = item.querySelector<HTMLElement>(".release-panel-inner");
+      if (panel && inner) panel.style.setProperty("--panel-height", `${inner.offsetHeight}px`);
+    };
+
+    for (const item of items) {
+      const panel = item.querySelector<HTMLElement>(".release-panel");
+      const summary = item.querySelector<HTMLElement>("summary");
+      if (!panel || !summary) continue;
+
+      measure(item);
+
+      // Whatever starts open on the server needs the visual hook too, or its
+      // panel would measure as collapsed on the first paint.
+      if (item.open) item.setAttribute("data-open", "");
+
+      summary.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (item.dataset.animating) return;
+
+        const closing = item.hasAttribute("data-open");
+        item.dataset.animating = "1";
+
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          // `open` is only dropped now, once the height has actually reached
+          // zero. Removing it any earlier would tear the content out of the
+          // DOM mid-animation and the panel would simply blink shut.
+          if (closing) item.removeAttribute("open");
+          delete item.dataset.animating;
+          panel.removeEventListener("transitionend", onEnd);
+        };
+
+        const onEnd = (transition: TransitionEvent) => {
+          if (transition.propertyName === "height") finish();
+        };
+
+        panel.addEventListener("transitionend", onEnd);
+        // A dropped transition must never leave a card stuck unclickable.
+        window.setTimeout(finish, 700);
+
+        if (closing) {
+          measure(item);
+          item.removeAttribute("data-open");
+        } else {
+          item.setAttribute("open", "");
+          measure(item);
+          // Force a synchronous layout while the panel is still at height
+          // zero, so the browser has a start value to animate away from.
+          // Deferring this to requestAnimationFrame looked equivalent and was
+          // not: the callback can be coalesced with the attribute change, and
+          // the panel then jumps open with no transition at all.
+          void panel.offsetHeight;
+          item.setAttribute("data-open", "");
+        }
+      });
+    }
+
+    // Content reflows on resize, and a stale measurement clips the panel.
+    let resizeTimer = 0;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => items.forEach(measure), 150);
+    });
+
+    root.setAttribute("data-enhanced", "");
+  }
+
+  document.querySelectorAll<HTMLElement>(".release-accordion").forEach(enhance);
+</script>

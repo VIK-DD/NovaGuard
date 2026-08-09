@@ -58,7 +58,11 @@ UPDATES_PER_VERSION = 5
 # Reused rather than reinvented so one definition of "notable" serves both
 # Discord and the website.
 RELEASE_HIGHLIGHT_PREFIXES = ("\U0001F680", "\U0001F5C4", "\U0001F9F3", "\U0001FA7A", "\U0001F3C6", "\U0001F4DC", "\U0001F419")
-NEW_COMMAND_MARKER = "new commands ready to try"
+# A shipped command is the clearest sign a release did something people can
+# see. The engine has phrased this at least two ways over its life - "Added
+# commands:" in the archive, "New commands ready to try:" in newer builds - so
+# both are matched. Missing one would quietly freeze the version number.
+NEW_COMMAND_MARKERS = ("added commands", "new commands")
 
 _EMOJI_PATTERN = re.compile(
     "["
@@ -107,7 +111,8 @@ def is_significant(entry):
             continue
         if text.startswith(RELEASE_HIGHLIGHT_PREFIXES):
             return True
-        if NEW_COMMAND_MARKER in text.lower():
+        lowered = text.lower()
+        if any(marker in lowered for marker in NEW_COMMAND_MARKERS):
             return True
     return False
 

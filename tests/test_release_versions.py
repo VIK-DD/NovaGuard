@@ -53,8 +53,33 @@ class SignificanceTests(unittest.TestCase):
     def test_a_feature_highlight_counts(self):
         self.assertTrue(is_significant(entry(1, [FEATURE])))
 
-    def test_new_commands_count(self):
-        self.assertTrue(is_significant(entry(1, ["New commands ready to try: /filter"])))
+    def test_new_commands_count_however_the_engine_phrased_them(self):
+        # The wording has changed over the engine's life. Matching only one
+        # spelling would freeze the version number without anyone noticing.
+        for text in (
+            "New commands ready to try: /filter",
+            "Added commands: `!github`, `!ping`",
+            "ADDED COMMANDS: /rank",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(is_significant(entry(1, [text])))
+
+    def test_the_shipped_archive_contains_significant_updates(self):
+        # A guard against the detector matching nothing real: if this ever
+        # hits zero, open beta would sit on 2.0 forever.
+        import json
+        import pathlib
+
+        archive_path = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "website-3"
+            / "src"
+            / "data"
+            / "updates-archive.json"
+        )
+        archive = json.loads(archive_path.read_text())
+
+        self.assertGreater(sum(1 for item in archive if is_significant(item)), 0)
 
     def test_ordinary_work_does_not_count(self):
         # It still gets published - it just must not move the version.
