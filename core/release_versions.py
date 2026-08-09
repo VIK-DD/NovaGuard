@@ -37,10 +37,18 @@ PHASE_LABELS = {
 ALPHA_MAJOR = 1
 ALPHA_SLOTS = 10
 
-# Frozen boundary between the two phases. Builds up to and including this one
-# are history; everything after is open beta. Never recompute this from the
-# current build count, or published version numbers would move under people.
-ALPHA_LAST_BUILD = 31
+# Frozen boundary between the two phases: everything created before this
+# instant is alpha history, everything from it on is open beta.
+#
+# A date, not a build number, for two reasons. Build numbers repeat - the
+# changelog engine's state has been reset before, so the same number can
+# appear twice - and the bot's archive and the website's have drifted apart,
+# so "build 31" means different updates depending on which one you read. A
+# timestamp means the same thing everywhere.
+#
+# Never compute this from the data. It is frozen so that published version
+# numbers cannot move under a visitor who already read them.
+ALPHA_CUTOFF_ISO = "2026-08-09T00:00:00+00:00"
 
 BETA_MAJOR = 2
 UPDATES_PER_VERSION = 5
@@ -126,18 +134,29 @@ def _alpha_release_for(position, sizes):
     return format_version(ALPHA_MAJOR, ALPHA_SLOTS - 1)
 
 
+def _sort_key(entry):
+    """Oldest first, by when it happened.
+
+    Dates order the feed because build numbers are not dependable: they
+    repeat across engine resets and differ between the bot's archive and the
+    website's. The build number is only a tiebreaker for the same instant.
+    """
+    return (str(entry.get("created_at") or ""), int(entry.get("build") or 0))
+
+
+def is_alpha(entry):
+    """Whether this update belongs to the closed alpha phase."""
+    return str((entry or {}).get("created_at") or "") < ALPHA_CUTOFF_ISO
+
+
 def assign_releases(entries):
     """Stamp every update with the release and phase it belongs to.
 
     Entries are processed oldest first so a version fills up in the order
     things actually happened. The input is never modified.
     """
-    ordered = sorted(
-        (dict(entry) for entry in entries or [] if entry),
-        key=lambda entry: int(entry.get("build") or 0),
-    )
-    historical = [entry for entry in ordered if int(entry.get("build") or 0) <= ALPHA_LAST_BUILD]
-    sizes = alpha_slot_sizes(len(historical))
+    ordered = sorted((dict(entry) for entry in entries or [] if entry), key=_sort_key)
+    sizes = alpha_slot_sizes(sum(1 for entry in ordered if is_alpha(entry)))
 
     stamped = []
     alpha_seen = 0
@@ -145,10 +164,9 @@ def assign_releases(entries):
     significant_in_version = 0
 
     for entry in ordered:
-        build = int(entry.get("build") or 0)
         significant = is_significant(entry)
 
-        if build <= ALPHA_LAST_BUILD:
+        if is_alpha(entry):
             entry["release"] = _alpha_release_for(alpha_seen, sizes)
             entry["phase"] = ALPHA_PHASE
             alpha_seen += 1

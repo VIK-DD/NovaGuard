@@ -7,7 +7,6 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.release_versions import (  # noqa: E402
-    ALPHA_LAST_BUILD,
     ALPHA_SLOTS,
     BETA_PHASE,
     UPDATES_PER_VERSION,
@@ -23,12 +22,27 @@ FEATURE = "\U0001F680 Setup wizard upgraded with select menus"
 CHORE = "Tidied internal helpers"
 
 
+ALPHA_DAY = "2026-01-{:02d}T00:00:00+00:00"
+BETA_DAY = "2026-09-{:02d}T00:00:00+00:00"
+HISTORICAL_BUILDS = 31
+
+
 def entry(build, highlights=None, created_at=None):
+    """An update. Dated before the cutoff unless told otherwise."""
     return {
         "build": build,
         "highlights": list(highlights or []),
-        "created_at": created_at or f"2026-01-{min(build, 28):02d}T00:00:00+00:00",
+        "created_at": created_at or ALPHA_DAY.format(min(build, 28)),
     }
+
+
+def beta_entry(offset, highlights=None):
+    """An update dated after the cutoff, so it lands in open beta."""
+    return entry(
+        HISTORICAL_BUILDS + offset,
+        highlights,
+        created_at=BETA_DAY.format(min(offset, 28)),
+    )
 
 
 def history(count, start=1, highlights=None):
@@ -55,7 +69,7 @@ class SignificanceTests(unittest.TestCase):
 
 class AlphaTests(unittest.TestCase):
     def test_history_is_spread_across_exactly_ten_versions(self):
-        stamped = assign_releases(history(ALPHA_LAST_BUILD))
+        stamped = assign_releases(history(HISTORICAL_BUILDS))
         versions = {item["release"] for item in stamped}
 
         self.assertEqual(len(versions), ALPHA_SLOTS)
@@ -63,7 +77,7 @@ class AlphaTests(unittest.TestCase):
         self.assertIn("1.9", versions)
 
     def test_every_historical_build_is_alpha(self):
-        stamped = assign_releases(history(ALPHA_LAST_BUILD))
+        stamped = assign_releases(history(HISTORICAL_BUILDS))
 
         self.assertTrue(all(item["phase"] == "alpha" for item in stamped))
 
@@ -76,18 +90,58 @@ class AlphaTests(unittest.TestCase):
                 self.assertLessEqual(max(sizes) - min(sizes), 1)
 
     def test_alpha_numbering_never_shifts_when_new_builds_land(self):
-        # The whole reason ALPHA_LAST_BUILD is frozen: a visitor who read
+        # The whole reason the cutoff is frozen: a visitor who read
         # "1.3" yesterday must find the same updates there tomorrow.
         before = {
-            item["build"]: item["release"] for item in assign_releases(history(ALPHA_LAST_BUILD))
+            item["build"]: item["release"] for item in assign_releases(history(HISTORICAL_BUILDS))
         }
         after = {
             item["build"]: item["release"]
-            for item in assign_releases(history(ALPHA_LAST_BUILD + 20))
-            if item["build"] <= ALPHA_LAST_BUILD
+            for item in assign_releases(history(HISTORICAL_BUILDS) + [beta_entry(i) for i in range(1, 21)])
+            if item["build"] <= HISTORICAL_BUILDS
         }
 
         self.assertEqual(before, after)
+
+
+class PhaseBoundaryTests(unittest.TestCase):
+    """The date decides the phase, never the build number.
+
+    Build numbers repeat across changelog engine resets, and the bot's
+    archive and the website's have drifted apart, so the same number means
+    different updates depending on which file you read. A timestamp does not
+    have that problem.
+    """
+
+    def test_an_old_update_with_a_high_build_number_is_still_alpha(self):
+        stamped = assign_releases([entry(9999, [FEATURE], created_at=ALPHA_DAY.format(3))])
+
+        self.assertEqual(stamped[0]["phase"], "alpha")
+
+    def test_a_new_update_with_a_low_build_number_is_open_beta(self):
+        stamped = assign_releases([entry(1, [FEATURE], created_at=BETA_DAY.format(3))])
+
+        self.assertEqual(stamped[0]["phase"], BETA_PHASE)
+
+    def test_repeated_build_numbers_do_not_collide(self):
+        # Two updates numbered 5, from different engine eras, must both
+        # survive and land in the right phase.
+        entries = [
+            entry(5, [FEATURE], created_at=ALPHA_DAY.format(5)),
+            entry(5, [FEATURE], created_at=BETA_DAY.format(5)),
+        ]
+        stamped = assign_releases(entries)
+
+        self.assertEqual(len(stamped), 2)
+        self.assertEqual([item["phase"] for item in stamped], ["alpha", BETA_PHASE])
+
+    def test_ordering_follows_dates_not_build_numbers(self):
+        entries = [
+            entry(100, [CHORE], created_at=ALPHA_DAY.format(2)),
+            entry(1, [CHORE], created_at=ALPHA_DAY.format(1)),
+        ]
+
+        self.assertEqual([item["build"] for item in assign_releases(entries)], [1, 100])
 
 
 class OpenBetaTests(unittest.TestCase):
@@ -95,13 +149,13 @@ class OpenBetaTests(unittest.TestCase):
         return [item for item in assign_releases(entries) if item["phase"] == BETA_PHASE]
 
     def test_open_beta_starts_at_two_zero(self):
-        entries = history(ALPHA_LAST_BUILD) + [entry(ALPHA_LAST_BUILD + 1, [FEATURE])]
+        entries = history(HISTORICAL_BUILDS) + [beta_entry(1, [FEATURE])]
 
         self.assertEqual(self._beta(entries)[0]["release"], "2.0")
 
     def test_a_version_holds_the_agreed_number_of_significant_updates(self):
-        entries = history(ALPHA_LAST_BUILD) + [
-            entry(ALPHA_LAST_BUILD + offset, [FEATURE])
+        entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [FEATURE])
             for offset in range(1, UPDATES_PER_VERSION + 2)
         ]
         beta = self._beta(entries)
@@ -114,14 +168,14 @@ class OpenBetaTests(unittest.TestCase):
 
     def test_small_changes_never_push_the_version(self):
         # Twenty chores in a row keep the same version number.
-        entries = history(ALPHA_LAST_BUILD) + [
-            entry(ALPHA_LAST_BUILD + offset, [CHORE]) for offset in range(1, 21)
+        entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [CHORE]) for offset in range(1, 21)
         ]
 
         self.assertEqual({item["release"] for item in self._beta(entries)}, {"2.0"})
 
     def test_small_changes_are_still_published(self):
-        entries = history(ALPHA_LAST_BUILD) + [entry(ALPHA_LAST_BUILD + 1, [CHORE])]
+        entries = history(HISTORICAL_BUILDS) + [beta_entry(1, [CHORE])]
         beta = self._beta(entries)
 
         self.assertEqual(len(beta), 1)
@@ -130,8 +184,8 @@ class OpenBetaTests(unittest.TestCase):
 
 class GroupingTests(unittest.TestCase):
     def setUp(self):
-        self.entries = history(ALPHA_LAST_BUILD) + [
-            entry(ALPHA_LAST_BUILD + offset, [FEATURE if offset % 2 else CHORE])
+        self.entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [FEATURE if offset % 2 else CHORE])
             for offset in range(1, 8)
         ]
 
