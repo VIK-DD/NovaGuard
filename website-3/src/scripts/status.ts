@@ -1,6 +1,16 @@
+import archive from "../data/updates-archive.json";
+import { currentRelease } from "../data/releases";
+
 const OK_GREEN = "#3d8a57";
 const STATUS_CACHE_KEY = "ng-status-snapshot-v1";
 const STATUS_CACHE_TTL_MS = 10 * 60_000;
+
+// The bot's own version (currently 3.1.0 "Nova") is an internal number for
+// Discord and means nothing to a visitor here. What belongs on a public
+// status page is the release version shown on /updates - fixed at build
+// time from the baked-in archive, so it is computed once rather than
+// re-derived on every live poll below.
+const PUBLIC_RELEASE = currentRelease(archive as Parameters<typeof currentRelease>[0]);
 
 type StatusStats = {
   version: string;
@@ -81,7 +91,6 @@ const applySnapshot = (snapshot: StatusSnapshot) => {
   );
   setDot(allGood ? OK_GREEN : "hsl(var(--primary))");
   set("status", allGood ? "Operational" : "Degraded");
-  set("version", `v${stats.version} · ${stats.codename}`);
   set("uptime", fmtUptime(uptime));
   set("guilds", fmt(stats.guilds));
   set("members", fmt(stats.members));
@@ -157,6 +166,8 @@ function init() {
 
   if (!document.querySelector("[data-status-page]")) return;
 
+  set("version", `${PUBLIC_RELEASE.version} · ${PUBLIC_RELEASE.phaseLabel}`);
+
   let stopped = false;
   let uptimeBase = 0;
   let fetchedAt = 0;
@@ -202,7 +213,9 @@ function init() {
       );
       setDot("hsl(var(--primary))");
       set("status", "Unverified");
-      for (const key of ["version", "uptime", "guilds", "members", "commands", "database", "gateway"]) {
+      // "version" is deliberately absent here: it is a static, build-time
+      // value, not something a failed live poll should blank out.
+      for (const key of ["uptime", "guilds", "members", "commands", "database", "gateway"]) {
         set(key, "—");
       }
       fetchedAt = 0;

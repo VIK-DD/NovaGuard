@@ -222,9 +222,14 @@ describe("presentation", () => {
 });
 
 describe("the real archive", () => {
+  // Not a snapshot in time: the archive keeps growing as the site deploys,
+  // and real entries have already crossed ALPHA_CUTOFF_ISO into open beta.
+  // These assert the invariants that hold regardless of when the suite
+  // runs, not a count frozen at whatever the archive happened to contain
+  // when this test was written.
   const releases = archive as Release[];
 
-  it("splits the shipped history into the ten alpha versions", () => {
+  it("keeps the ten alpha versions exactly as historical entries were split", () => {
     const alpha = releaseGroups(releases).filter((group) => group.phase === "alpha");
 
     expect(alpha).toHaveLength(10);
@@ -239,8 +244,11 @@ describe("the real archive", () => {
     expect(placed).toHaveLength(releases.length);
   });
 
-  it("dates every shipped update before the cutoff", () => {
-    expect(releases.every((release) => release.created_at < ALPHA_CUTOFF_ISO)).toBe(true);
+  it("never puts a pre-cutoff update in open beta or a post-cutoff update in alpha", () => {
+    for (const item of assignReleases(releases)) {
+      const expectedPhase = item.created_at < ALPHA_CUTOFF_ISO ? "alpha" : BETA_PHASE;
+      expect(item.phase).toBe(expectedPhase);
+    }
   });
 
   it("finds real significant updates in it", () => {
