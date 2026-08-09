@@ -15,6 +15,7 @@ from discord.ext import commands, tasks
 
 from core import updates
 from cogs.admin import require_admin
+from core.admin_auth import record_audit
 from core.backups import (
     BACKUP_DIR,
     backup_max_expected_age_seconds,
@@ -1218,8 +1219,38 @@ class System(commands.Cog):
     @app_commands.guild_only()
     async def resync(self, interaction: discord.Interaction, scope: str = "server"):
         await defer_interaction(interaction, ephemeral=True)
-        if not await require_admin(interaction, self.bot, action="resync"):
+        # Owner only, but deliberately NOT behind the admin key. /resync is
+        # how new commands get published, including /admin unlock itself, so
+        # requiring an unlock here deadlocks the very first setup: the key
+        # cannot be used until the command that uses it exists. It only
+        # re-publishes the command list, which is why the owner check alone
+        # is proportionate.
+        if not await user_can_bypass_maintenance(self.bot, interaction.user):
+            record_audit(
+                interaction.user.id,
+                "resync",
+                actor_name=str(interaction.user),
+                outcome="denied",
+                detail="not_owner",
+            )
+            embed = make_embed(
+                "🔒 Owner Only",
+                "Only the bot owner can re-sync slash commands.",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed, "Command resync")
+            return await respond(interaction, embed, ephemeral=True)
+
+        # Clearing removes commands rather than publishing them, so it is not
+        # part of the bootstrap path and can afford the second factor.
+        if scope == "clear-server" and not await require_admin(
+            interaction, self.bot, action="resync.clear"
+        ):
             return
+
+        record_audit(
+            interaction.user.id, "resync", actor_name=str(interaction.user), target=scope
+        )
 
         guild = discord.Object(id=interaction.guild_id)
         try:

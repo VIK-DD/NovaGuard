@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cogs.admin as admin_cog  # noqa: E402
 import cogs.setup as setup_cog  # noqa: E402
+import cogs.system as system_cog  # noqa: E402
 from core.admin_auth import (  # noqa: E402
     GATE_LOCKED,
     GATE_LOCKED_OUT,
@@ -121,6 +122,34 @@ class GuardedCommandTests(unittest.TestCase):
         source = self._source("config_export")
 
         self.assertNotIn("require_admin", source)
+
+
+class BootstrapTests(unittest.TestCase):
+    """The key must never guard the path that publishes the key's own command."""
+
+    def test_publishing_commands_is_owner_only_and_never_needs_an_unlock(self):
+        # /resync publishes the command list, /admin unlock included. Gating
+        # the whole command behind an unlock deadlocks first-time setup: the
+        # key cannot be used until the command that accepts it exists.
+        source = inspect.getsource(system_cog.System.resync.callback)
+        owner_check = source.index("user_can_bypass_maintenance")
+        gate = source.index("require_admin")
+
+        self.assertLess(owner_check, gate)
+        # The unlock only guards the clearing branch, never the plain sync.
+        self.assertIn('scope == "clear-server" and not await require_admin', source)
+
+    def test_resync_still_records_who_ran_it(self):
+        source = inspect.getsource(system_cog.System.resync.callback)
+
+        self.assertIn("record_audit", source)
+
+    def test_maintenance_stays_behind_the_key(self):
+        # Unlike resync, maintenance changes global state and is reachable
+        # once the commands exist, so it keeps the second factor.
+        source = inspect.getsource(system_cog.System.maintenance.callback)
+
+        self.assertIn("require_admin", source)
 
 
 class AuditTrailTests(unittest.TestCase):
