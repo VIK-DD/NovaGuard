@@ -1089,6 +1089,7 @@ class System(commands.Cog):
         embed = build_help_home_embed(self.bot)
         await respond(interaction, embed, view=HelpView(self.bot))
 
+    @app_commands.default_permissions(administrator=True)
     @app_commands.command(name="maintenance", description="Enable, disable or inspect global maintenance mode")
     @app_commands.describe(action="What should NovaGuard do?", message="Visible presence text while maintenance is active")
     @app_commands.choices(
@@ -1209,6 +1210,10 @@ class System(commands.Cog):
             ephemeral=True,
         )
 
+    # Discord has no "bot owner" permission, so the closest it can do is hide
+    # the command from non-administrators. The real gate is the owner check
+    # in the body; this only keeps it out of everyone else's picker.
+    @app_commands.default_permissions(administrator=True)
     @app_commands.command(name="resync", description="Owner: re-push all slash commands to Discord")
     @app_commands.describe(scope="server is immediate; global can take up to ~1h")
     @app_commands.choices(scope=[

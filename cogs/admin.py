@@ -116,7 +116,14 @@ class Admin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    admin = app_commands.Group(name="admin", description="Owner controls")
+    # Discord has no "bot owner" permission, so administrator is the closest
+    # it can express. The real gate is the owner check in every callback;
+    # this only keeps these out of ordinary members' command pickers.
+    admin = app_commands.Group(
+        name="admin",
+        description="Owner controls",
+        default_permissions=discord.Permissions(administrator=True),
+    )
 
     @admin.command(name="unlock", description="Unlock owner commands with your admin key")
     @app_commands.describe(key="Your admin key. Run this in a DM, never in a server.")
@@ -282,6 +289,7 @@ class Admin(commands.Cog):
         )
 
     @app_commands.command(name="guilds", description="Owner: every server this bot is in")
+    @app_commands.default_permissions(administrator=True)
     async def guilds(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
         if not await require_admin(interaction, self.bot, action="admin.guilds"):
@@ -316,6 +324,7 @@ class Admin(commands.Cog):
 
     @app_commands.command(name="leaveguild", description="Owner: make the bot leave a server")
     @app_commands.describe(guild_id="The server id, from /guilds")
+    @app_commands.default_permissions(administrator=True)
     async def leaveguild(self, interaction: discord.Interaction, guild_id: str):
         await defer_interaction(interaction, ephemeral=True)
         if not await require_admin(interaction, self.bot, action="admin.leaveguild"):

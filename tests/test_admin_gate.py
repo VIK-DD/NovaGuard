@@ -152,6 +152,41 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn("require_admin", source)
 
 
+class VisibilityTests(unittest.TestCase):
+    """Owner commands should not clutter ordinary members' pickers.
+
+    Hiding is cosmetic - Discord has no "bot owner" permission, so the code
+    check is the real gate - but a command nobody else can use should not be
+    offered to everyone either.
+    """
+
+    def _default_permissions(self, command):
+        return getattr(command, "default_permissions", None)
+
+    def test_owner_only_commands_are_hidden_from_ordinary_members(self):
+        hidden = {
+            "resync": system_cog.System.resync,
+            "maintenance": system_cog.System.maintenance,
+            "guilds": admin_cog.Admin.guilds,
+            "leaveguild": admin_cog.Admin.leaveguild,
+            "admin": admin_cog.Admin.admin,
+            "backup": setup_cog.Setup.backup,
+        }
+        for name, command in hidden.items():
+            with self.subTest(command=name):
+                permissions = self._default_permissions(command)
+                self.assertIsNotNone(permissions, f"/{name} is offered to everyone")
+                self.assertTrue(permissions.administrator, f"/{name} is not admin-gated")
+
+    def test_guild_configuration_stays_open_to_server_admins(self):
+        # Server owners must keep running their own server without the key.
+        permissions = self._default_permissions(setup_cog.Setup.config)
+
+        self.assertIsNotNone(permissions)
+        self.assertTrue(permissions.manage_guild)
+        self.assertFalse(permissions.administrator)
+
+
 class AuditTrailTests(unittest.TestCase):
     def test_refusals_are_recorded(self):
         source = inspect.getsource(admin_cog.require_admin)

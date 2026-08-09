@@ -673,7 +673,11 @@ class Setup(commands.Cog):
     backup = app_commands.Group(
         name="backup",
         description="NovaGuard backup safety tools",
-        default_permissions=discord.Permissions(manage_guild=True),
+        # These archive every guild at once, so they belong to the bot owner.
+        # Discord cannot express "bot owner", and administrator is the
+        # narrowest thing it offers: server admins still see them and are
+        # refused by the owner check, ordinary members never see them.
+        default_permissions=discord.Permissions(administrator=True),
         guild_only=True,
     )
 
