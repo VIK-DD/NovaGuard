@@ -51,7 +51,7 @@ const steps = [
                 <p class="mt-1.5 max-w-lg text-sm leading-relaxed text-ink-muted">{step.body}</p>
                 {i === 0 && (
                   <a
-                    href="/dashboard"
+                    href="/dashboard/"
                     data-invite
                     class="ng-pressable mt-4 inline-flex h-11 items-center justify-center rounded-[6px] bg-primary px-4 text-sm font-medium text-primary-ink transition-colors hover:bg-primary/90"
                   >
@@ -158,7 +158,7 @@ const steps = [
   }
 
   function renderNotConnected(el: HTMLElement) {
-    el.innerHTML = `<p class="text-sm text-ink-muted">Connect your Discord account to see your setup progress here. <a href="/dashboard" class="text-primary underline underline-offset-4">Open the dashboard</a></p>`;
+    el.innerHTML = `<p class="text-sm text-ink-muted">Connect your Discord account to see your setup progress here. <a href="/dashboard/" class="text-primary underline underline-offset-4">Open the dashboard</a></p>`;
   }
 
   function renderNoGuilds(el: HTMLElement) {

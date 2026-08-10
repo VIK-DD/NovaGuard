@@ -5,6 +5,7 @@ import {
   isDirty,
   mapValidationDetails,
   normalizeBadwords,
+  validateSettings,
 } from "./configForm";
 
 const base: GuildSettings = {
@@ -139,14 +140,51 @@ describe("isDirty", () => {
 });
 
 describe("normalizeBadwords", () => {
-  it("lowercases, trims, dedupes, drops empty and overlong entries", () => {
+  it("lowercases, trims, dedupes, drops empty entries and truncates long ones", () => {
     const long = "x".repeat(41);
-    expect(normalizeBadwords([" Spoiler ", "spoiler", long, ""])).toEqual(["spoiler"]);
+    expect(normalizeBadwords([" Spoiler ", "spoiler", long, ""])).toEqual([
+      "spoiler",
+      "x".repeat(40),
+    ]);
   });
 
   it("caps the list at 100 entries", () => {
     const raw = Array.from({ length: 150 }, (_, i) => `word${i}`);
     expect(normalizeBadwords(raw)).toHaveLength(100);
+  });
+});
+
+describe("validateSettings", () => {
+  it("accepts a valid settings draft", () => {
+    expect(validateSettings(clone())).toEqual({});
+  });
+
+  it("catches an inverted XP range before the request is sent", () => {
+    const draft = clone();
+    draft.levels.xp_min = 20;
+    draft.levels.xp_max = 10;
+    expect(validateSettings(draft)).toHaveProperty(
+      "levels.xp_min",
+      "XP minimum cannot be greater than XP maximum.",
+    );
+  });
+
+  it("requires a channel when channel announcements are selected", () => {
+    const draft = clone();
+    draft.levels.announce = "channel";
+    draft.levels.announce_channel = null;
+    expect(validateSettings(draft)).toHaveProperty("levels.announce_channel");
+  });
+
+  it("validates numeric bounds and ignore-list limits", () => {
+    const draft = clone();
+    draft.levels.xp_max = 101;
+    draft.levels.cooldown = -1;
+    draft.levels.ignored_channels = Array.from({ length: 51 }, (_, i) => String(i));
+    const errors = validateSettings(draft);
+    expect(errors).toHaveProperty("levels.xp_max");
+    expect(errors).toHaveProperty("levels.cooldown");
+    expect(errors).toHaveProperty("levels.ignored_channels");
   });
 });
 

@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
+import { Link, useBlocker, useParams } from "@tanstack/react-router";
 import { ApiError, apiFetch } from "../../lib/api/client";
 import {
   GuildConfigSchema,
@@ -14,8 +14,9 @@ import Icon, { type IconName } from "../components/Icon";
 import IgnoreListEditor from "../components/IgnoreListEditor";
 import RoleSelect from "../components/RoleSelect";
 import SaveBar from "../components/SaveBar";
-import { diffSettings, isDirty, mapValidationDetails } from "../lib/configForm";
+import { diffSettings, isDirty, mapValidationDetails, validateSettings } from "../lib/configForm";
 import { useGuildConfig } from "../queries/guilds";
+import { useUnsavedChanges } from "../unsavedChanges";
 
 const CHANNEL_FIELDS: ReadonlyArray<
   [keyof Pick<
@@ -88,21 +89,28 @@ const NumberField = memo(function NumberField(props: {
   // a two-digit edit. Blur reconciles with whatever was actually committed.
   const [text, setText] = useState(String(props.value));
   const [editing, setEditing] = useState(false);
-  if (!editing && text !== String(props.value)) setText(String(props.value));
+  const inputId = useId();
+  const errorId = `${inputId}-error`;
+
+  useEffect(() => {
+    if (!editing) setText(String(props.value));
+  }, [editing, props.value]);
 
   return (
-    <label className="block">
-      <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+    <div className="block">
+      <label htmlFor={inputId} className="text-xs tracking-[0.15em] text-ink-muted uppercase">
         {props.label}
         {props.suffix && <span className="normal-case"> ({props.suffix})</span>}
-      </span>
+      </label>
       <input
+        id={inputId}
         type="number"
         inputMode="numeric"
         min={props.min}
         max={props.max}
         value={text}
         aria-invalid={props.error ? true : undefined}
+        aria-describedby={props.error ? errorId : undefined}
         onFocus={() => setEditing(true)}
         onChange={(e) => {
           setText(e.target.value);
@@ -117,8 +125,12 @@ const NumberField = memo(function NumberField(props: {
           props.error ? "border-primary" : "border-line"
         }`}
       />
-      {props.error && <p className="text-primary mt-1 text-xs">{props.error}</p>}
-    </label>
+      {props.error && (
+        <p id={errorId} className="text-primary mt-1 text-xs">
+          {props.error}
+        </p>
+      )}
+    </div>
   );
 });
 
@@ -148,6 +160,7 @@ export default function GuildConfig() {
   const { guildId } = useParams({ strict: false }) as { guildId: string };
   const config = useGuildConfig(guildId);
   const qc = useQueryClient();
+  const { registerUnsavedChanges } = useUnsavedChanges();
   const [draft, setDraft] = useState<GuildSettings | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [justSaved, setJustSaved] = useState(false);
@@ -175,6 +188,8 @@ export default function GuildConfig() {
       }),
     onSuccess: (data) => {
       qc.setQueryData(["guild", guildId, "config"], data);
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "audit"] });
       setFieldErrors({});
       setJustSaved(true);
     },
@@ -184,6 +199,21 @@ export default function GuildConfig() {
       }
     },
   });
+
+  const resetSave = save.reset;
+  const clearErrors = useCallback(
+    (keys: string[]) => {
+      setFieldErrors((current) => {
+        if (Object.keys(current).length === 0) return current;
+        const next = { ...current };
+        delete next._global;
+        for (const key of keys) delete next[key];
+        return next;
+      });
+      resetSave();
+    },
+    [resetSave],
+  );
 
   // Stable identities (empty deps — the functional setDraft form needs no
   // closure over `draft`) so the memoized fields below can actually bail out
@@ -197,19 +227,29 @@ export default function GuildConfig() {
   // regardless of which branch returns, or React throws on the next render
   // that takes a different branch.
   const set = useCallback(
-    <K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) =>
-      setDraft((d) => (d ? { ...d, [key]: value } : d)),
-    [],
+    <K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) => {
+      clearErrors([String(key)]);
+      setDraft((d) => (d ? { ...d, [key]: value } : d));
+    },
+    [clearErrors],
   );
   const setAutomod = useCallback(
-    (patch: Partial<GuildSettings["automod"]>) =>
-      setDraft((d) => (d ? { ...d, automod: { ...d.automod, ...patch } } : d)),
-    [],
+    (patch: Partial<GuildSettings["automod"]>) => {
+      clearErrors([
+        "automod",
+        "badwords",
+        ...Object.keys(patch).map((key) => `automod.${key}`),
+      ]);
+      setDraft((d) => (d ? { ...d, automod: { ...d.automod, ...patch } } : d));
+    },
+    [clearErrors],
   );
   const setLevels = useCallback(
-    (patch: Partial<GuildSettings["levels"]>) =>
-      setDraft((d) => (d ? { ...d, levels: { ...d.levels, ...patch } } : d)),
-    [],
+    (patch: Partial<GuildSettings["levels"]>) => {
+      clearErrors(["levels", ...Object.keys(patch).map((key) => `levels.${key}`)]);
+      setDraft((d) => (d ? { ...d, levels: { ...d.levels, ...patch } } : d));
+    },
+    [clearErrors],
   );
 
   // One stable handler per channel field, built off the stable `set` above —
@@ -249,6 +289,34 @@ export default function GuildConfig() {
     [setLevels],
   );
 
+  const dirty = Boolean(config.data && draft && isDirty(config.data.settings, draft));
+  const discardDraft = useCallback(() => {
+    if (!config.data) return;
+    setDraft(structuredClone(config.data.settings));
+    setFieldErrors({});
+    resetSave();
+  }, [config.data, resetSave]);
+
+  useEffect(() => {
+    registerUnsavedChanges(dirty, discardDraft);
+    return () => registerUnsavedChanges(false);
+  }, [dirty, discardDraft, registerUnsavedChanges]);
+
+  const blocker = useBlocker({
+    shouldBlockFn: () => dirty,
+    enableBeforeUnload: dirty,
+    withResolver: true,
+  });
+
+  useEffect(() => {
+    if (blocker.status !== "blocked") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") blocker.reset();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [blocker]);
+
   if (config.isPending || (config.data && !draft)) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16" aria-busy="true">
@@ -259,6 +327,7 @@ export default function GuildConfig() {
 
   if (config.isError || !config.data || !draft) {
     const code = config.error instanceof ApiError ? config.error.code : "internal_error";
+    const retryable = code !== "forbidden" && code !== "guild_not_found";
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16">
         <h1 className="font-display text-3xl">
@@ -268,29 +337,59 @@ export default function GuildConfig() {
               ? "NovaGuard is not in this server."
               : "Could not load this server."}
         </h1>
-        <button
-          onClick={() => void config.refetch()}
-          className="ng-touch-target mt-6 inline-flex items-center rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-ink"
-        >
-          Retry
-        </button>
+        <p className="mt-3 max-w-lg text-sm text-ink-muted">
+          {code === "forbidden"
+            ? "Choose a server where you have Manage Server permission."
+            : code === "guild_not_found"
+              ? "Choose another server or add NovaGuard again before configuring it."
+              : "Check the connection and try once more."}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          {retryable && (
+            <button
+              onClick={() => void config.refetch()}
+              className="ng-touch-target inline-flex items-center rounded-full bg-primary px-5 py-2 text-sm text-primary-ink transition-opacity hover:opacity-90"
+            >
+              Try again
+            </button>
+          )}
+          <Link
+            to="/"
+            className="ng-touch-target inline-flex items-center rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-ink"
+          >
+            Back to servers
+          </Link>
+        </div>
       </main>
     );
   }
 
   const { guild, channels, roles, settings } = config.data;
-  const dirty = isDirty(settings, draft);
   const saveError =
     save.error instanceof ApiError && save.error.code !== "validation_failed"
       ? save.error.message
       : fieldErrors._global;
 
+  const saveDraft = () => {
+    const localErrors = validateSettings(draft);
+    if (Object.keys(localErrors).length > 0) {
+      setFieldErrors(localErrors);
+      resetSave();
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+      });
+      return;
+    }
+    save.mutate(diffSettings(settings, draft));
+  };
+
   return (
-    <main className="mx-auto max-w-3xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
-      <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
-        {guild.member_count.toLocaleString("en")} members
-      </p>
-      <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">{guild.name}</h1>
+    <>
+      <main className="mx-auto max-w-3xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
+        <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
+          {guild.member_count.toLocaleString("en")} members
+        </p>
+        <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">{guild.name}</h1>
 
       <Section
         icon="hash"
@@ -442,18 +541,57 @@ export default function GuildConfig() {
         </div>
       </Section>
 
-      <SaveBar
-        visible={dirty}
-        saving={save.isPending}
-        saved={justSaved}
-        error={saveError}
-        onSave={() => save.mutate(diffSettings(settings, draft))}
-        onDiscard={() => {
-          setDraft(structuredClone(settings));
-          setFieldErrors({});
-          save.reset();
-        }}
-      />
-    </main>
+        <SaveBar
+          visible={dirty}
+          saving={save.isPending}
+          saved={justSaved}
+          error={saveError}
+          onSave={saveDraft}
+          onDiscard={discardDraft}
+        />
+      </main>
+
+      {blocker.status === "blocked" && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 py-8"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) blocker.reset();
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="leave-settings-title"
+            aria-describedby="leave-settings-description"
+            className="w-full max-w-md rounded-[var(--radius-card)] border border-line bg-background p-6 shadow-[0_24px_80px_rgb(0_0_0/0.4)]"
+          >
+            <p className="text-xs tracking-[0.2em] text-primary uppercase">Unsaved changes</p>
+            <h2 id="leave-settings-title" className="font-display mt-2 text-2xl font-semibold">
+              Leave without saving?
+            </h2>
+            <p id="leave-settings-description" className="mt-3 text-sm leading-6 text-ink-muted">
+              Your recent settings changes will be discarded.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={blocker.proceed}
+                className="ng-touch-target inline-flex items-center justify-center rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-line-strong"
+              >
+                Discard and leave
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={blocker.reset}
+                className="ng-touch-target inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90"
+              >
+                Keep editing
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
   );
 }

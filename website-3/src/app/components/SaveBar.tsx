@@ -29,6 +29,8 @@ export default function SaveBar({ visible, saving, saved, error, onSave, onDisca
     >
       <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6">
         <p
+          role={error ? "alert" : "status"}
+          aria-live={error ? "assertive" : "polite"}
           className={`truncate text-sm ${error ? "text-primary" : saved && !visible ? "text-good" : "text-ink-muted"}`}
         >
           {message}

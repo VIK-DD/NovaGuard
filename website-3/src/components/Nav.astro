@@ -7,14 +7,14 @@ const links = [
   { href: "/setup", label: "Setup" },
   { href: "/updates", label: "Updates" },
   { href: "/status", label: "Status" },
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/", label: "Dashboard" },
 ];
 ---
 
 <Masthead />
 <header data-nav class="relative sticky top-0 z-30 border-b border-line bg-background">
   <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6 sm:py-3">
-    <a href="/" class="flex items-center gap-2.5" aria-label="NovaGuard home">
+    <a href="/home/" class="flex items-center gap-2.5" aria-label="NovaGuard home">
       <img
         src="/assets/novaguard-icon-96.png"
         alt=""
@@ -36,7 +36,7 @@ const links = [
         ))
       }
       <a
-        href="/dashboard"
+        href="/dashboard/"
         data-invite
         class="ng-pressable inline-flex h-11 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3 py-1.5 text-[13px] font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:h-9 sm:px-3.5"
       >
@@ -61,7 +61,7 @@ const links = [
     <div>
       <nav class="flex flex-col gap-0.5 px-4 pt-1 pb-3">
         <a
-          href="/dashboard"
+          href="/dashboard/"
           data-invite
           class="ng-pressable mb-1 hidden min-h-11 items-center rounded-[6px] bg-primary px-3 text-sm font-medium text-primary-ink max-[359px]:flex"
         >

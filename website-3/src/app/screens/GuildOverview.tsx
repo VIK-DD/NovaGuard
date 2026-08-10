@@ -12,7 +12,6 @@ const timeFmt = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
   hour12: true,
-  timeZone: "Europe/Bucharest",
 });
 
 function compactNumber(value: number) {
@@ -157,7 +156,7 @@ function ActionToast(props: { tone: "good" | "warn"; message: string; onClose: (
   return (
     <div className="fixed right-4 bottom-4 z-30 max-w-[calc(100vw-2rem)] sm:right-6 sm:bottom-6">
       <div
-        role="status"
+        role={props.tone === "warn" ? "alert" : "status"}
         className={`flex w-full max-w-sm items-start gap-3 rounded-[var(--radius-card)] border bg-card px-4 py-3 text-sm shadow-[0_18px_50px_rgb(0_0_0/0.16)] ${
           props.tone === "good" ? "border-good/35" : "border-primary/35"
         }`}
@@ -286,17 +285,39 @@ export default function GuildOverview() {
 
   if (dashboard.isError || !dashboard.data) {
     const code = dashboard.error instanceof ApiError ? dashboard.error.code : "internal_error";
+    const retryable = code !== "forbidden" && code !== "guild_not_found";
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16">
         <h1 className="font-display text-3xl">
-          {code === "forbidden" ? "You need Manage Server here." : "Could not load this dashboard."}
+          {code === "forbidden"
+            ? "You need Manage Server here."
+            : code === "guild_not_found"
+              ? "NovaGuard is not in this server."
+              : "Could not load this dashboard."}
         </h1>
-        <button
-          onClick={() => void dashboard.refetch()}
-          className="ng-touch-target mt-6 inline-flex items-center rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-ink"
-        >
-          Retry
-        </button>
+        <p className="mt-3 max-w-lg text-sm text-ink-muted">
+          {code === "forbidden"
+            ? "Choose a server where you have Manage Server permission."
+            : code === "guild_not_found"
+              ? "Choose another server or add NovaGuard again before opening its dashboard."
+              : "Check the connection and try once more."}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          {retryable && (
+            <button
+              onClick={() => void dashboard.refetch()}
+              className="ng-touch-target inline-flex items-center rounded-full bg-primary px-5 py-2 text-sm text-primary-ink transition-opacity hover:opacity-90"
+            >
+              Try again
+            </button>
+          )}
+          <Link
+            to="/"
+            className="ng-touch-target inline-flex items-center rounded-full border border-line px-5 py-2 text-sm transition-colors hover:border-ink"
+          >
+            Back to servers
+          </Link>
+        </div>
       </main>
     );
   }
@@ -347,13 +368,22 @@ export default function GuildOverview() {
               busy={actionBusy && runningAction === "update_preview"}
               onClick={() => runAction("update_preview")}
             />
-            <ActionButton
-              label="Open invite"
-              description="Open the bot install flow in a new tab."
-              icon="list"
-              disabled={actionBusy}
-              onClick={() => window.open(inviteUrl(), "_blank", "noopener,noreferrer")}
-            />
+            <a
+              href={inviteUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ng-pressable group flex min-h-[5rem] items-center gap-3 rounded-[var(--radius-card)] border border-line bg-card p-4 text-left transition-colors hover:border-line-strong"
+            >
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] border border-line bg-bg-subtle text-ink">
+                <Icon name="list" size={20} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">Open invite</span>
+                <span className="mt-1 block text-xs leading-5 text-ink-muted">
+                  Open the bot install flow in a new tab.
+                </span>
+              </span>
+            </a>
           </div>
         </section>
 
@@ -399,7 +429,9 @@ export default function GuildOverview() {
             ) : (
               <p className="text-sm text-ink-muted">No backup archive has been created yet.</p>
             )}
-            <p className="mt-4 text-xs text-ink-muted">Use `/backup test` in Discord for a restore check.</p>
+            <p className="mt-4 text-xs text-ink-muted">
+              Run the quick check above or use `/backup test` in Discord.
+            </p>
           </Card>
         </div>
 

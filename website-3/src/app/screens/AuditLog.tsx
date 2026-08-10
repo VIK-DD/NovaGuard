@@ -9,7 +9,6 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
   hour12: true,
-  timeZone: "Europe/Bucharest",
 });
 
 const ACTION_META: Record<string, { label: string; detail: string; tone: "good" | "warn" | "muted" }> = {

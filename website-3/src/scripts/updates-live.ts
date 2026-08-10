@@ -18,7 +18,6 @@ import { releaseGroups, type ReleaseGroup, type StampedRelease } from "../data/r
 import archive from "../data/updates-archive.json";
 import { formatReleaseDate, type Release } from "../data/updates";
 
-const API_BASE: string = import.meta.env.PUBLIC_API_BASE ?? "";
 const FETCH_TIMEOUT_MS = 6000;
 
 function isEntry(value: unknown): value is Release {
@@ -151,9 +150,12 @@ function setStat(selector: string, value: number) {
 }
 
 async function fetchLiveUpdates(): Promise<unknown> {
-  const response = await fetch(`${API_BASE}/api/v1/updates?limit=200`, {
+  const response = await fetch("/api/updates-feed", {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal:
+      typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        : undefined,
   });
   if (!response.ok) throw new Error(`updates feed answered ${response.status}`);
   return (await response.json())?.updates;

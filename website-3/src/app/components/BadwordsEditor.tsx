@@ -10,11 +10,22 @@ interface Props {
 // See the note in ChannelSelect.tsx — same shared-draft-object problem.
 function BadwordsEditor({ value, error, onChange }: Props) {
   const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
 
   const add = () => {
     if (!input.trim()) return;
-    onChange(normalizeBadwords([...value, ...input.split(",")]));
+    if (value.length >= 100) {
+      setInputError("You can block at most 100 words.");
+      return;
+    }
+    const next = normalizeBadwords([...value, ...input.split(",")]);
+    if (next.length === value.length) {
+      setInputError("That word is already in the list.");
+      return;
+    }
+    onChange(next);
     setInput("");
+    setInputError(null);
   };
 
   return (
@@ -26,28 +37,34 @@ function BadwordsEditor({ value, error, onChange }: Props) {
         <input
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setInputError(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
               add();
             }
           }}
-          placeholder="Type a word, press Enter"
+          placeholder={value.length >= 100 ? "100-word limit reached" : "Type a word, press Enter"}
           aria-label="Add blocked word"
+          aria-invalid={error || inputError ? true : undefined}
           className={`w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
-            error ? "border-primary" : "border-line"
+            error || inputError ? "border-primary" : "border-line"
           }`}
         />
         <button
           type="button"
           onClick={add}
-          className="ng-touch-target flex shrink-0 items-center justify-center rounded-md border border-line px-4 py-2 text-sm transition-colors hover:border-ink sm:py-0"
+          disabled={!input.trim() || value.length >= 100}
+          className="ng-touch-target flex shrink-0 items-center justify-center rounded-md border border-line px-4 py-2 text-sm transition-colors hover:border-ink disabled:opacity-50 sm:py-0"
         >
           Add
         </button>
       </div>
       {error && <p className="text-primary mt-1 text-xs">{error}</p>}
+      {!error && inputError && <p className="text-primary mt-1 text-xs">{inputError}</p>}
       {value.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {value.map((word) => (

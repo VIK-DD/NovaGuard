@@ -38,6 +38,12 @@ function GuildLayout() {
       <nav className="border-b border-line">
         <div className="mx-auto flex max-w-3xl gap-5 overflow-x-auto px-4 pt-4 pb-px [scrollbar-width:none] sm:gap-6 sm:px-6">
           <Link
+            to="/"
+            className={`${tab} shrink-0 border-transparent text-ink-muted hover:text-ink`}
+          >
+            ← Servers
+          </Link>
+          <Link
             to="/g/$guildId"
             params={{ guildId }}
             activeOptions={{ exact: true }}
@@ -71,6 +77,28 @@ function GuildLayout() {
   );
 }
 
+function DashboardNotFound() {
+  return (
+    <AuthGate>
+      <Shell>
+        <main className="mx-auto flex min-h-[65vh] max-w-3xl flex-col items-center justify-center px-6 text-center">
+          <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">404</p>
+          <h1 className="font-display mt-4 text-4xl">This dashboard page does not exist.</h1>
+          <p className="mt-3 max-w-md text-sm text-ink-muted">
+            The link may be outdated, or the page may have moved.
+          </p>
+          <Link
+            to="/"
+            className="ng-pressable mt-8 inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm transition-colors hover:border-line-strong"
+          >
+            Back to servers
+          </Link>
+        </main>
+      </Shell>
+    </AuthGate>
+  );
+}
+
 const rootRoute = createRootRoute({
   component: () => (
       <AuthGate>
@@ -81,6 +109,7 @@ const rootRoute = createRootRoute({
         </Shell>
       </AuthGate>
   ),
+  notFoundComponent: DashboardNotFound,
 });
 
 const indexRoute = createRoute({

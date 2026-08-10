@@ -1,13 +1,28 @@
 import { StrictMode } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
+import { ZodError } from "zod";
 import { ApiError } from "../lib/api/client";
 import { router } from "./router";
+import { UnsavedChangesProvider } from "./unsavedChanges";
 
 // Codes where retrying can never help — the user has to act instead.
 const NO_RETRY_CODES = ["unauthorized", "session_expired", "forbidden", "guild_not_found"];
 
+const queryCache = new QueryCache({
+  onError: (error, query) => {
+    if (
+      query.queryKey[0] !== "me" &&
+      error instanceof ApiError &&
+      (error.code === "unauthorized" || error.code === "session_expired")
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    }
+  },
+});
+
 const queryClient = new QueryClient({
+  queryCache,
   defaultOptions: {
     queries: {
       staleTime: 2 * 60_000,
@@ -15,6 +30,7 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       retry: (failureCount, error) => {
         if (error instanceof ApiError && NO_RETRY_CODES.includes(error.code)) return false;
+        if (error instanceof ZodError) return false;
         return failureCount < 2;
       },
     },
@@ -28,9 +44,11 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <UnsavedChangesProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </UnsavedChangesProvider>
     </StrictMode>
   );
 }

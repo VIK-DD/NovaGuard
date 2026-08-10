@@ -31,7 +31,8 @@ function IgnoreListEditor({
   onChange,
 }: Props) {
   const byId = new Map(options.map((o) => [o.id, o]));
-  const available = options.filter((o) => !value.includes(o.id));
+  const atLimit = value.length >= 50;
+  const available = atLimit ? [] : options.filter((o) => !value.includes(o.id));
 
   return (
     <div>
@@ -48,7 +49,13 @@ function IgnoreListEditor({
           error ? "border-primary" : "border-line"
         }`}
       >
-        <option value="">{available.length === 0 ? "— all added —" : "— add one —"}</option>
+        <option value="">
+          {atLimit
+            ? "— 50-item limit reached —"
+            : available.length === 0
+              ? "— all added —"
+              : "— add one —"}
+        </option>
         {available.map((o) => (
           <option key={o.id} value={o.id}>
             {prefix} {o.name}

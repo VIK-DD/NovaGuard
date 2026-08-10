@@ -24,16 +24,53 @@ const LEVELS_SCALAR_KEYS = [
 
 const LEVELS_LIST_KEYS = ["ignored_channels", "ignored_roles"] as const;
 
-/** Mirrors the server's badwords rules: lowercase, trim, dedupe, ≤40 chars, ≤100 words. */
+/** Mirrors the server's badwords rules: lowercase, trim, dedupe, truncate to 40 chars, ≤100 words. */
 export function normalizeBadwords(raw: string[]): string[] {
   const out: string[] = [];
   for (const word of raw) {
-    const w = word.trim().toLowerCase();
-    if (!w || w.length > 40 || out.includes(w)) continue;
+    const w = word.trim().toLowerCase().slice(0, 40);
+    if (!w || out.includes(w)) continue;
     out.push(w);
     if (out.length === 100) break;
   }
   return out;
+}
+
+/** Client-side mirror of the cross-field Levels rules enforced by the API. */
+export function validateSettings(draft: GuildSettings): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const { levels } = draft;
+
+  const wholeNumber = (value: number, min: number, max: number) =>
+    Number.isInteger(value) && value >= min && value <= max;
+
+  if (!wholeNumber(levels.xp_min, 1, 100)) {
+    errors["levels.xp_min"] = "Enter a whole number between 1 and 100.";
+  }
+  if (!wholeNumber(levels.xp_max, 1, 100)) {
+    errors["levels.xp_max"] = "Enter a whole number between 1 and 100.";
+  }
+  if (
+    !errors["levels.xp_min"] &&
+    !errors["levels.xp_max"] &&
+    levels.xp_min > levels.xp_max
+  ) {
+    errors["levels.xp_min"] = "XP minimum cannot be greater than XP maximum.";
+  }
+  if (!wholeNumber(levels.cooldown, 0, 3600)) {
+    errors["levels.cooldown"] = "Enter a whole number between 0 and 3600.";
+  }
+  if (levels.announce === "channel" && !levels.announce_channel) {
+    errors["levels.announce_channel"] = "Choose a channel for level-up announcements.";
+  }
+  if (levels.ignored_channels.length > 50) {
+    errors["levels.ignored_channels"] = "You can ignore at most 50 channels.";
+  }
+  if (levels.ignored_roles.length > 50) {
+    errors["levels.ignored_roles"] = "You can ignore at most 50 roles.";
+  }
+
+  return errors;
 }
 
 function sameSet(a: string[], b: string[]): boolean {
