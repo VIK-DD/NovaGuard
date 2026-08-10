@@ -55,13 +55,19 @@ const totalUpdates = (archive as Release[]).length;
             </div>
             <div>
               <dt class="text-xs tracking-wider text-ink-faint uppercase">Versions</dt>
-              <dd class="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+              <dd
+                data-release-total-versions
+                class="mt-1 font-display text-2xl font-semibold tabular-nums text-ink"
+              >
                 {page.total}
               </dd>
             </div>
             <div>
               <dt class="text-xs tracking-wider text-ink-faint uppercase">Updates</dt>
-              <dd class="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+              <dd
+                data-release-total-updates
+                class="mt-1 font-display text-2xl font-semibold tabular-nums text-ink"
+              >
                 {totalUpdates}
               </dd>
             </div>
@@ -70,7 +76,7 @@ const totalUpdates = (archive as Release[]).length;
         )
       }
 
-      <div class="mt-10">
+      <div class="mt-10" data-release-live={page.currentPage === 1 ? "" : undefined}>
         {
           page.data.length > 0 ? (
             <ReleaseAccordion groups={page.data} />
@@ -120,4 +126,10 @@ const totalUpdates = (archive as Release[]).length;
       })
       .catch(() => {});
   })();
+</script>
+
+<script>
+  // Pulls in any release published since this page was built, so a changelog
+  // that exists in Discord is not missing here until the next deploy.
+  import "../../scripts/updates-live";
 </script>

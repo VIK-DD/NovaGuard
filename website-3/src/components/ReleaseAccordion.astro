@@ -53,10 +53,13 @@ function span(group: ReleaseGroup): string {
           </span>
 
           <span class="hidden text-right text-xs leading-relaxed text-ink-faint md:block">
-            <span class="block text-ink-muted">
+            {/* Marked so the live tail can correct these when it appends
+                releases that shipped after this page was built - a card
+                claiming "6 updates" above ten rows reads as a bug. */}
+            <span data-release-count class="block text-ink-muted">
               {group.updateCount} {group.updateCount === 1 ? "update" : "updates"}
             </span>
-            <span class="block">{span(group)}</span>
+            <span data-release-span class="block">{span(group)}</span>
           </span>
 
           <svg
@@ -282,6 +285,19 @@ function span(group: ReleaseGroup): string {
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => items.forEach(measure), 150);
     });
+
+    // The live tail appends rows after this has run, and a panel measured
+    // before they existed would clip them. Exposed deliberately rather than
+    // left to a synthetic resize event, so the dependency is visible from
+    // both sides.
+    (root as HTMLElement & { ngRemeasure?: () => void }).ngRemeasure = () => {
+      for (const item of root.querySelectorAll<HTMLDetailsElement>("details")) {
+        item
+          .querySelectorAll<HTMLElement>(".release-update")
+          .forEach((row, index) => row.style.setProperty("--row", String(index)));
+        measure(item);
+      }
+    };
 
     root.setAttribute("data-enhanced", "");
   }
