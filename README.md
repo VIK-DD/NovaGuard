@@ -252,7 +252,8 @@ main server.
 | Giveaways | `/giveaway start`, `/giveaway end`, `/giveaway reroll` |
 | Tickets | `/ticketpanel` |
 | AutoMod | `/automod status`, `/automod invites`, `/automod spam`, `/automod badword add`, `/automod badword remove`, `/automod badword list` |
-| Economy | `/balance`, `/daily`, `/work`, `/pay`, `/gamble`, `/slots`, `/richest`, `/shop`, `/buy` |
+| Economy | `/balance`, `/daily`, `/work`, `/pay`, `/gamble`, `/slots`, `/richest`, `/shop`, `/buy`, `/inventory`, `/crate`, `/title` |
+| Voice hours | `/vh`, `/vhtop` |
 | AI | `/ask` |
 
 `/help` opens an interactive command hub with categories and polished embed pages.

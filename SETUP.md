@@ -455,7 +455,9 @@ Tip: `/help` opens an interactive hub with a category menu.
 
 ## 5c. SQLite, backups and health
 
-- `data/novaguard.sqlite3` stores server setup/config, XP levels, economy wallets and voice report state.
+- `data/novaguard.sqlite3` stores server setup/config, XP levels, economy wallets, monthly voice hours and voice report state.
+- `/vh` counts months on `VOICE_TIMEZONE`, falling back to `BACKUP_TIMEZONE` and then `Europe/Chisinau`. Set it only if voice hours should roll over on a different clock than the one backups run on.
+- Voice hours are tracked on every server, configured or not — `/voice set` only controls session reports.
 - Old `data/settings.json`, `data/levels.json` and `data/economy.json` are migrated automatically once and kept as safety backups.
 - Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 full zip archives in `backups/`.
 - Set `BACKUP_SCHEDULE=07:00,19:00` and `BACKUP_TIMEZONE=Europe/Chisinau` if you want to make the schedule explicit.
