@@ -216,7 +216,7 @@ class OpenBetaTests(unittest.TestCase):
 
         self.assertEqual(self._beta(entries)[0]["release"], "2.0")
 
-    def test_a_version_holds_the_agreed_number_of_significant_updates(self):
+    def test_a_version_holds_the_agreed_number_of_updates(self):
         entries = history(HISTORICAL_BUILDS) + [
             beta_entry(offset, [FEATURE])
             for offset in range(1, UPDATES_PER_VERSION + 2)
@@ -229,15 +229,32 @@ class OpenBetaTests(unittest.TestCase):
         )
         self.assertEqual(beta[UPDATES_PER_VERSION]["release"], "2.1")
 
-    def test_small_changes_never_push_the_version(self):
-        # Twenty chores in a row keep the same version number.
+    def test_ordinary_work_fills_a_version_just_like_features_do(self):
+        # The threshold used to count only feature work, which sounded right
+        # and read wrong: a run of fixes parked the number for weeks, and a
+        # version that never moves says nothing about whether the project is
+        # alive.
+        entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [CHORE]) for offset in range(1, UPDATES_PER_VERSION + 2)
+        ]
+        beta = self._beta(entries)
+
+        self.assertEqual(beta[UPDATES_PER_VERSION - 1]["release"], "2.0")
+        self.assertEqual(beta[UPDATES_PER_VERSION]["release"], "2.1")
+
+    def test_a_run_of_chores_keeps_advancing_the_version(self):
         entries = history(HISTORICAL_BUILDS) + [
             beta_entry(offset, [CHORE]) for offset in range(1, 21)
         ]
 
-        self.assertEqual({item["release"] for item in self._beta(entries)}, {"2.0"})
+        self.assertEqual(
+            sorted({item["release"] for item in self._beta(entries)}),
+            ["2.0", "2.1", "2.2", "2.3"],
+        )
 
-    def test_small_changes_are_still_published(self):
+    def test_small_changes_are_still_published_and_still_not_notable(self):
+        # They fill a version now, but they must not be flagged as notable -
+        # the "New" marker still has to mean a feature.
         entries = history(HISTORICAL_BUILDS) + [beta_entry(1, [CHORE])]
         beta = self._beta(entries)
 
@@ -297,8 +314,12 @@ class GroupingTests(unittest.TestCase):
         )
 
     def test_project_release_merges_the_archive_with_live_engine_state(self):
+        # One more than fills a version, so the answer can only be right if
+        # the engine's own history was counted alongside the archive.
         state = {
-            "history": [beta_entry(offset, [FEATURE]) for offset in range(1, 7)],
+            "history": [
+                beta_entry(offset, [FEATURE]) for offset in range(1, UPDATES_PER_VERSION + 2)
+            ],
             "latest": None,
         }
 

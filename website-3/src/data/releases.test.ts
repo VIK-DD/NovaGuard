@@ -148,13 +148,21 @@ describe("open beta", () => {
     expect(stamped[UPDATES_PER_VERSION].release).toBe("2.1");
   });
 
-  it("never lets small changes push the version", () => {
+  it("lets ordinary work fill a version too", () => {
+    // The threshold used to count only feature work, which parked the number
+    // for weeks whenever a run of fixes landed. Every published update counts
+    // now; significance only decides the "New" marker.
     const releases = [
       ...history(31),
       ...Array.from({ length: 20 }, (_, index) => betaEntry(index + 1, [CHORE])),
     ];
 
-    expect(new Set(beta(releases).map((item) => item.release))).toEqual(new Set(["2.0"]));
+    expect([...new Set(beta(releases).map((item) => item.release))].sort()).toEqual([
+      "2.0",
+      "2.1",
+      "2.2",
+      "2.3",
+    ]);
   });
 
   it("still publishes small changes", () => {

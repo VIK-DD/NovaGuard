@@ -11,14 +11,17 @@ Two phases:
   evenly across ten versions. Closed and frozen: ``ALPHA_LAST_BUILD`` is a
   constant precisely so that adding new builds can never reshuffle history a
   visitor already read.
-* **Open beta, 2.0 onward.** Live development. A version collects updates
-  until ``UPDATES_PER_VERSION`` *significant* ones have landed, then the next
-  update opens a new version.
+* **Open beta, 2.0 onward.** Live development. A version collects
+  ``UPDATES_PER_VERSION`` updates, then the next one opens a new version.
 
-"Significant" is deliberately narrow. A typo fix, a CI bump or a docs pass
-still appears in its version's list, because people want to see everything
-that changed, but it does not push the number - otherwise the version churns
-on noise and stops meaning anything.
+Every published update counts towards that, not only feature work. The
+threshold was once limited to "significant" updates, which sounded right and
+read wrong: a stretch of fixes and docs left the number parked for weeks, and
+a version that never moves tells a visitor nothing about whether the project
+is alive. A steady cadence is the more honest signal.
+
+Significance is still detected, but only to mark an update as notable in the
+list. It no longer decides when the number moves.
 """
 
 import re
@@ -50,7 +53,8 @@ ALPHA_SLOTS = 10
 ALPHA_CUTOFF_ISO = "2026-08-09T00:00:00+00:00"
 
 BETA_MAJOR = 2
-UPDATES_PER_VERSION = 5
+# How many published updates fill one open-beta version.
+UPDATES_PER_VERSION = 6
 
 # The changelog engine prefixes feature-level highlights with these. They are
 # matched, never displayed: see `clean_text`, which strips them for the site.
@@ -188,7 +192,7 @@ def assign_releases(entries):
     stamped = []
     alpha_seen = 0
     beta_minor = 0
-    significant_in_version = 0
+    updates_in_version = 0
 
     for entry in ordered:
         significant = is_significant(entry)
@@ -198,16 +202,15 @@ def assign_releases(entries):
             entry["phase"] = ALPHA_PHASE
             alpha_seen += 1
         else:
-            # A version opens, collects updates, and closes only once enough
-            # significant ones have landed - so the update that tips the
-            # count is the last of its version, not the first of the next.
+            # A version opens, collects updates, and closes once it is full -
+            # so the update that fills it is the last of its version, not the
+            # first of the next.
             entry["release"] = format_version(BETA_MAJOR, beta_minor)
             entry["phase"] = BETA_PHASE
-            if significant:
-                significant_in_version += 1
-                if significant_in_version >= UPDATES_PER_VERSION:
-                    beta_minor += 1
-                    significant_in_version = 0
+            updates_in_version += 1
+            if updates_in_version >= UPDATES_PER_VERSION:
+                beta_minor += 1
+                updates_in_version = 0
 
         entry["significant"] = significant
         entry["highlights"] = [

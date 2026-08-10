@@ -24,7 +24,8 @@ const ALPHA_MAJOR = 1;
 const ALPHA_SLOTS = 10;
 const BETA_MAJOR = 2;
 
-export const UPDATES_PER_VERSION = 5;
+/** How many published updates fill one open-beta version. */
+export const UPDATES_PER_VERSION = 6;
 
 // Frozen boundary. A date rather than a build number: build numbers repeat
 // across changelog engine resets, and the bot's archive and this one have
@@ -135,7 +136,7 @@ export function assignReleases(releases: Release[]): StampedRelease[] {
   const sizes = alphaSlotSizes(ordered.filter(isAlpha).length);
   let alphaSeen = 0;
   let betaMinor = 0;
-  let significantInVersion = 0;
+  let updatesInVersion = 0;
 
   return ordered.map((release) => {
     const significant = isSignificant(release);
@@ -147,17 +148,15 @@ export function assignReleases(releases: Release[]): StampedRelease[] {
       phase = ALPHA_PHASE;
       alphaSeen += 1;
     } else {
-      // A version opens, collects updates, and closes only once enough
-      // significant ones have landed, so the update that tips the count is
-      // the last of its version rather than the first of the next.
+      // A version opens, collects updates, and closes once it is full, so the
+      // update that fills it is the last of its version rather than the first
+      // of the next.
       version = `${BETA_MAJOR}.${betaMinor}`;
       phase = BETA_PHASE;
-      if (significant) {
-        significantInVersion += 1;
-        if (significantInVersion >= UPDATES_PER_VERSION) {
-          betaMinor += 1;
-          significantInVersion = 0;
-        }
+      updatesInVersion += 1;
+      if (updatesInVersion >= UPDATES_PER_VERSION) {
+        betaMinor += 1;
+        updatesInVersion = 0;
       }
     }
 
