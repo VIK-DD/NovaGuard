@@ -465,8 +465,17 @@ export default function GuildOverview() {
               <ul className="divide-y divide-line">
                 {data.updates.slice(0, 4).map((update, index) => (
                   <li key={`${update.created_at}-${index}`} className="py-3 first:pt-0 last:pb-0">
+                    {/* The public version, matching /updates and /status. A raw
+                        build number is an internal counter that means nothing to
+                        someone reading the dashboard, and it disagreed with every
+                        other surface. Falls back to it only for a bot that
+                        predates the API returning a release. */}
                     <p className="text-sm font-medium">
-                      Update {update.build ? `#${update.build}` : ""}
+                      {update.release
+                        ? `Version ${update.release}${update.phase_label ? ` · ${update.phase_label}` : ""}`
+                        : update.build
+                          ? `Update #${update.build}`
+                          : "Update"}
                     </p>
                     <p className="line-clamp-2 text-xs text-ink-muted">
                       {(update.highlights?.[0] || update.changes?.[0] || "Internal improvements").replace(/\s+/g, " ")}

@@ -159,4 +159,48 @@ def merged_update_feed(limit=DEFAULT_LIMIT, archive=None, history=None, latest=N
     # changes the number a release is known by.
     total = len(feed)
     feed = [dict(entry, build=total - index) for index, entry in enumerate(feed)]
+
+    # Stamp the public release each entry belongs to. A build number is an
+    # internal counter; "2.0 Open Beta" is what the site, the status page and
+    # the dashboard all show - and every one of them was free to invent its
+    # own answer while this was computed separately in each place.
+    #
+    # Done before the limit for the same reason as the renumbering above:
+    # `?limit=` must never change which version a release is known by.
+    feed = _stamp_releases(feed)
     return feed[:limit]
+
+
+def _stamp_releases(feed):
+    """Attach release/phase to each entry without touching its text.
+
+    `assign_releases` also rewrites highlights into its own cleaned form, which
+    is right for rendering but wrong here - the feed is raw material each
+    consumer cleans its own way. So only the version fields are merged back,
+    keyed by the timestamp that already identifies an entry.
+    """
+    from .release_versions import PHASE_LABELS, assign_releases
+
+    try:
+        stamped = assign_releases(feed)
+    except Exception:
+        # A feed that cannot be versioned is still a usable feed.
+        return feed
+
+    by_created = {entry.get("created_at"): entry for entry in stamped}
+    merged = []
+    for entry in feed:
+        marks = by_created.get(entry.get("created_at"))
+        if not marks:
+            merged.append(entry)
+            continue
+        merged.append(
+            dict(
+                entry,
+                release=marks.get("release"),
+                phase=marks.get("phase"),
+                phase_label=PHASE_LABELS.get(marks.get("phase"), marks.get("phase")),
+                significant=marks.get("significant", False),
+            )
+        )
+    return merged

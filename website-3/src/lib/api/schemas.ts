@@ -192,6 +192,11 @@ export const DashboardSchema = z.object({
   updates: z.array(
     z.object({
       build: z.number().optional(),
+      // The public version this update shipped in, e.g. "2.0" / "Open Beta".
+      // Optional so a bot that has not been updated yet still parses; the
+      // dashboard falls back to the build number when it is missing.
+      release: z.string().optional(),
+      phase_label: z.string().optional(),
       version: z.string().optional(),
       codename: z.string().optional(),
       created_at: z.string(),
