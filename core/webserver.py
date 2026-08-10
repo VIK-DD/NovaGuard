@@ -79,6 +79,19 @@ CORS_ORIGINS = {
     if origin.strip()
 }
 AFTER_LOGIN = os.getenv("WEB_AFTER_LOGIN", "/api/me")
+# Where Discord sends someone once they finish adding the bot to a server.
+#
+# Opt-in, and deliberately so: Discord rejects the entire authorize URL with
+# "Invalid OAuth2 redirect_uri" unless the exact value is registered in the
+# application's OAuth2 → Redirects list. Defaulting this to a guess would
+# break the invite link on every install that has not registered it, so an
+# empty value keeps the old behaviour - Discord ends on its own "Authorized"
+# screen, exactly as before.
+INVITE_REDIRECT = os.getenv("WEB_INVITE_REDIRECT", "").strip()
+# Once the bot is in, send them somewhere useful. The post-login destination
+# is already configured and already points at the dashboard, so it is the
+# sane default rather than a second thing to set up.
+AFTER_INVITE = os.getenv("WEB_AFTER_INVITE", "").strip() or AFTER_LOGIN
 
 
 def after_login_strands_user(after_login=None, cors_origins=None):
@@ -445,6 +458,7 @@ class WebServer:
             ("GET", "/stats", self.handle_stats),
             ("GET", "/updates", self.handle_updates),
             ("GET", "/invite", self.handle_invite),
+            ("GET", "/invite/complete", self.handle_invite_complete),
             ("GET", "/auth/login", self.handle_login),
             ("GET", "/auth/callback", self.handle_callback),
             ("POST", "/auth/logout", self.handle_logout),
@@ -934,10 +948,29 @@ class WebServer:
     async def handle_invite(self, request):
         if not CLIENT_ID:
             raise ApiError(503, "Client id not configured.", code="oauth_unavailable")
-        params = urlencode(
-            {"client_id": CLIENT_ID, "permissions": INVITE_PERMISSIONS, "scope": "bot applications.commands"}
-        )
-        return web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}")
+        params = {
+            "client_id": CLIENT_ID,
+            "permissions": INVITE_PERMISSIONS,
+            "scope": "bot applications.commands",
+        }
+        if INVITE_REDIRECT:
+            # Without both of these Discord has nowhere to send the person and
+            # simply stops on its own "Authorized" screen - which is where the
+            # invite used to dead-end.
+            params["redirect_uri"] = INVITE_REDIRECT
+            params["response_type"] = "code"
+        return web.HTTPFound(f"https://discord.com/oauth2/authorize?{urlencode(params)}")
+
+    async def handle_invite_complete(self, request):
+        """Land here after the bot is added, then bounce to the dashboard.
+
+        Discord appends ?code=&guild_id=&permissions= on the way in. None of it
+        is used: the bot learns about its new guild from the gateway, and the
+        code is for exchanging a user token this flow never needs. This exists
+        purely so the invite ends somewhere that belongs to us instead of on
+        Discord's own confirmation screen.
+        """
+        return web.HTTPFound(AFTER_INVITE)
 
     async def handle_stats(self, request):
         self._rate_limit(request, "read")
