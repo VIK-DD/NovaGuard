@@ -181,8 +181,30 @@ def init_database():
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_audit_time ON admin_audit (created_at DESC)"
         )
+        _add_missing_columns(connection)
         connection.commit()
     _INITIALIZED = True
+
+
+# Columns added after a table shipped. CREATE TABLE IF NOT EXISTS does nothing
+# to a database that already has the table, so a new column has to be added
+# explicitly or every existing install would keep the old shape.
+_ADDED_COLUMNS = {
+    # The shop grew from five labels into items that expire and perks the rest
+    # of the bot reads. One JSON column holds all of it, so adding an item
+    # later is not another migration.
+    "economy_wallets": (("extras", "TEXT NOT NULL DEFAULT '{}'"),),
+}
+
+
+def _add_missing_columns(connection):
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {
+            row["name"] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        for name, definition in columns:
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def export_guild_data(guild_id):
@@ -650,6 +672,18 @@ def load_levels_data():
     return data
 
 
+# Wallet keys that have their own column. Everything else a wallet carries -
+# effects, titles, shields - goes into the extras blob, so the shop can grow
+# without a schema change every time.
+_WALLET_COLUMNS = ("coins", "daily_streak", "last_daily", "last_work", "trophies")
+
+
+def _wallet_extras(wallet):
+    return encode_value(
+        {key: value for key, value in wallet.items() if key not in _WALLET_COLUMNS}
+    )
+
+
 def save_economy_data(data):
     init_database()
     now = utc_now()
@@ -664,9 +698,10 @@ def save_economy_data(data):
                 connection.execute(
                     """
                     INSERT INTO economy_wallets (
-                        guild_id, user_id, coins, daily_streak, last_daily, last_work, trophies, updated_at
+                        guild_id, user_id, coins, daily_streak, last_daily, last_work,
+                        trophies, extras, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(guild_id),
@@ -676,6 +711,7 @@ def save_economy_data(data):
                         wallet.get("last_daily"),
                         wallet.get("last_work"),
                         encode_value(wallet.get("trophies", [])),
+                        _wallet_extras(wallet),
                         now,
                     ),
                 )
@@ -695,15 +731,17 @@ def upsert_economy_wallets(rows):
             connection.execute(
                 """
                 INSERT INTO economy_wallets (
-                    guild_id, user_id, coins, daily_streak, last_daily, last_work, trophies, updated_at
+                    guild_id, user_id, coins, daily_streak, last_daily, last_work,
+                    trophies, extras, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id, user_id) DO UPDATE SET
                     coins = excluded.coins,
                     daily_streak = excluded.daily_streak,
                     last_daily = excluded.last_daily,
                     last_work = excluded.last_work,
                     trophies = excluded.trophies,
+                    extras = excluded.extras,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -714,6 +752,7 @@ def upsert_economy_wallets(rows):
                     wallet.get("last_daily"),
                     wallet.get("last_work"),
                     encode_value(wallet.get("trophies", [])),
+                    _wallet_extras(wallet),
                     now,
                 ),
             )
@@ -735,7 +774,7 @@ def load_economy_data():
     with _LOCK, connect() as connection:
         rows = connection.execute(
             """
-            SELECT guild_id, user_id, coins, daily_streak, last_daily, last_work, trophies
+            SELECT guild_id, user_id, coins, daily_streak, last_daily, last_work, trophies, extras
             FROM economy_wallets
             """
         ).fetchall()
@@ -743,12 +782,16 @@ def load_economy_data():
     data = {}
     for row in rows:
         guild_data = data.setdefault(row["guild_id"], {})
+        extras = decode_value(row["extras"])
         guild_data[row["user_id"]] = {
             "coins": int(row["coins"] or 0),
             "daily_streak": int(row["daily_streak"] or 0),
             "last_daily": row["last_daily"],
             "last_work": row["last_work"],
             "trophies": decode_value(row["trophies"]) or [],
+            # Wallets written before the shop grew have no extras, and a
+            # corrupt blob must not take the whole economy down with it.
+            **(extras if isinstance(extras, dict) else {}),
         }
     return data
 
