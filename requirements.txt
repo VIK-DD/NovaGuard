@@ -17,4 +17,4 @@ PyNaCl>=1.5,<2
 davey>=0.1.6,<0.2
 # Optional Lavalink backend for the music system. Enable with
 # MUSIC_BACKEND=lavalink and run a Lavalink v4 node separately.
-wavelink>=3.4,<4
+wavelink>=3.5.2,<4
