@@ -62,7 +62,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <header ref={headerRef} className="relative border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex min-w-0 items-center gap-4 sm:gap-6">
+          <div className="flex min-w-0 items-center">
             <a href="/home/" className="flex items-center gap-2.5" aria-label="NovaGuard home">
               <img
                 src="/assets/novaguard-icon-96.png"
@@ -73,12 +73,6 @@ export default function Shell({ children }: { children: ReactNode }) {
               />
               <span className="font-display whitespace-nowrap text-base font-semibold tracking-tight sm:text-lg">NovaGuard</span>
             </a>
-            <Link
-              to="/"
-              className="hidden shrink-0 text-sm text-ink-muted transition-colors hover:text-ink sm:block"
-            >
-              Servers
-            </Link>
           </div>
           <div className="flex min-w-0 items-center gap-1 sm:gap-3">
             {user && (
