@@ -39,8 +39,14 @@ jobs:
       - name: Test suite
         run: npx vitest run
 
+      # Must be the same build the maintainer runs locally. `build:launch`
+      # skips scripts/soft-launch.mjs, and there is no src/pages/index.astro -
+      # the site's root page exists *only* because soft-launch copies the
+      # Coming Soon page onto dist/index.html. Deploying without it publishes
+      # a site whose front door is a 404, silently replacing a good local
+      # deploy on the next push to main.
       - name: Build
-        run: npm run build:launch
+        run: npm run build
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
