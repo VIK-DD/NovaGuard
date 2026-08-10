@@ -28,6 +28,7 @@ function span(group: ReleaseGroup): string {
     groups.map((group, index) => (
       <details
         data-release-version={group.version}
+        data-current-release={group.current ? "" : undefined}
         class="group release-item rounded-[var(--radius)] border border-line bg-card transition-colors duration-300 hover:border-line-strong"
         open={index === 0}
       >
@@ -37,10 +38,8 @@ function span(group: ReleaseGroup): string {
               {group.version}
             </span>
             <span
-              class:list={[
-                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wider uppercase",
-                group.current ? "bg-primary-soft text-primary" : "border border-line text-ink-faint",
-              ]}
+              data-release-phase-badge
+              class="shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase"
             >
               <span data-release-phase>{group.phaseLabel}</span>
             </span>
@@ -119,6 +118,15 @@ function span(group: ReleaseGroup): string {
 <style>
   .release-panel {
     overflow: hidden;
+  }
+
+  /* The phase belongs to every version, but the amber treatment means
+     "currently running". Keeping that state on the card lets both the
+     server-rendered archive and live-inserted releases share one rule. */
+  :global(.release-item[data-current-release] [data-release-phase-badge]) {
+    border-color: transparent;
+    background: hsl(var(--primary-soft));
+    color: hsl(var(--primary));
   }
 
   /* The thread joins the dots; it must not hang below the last one. */

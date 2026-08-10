@@ -114,6 +114,11 @@ const totalUpdates = (archive as Release[]).length;
         const matchingCard = document.querySelector(
           `[data-release-version="${CSS.escape(stats.version)}"]`,
         );
+        document.documentElement.dataset.currentRelease = stats.version;
+        document.querySelectorAll("[data-release-version]").forEach((card) => {
+          if (card === matchingCard) card.setAttribute("data-current-release", "");
+          else card.removeAttribute("data-current-release");
+        });
         document.querySelectorAll("[data-current-release-marker]").forEach((marker) => {
           marker.hidden = !matchingCard || !matchingCard.contains(marker);
         });

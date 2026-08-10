@@ -80,29 +80,41 @@ function updateRow(update: StampedRelease): HTMLLIElement {
 }
 
 /** A whole version card, for a version that did not exist at build time. */
-function versionCard(group: ReleaseGroup): HTMLDetailsElement {
+export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
   const card = document.createElement("details");
   card.className =
     "group release-item rounded-[var(--radius)] border border-line bg-card transition-colors duration-300 hover:border-line-strong";
   card.dataset.releaseVersion = group.version;
+  if (group.current) card.dataset.currentRelease = "";
 
   const summary = document.createElement("summary");
   summary.className =
     "flex cursor-pointer list-none items-center gap-4 px-5 py-4 outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:px-6";
 
   const left = el("span", "flex min-w-0 flex-1 items-center gap-3");
+  const phaseBadge = el(
+    "span",
+    "shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase",
+    group.phaseLabel,
+  );
+  phaseBadge.dataset.releasePhaseBadge = "";
   left.append(
     el(
       "span",
       "font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl",
       group.version,
     ),
-    el(
-      "span",
-      "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wider uppercase bg-primary-soft text-primary",
-      group.phaseLabel,
-    ),
+    phaseBadge,
   );
+  if (group.current) {
+    const marker = el(
+      "span",
+      "hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex",
+    );
+    marker.dataset.currentReleaseMarker = "";
+    marker.append(el("span", "live-dot size-1.5 rounded-full bg-good"), "Current");
+    left.append(marker);
+  }
 
   const meta = el("span", "hidden text-right text-xs leading-relaxed text-ink-faint md:block");
   meta.append(
@@ -147,6 +159,17 @@ function updateCardMeta(card: HTMLElement, group: ReleaseGroup) {
 function setStat(selector: string, value: number) {
   const node = document.querySelector(selector);
   if (node) node.textContent = String(value);
+}
+
+export function syncCurrentVersion(root: HTMLElement, version: string | undefined) {
+  for (const card of root.querySelectorAll<HTMLElement>("[data-release-version]")) {
+    const current = Boolean(version) && card.dataset.releaseVersion === version;
+    if (current) card.dataset.currentRelease = "";
+    else delete card.dataset.currentRelease;
+
+    const marker = card.querySelector<HTMLElement>("[data-current-release-marker]");
+    if (marker) marker.hidden = !current;
+  }
 }
 
 async function fetchLiveUpdates(): Promise<unknown> {
@@ -212,6 +235,8 @@ async function run() {
 
   setStat("[data-release-total-versions]", groups.length);
   setStat("[data-release-total-updates]", merged.length);
+  const computedCurrent = groups.find((group) => group.current)?.version;
+  syncCurrentVersion(root, document.documentElement.dataset.currentRelease || computedCurrent);
   (root as HTMLElement & { ngRemeasure?: () => void }).ngRemeasure?.();
 }
 
