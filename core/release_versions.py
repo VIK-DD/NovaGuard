@@ -91,11 +91,30 @@ def format_version(major, minor):
     return f"{major}.{minor}"
 
 
+def _as_lines(value):
+    if isinstance(value, str):
+        return [value]
+    return list(value or [])
+
+
 def _highlights_of(entry):
+    """The lines the site prints for an update."""
     highlights = (entry or {}).get("highlights") or (entry or {}).get("summary") or []
-    if isinstance(highlights, str):
-        return [highlights]
-    return list(highlights)
+    return _as_lines(highlights)
+
+
+def _significance_text(entry):
+    """Every line that could say an update shipped a feature.
+
+    Deliberately wider than what gets displayed. The changelog engine writes
+    two parallel summaries - `highlights` and `changes` - and which one carries
+    the "Added commands: ..." line depends on how the entry was recorded. For
+    eleven real releases it lived only in `changes`, so a detector reading
+    `highlights` alone called them routine, and the version number sat still
+    while feature after feature shipped.
+    """
+    entry = entry or {}
+    return _highlights_of(entry) + _as_lines(entry.get("changes"))
 
 
 def is_significant(entry):
@@ -108,7 +127,7 @@ def is_significant(entry):
     if isinstance(explicit, bool):
         return explicit
 
-    for item in _highlights_of(entry):
+    for item in _significance_text(entry):
         text = str(item or "").strip()
         if not text:
             continue

@@ -65,6 +65,39 @@ class SignificanceTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertTrue(is_significant(entry(1, [text])))
 
+    def test_a_feature_announced_only_in_changes_still_counts(self):
+        # The engine writes two parallel summaries and puts the "Added
+        # commands" line in whichever one it recorded. Eleven real releases
+        # had it only in `changes`, and reading `highlights` alone called
+        # every one of them routine - so open beta collected updates without
+        # ever advancing. The website's copy of this logic always read both;
+        # only this side did not.
+        entry = {
+            "build": 7,
+            "created_at": BETA_DAY.format(3),
+            "highlights": ["Refreshed docs and examples: `SETUP.md`"],
+            "changes": ["Added commands: `/resync`"],
+        }
+
+        self.assertTrue(is_significant(entry))
+
+    def test_display_highlights_are_not_widened_by_the_detector(self):
+        # Detection reads changes too; the page must not start printing them
+        # next to the highlights and show everything twice.
+        stamped = assign_releases(
+            [
+                {
+                    "build": 7,
+                    "created_at": BETA_DAY.format(3),
+                    "highlights": ["Shown on the page"],
+                    "changes": ["Added commands: `/resync`"],
+                }
+            ]
+        )
+
+        self.assertEqual(stamped[0]["highlights"], ["Shown on the page"])
+        self.assertTrue(stamped[0]["significant"])
+
     def test_the_shipped_archive_contains_significant_updates(self):
         # A guard against the detector matching nothing real: if this ever
         # hits zero, open beta would sit on 2.0 forever.
