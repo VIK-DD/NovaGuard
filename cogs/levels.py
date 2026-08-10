@@ -86,6 +86,19 @@ def backfill_window(days, now=None):
     return before - timedelta(days=bounded_days), before
 
 
+def boosted_xp(base, multiplier):
+    """Apply an XP booster to one message's gain.
+
+    Rounded rather than truncated: with the mild multiplier the shop sells,
+    flooring would quietly eat most of what was paid for on small gains.
+    """
+    try:
+        factor = max(1.0, float(multiplier))
+    except (TypeError, ValueError):
+        factor = 1.0
+    return max(1, round(int(base) * factor))
+
+
 def xp_from_message_counts(message_counts, xp_per_message, cap_per_user):
     return {
         user_id: min(count * xp_per_message, cap_per_user)
@@ -491,6 +504,22 @@ class Levels(commands.Cog):
         except discord.HTTPException:
             pass
 
+    def xp_multiplier(self, guild_id, user_id) -> float:
+        """Whatever booster the member bought, or 1.0.
+
+        Asked of the Economy cog rather than read from storage: wallets live
+        in that cog's memory, and a server running without it must still earn
+        XP normally rather than crash on every message.
+        """
+        economy = self.bot.get_cog("Economy")
+        if economy is None:
+            return 1.0
+        try:
+            return economy.xp_multiplier(guild_id, user_id)
+        except Exception as error:
+            print(f"XP multiplier lookup skipped: {error!r}")
+            return 1.0
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or message.guild is None or message.webhook_id:
@@ -524,7 +553,10 @@ class Levels(commands.Cog):
             return
 
         old_level, _ = level_from_xp(record.get("xp", 0))
-        xp_gain = random.randint(config["xp_min"], config["xp_max"])
+        xp_gain = boosted_xp(
+            random.randint(config["xp_min"], config["xp_max"]),
+            self.xp_multiplier(message.guild.id, message.author.id),
+        )
         record["xp"] = record.get("xp", 0) + xp_gain
         record["last_gain"] = now.isoformat()
         new_level, _ = level_from_xp(record["xp"])
@@ -593,6 +625,16 @@ class Levels(commands.Cog):
             )
         embed.add_field(name="Total XP", value=f"`{humanize_number(total_xp)}`", inline=True)
         embed.add_field(name="Messages", value=f"`{humanize_number(record.get('messages', 0))}`", inline=True)
+
+        economy = self.bot.get_cog("Economy")
+        if economy is not None:
+            title = economy.worn_title(interaction.guild_id, target.id)
+            if title:
+                embed.set_author(name=f"{title} · {target.display_name}", icon_url=target.display_avatar.url)
+            multiplier = economy.xp_multiplier(interaction.guild_id, target.id)
+            if multiplier > 1:
+                embed.add_field(name="Boost", value=f"`{multiplier:g}x XP` active", inline=True)
+
         brand_footer(embed, "XP card")
         await respond(interaction, embed)
 

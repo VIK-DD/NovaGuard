@@ -269,6 +269,65 @@ class CrateTests(unittest.TestCase):
         self.assertTrue(result.granted)
 
 
+class PerkApplicationTests(unittest.TestCase):
+    """The perks are only worth buying if the rest of the bot reads them."""
+
+    def test_the_work_cooldown_is_untouched_without_the_perk(self):
+        self.assertEqual(shop.work_cooldown(wallet(), timedelta(hours=1), NOW), timedelta(hours=1))
+
+    def test_the_work_perk_halves_the_cooldown(self):
+        holder = wallet(5000)
+        shop.purchase(holder, shop.WORK_RUSH, NOW)
+
+        self.assertEqual(
+            shop.work_cooldown(holder, timedelta(hours=1), NOW), timedelta(minutes=30)
+        )
+
+    def test_the_cooldown_returns_to_normal_when_the_perk_expires(self):
+        holder = wallet(5000)
+        shop.purchase(holder, shop.WORK_RUSH, NOW)
+        later = NOW + timedelta(hours=shop.WORK_RUSH_HOURS, minutes=1)
+
+        self.assertEqual(shop.work_cooldown(holder, timedelta(hours=1), later), timedelta(hours=1))
+
+    def test_a_shield_is_spent_once(self):
+        holder = wallet(0, streak_shields=1)
+
+        self.assertTrue(shop.use_shield(holder))
+        self.assertFalse(shop.use_shield(holder))
+        self.assertEqual(shop.shields(holder), 0)
+
+    def test_a_booster_multiplies_xp_as_the_levels_cog_applies_it(self):
+        from cogs.levels import boosted_xp
+
+        holder = wallet(5000)
+        shop.purchase(holder, shop.XP_BOOST, NOW)
+        multiplier = shop.effect_value(holder, shop.XP_BOOST, NOW)
+
+        self.assertEqual(boosted_xp(10, multiplier), 15)
+
+    def test_xp_is_never_reduced_by_a_bad_multiplier(self):
+        from cogs.levels import boosted_xp
+
+        # Whatever ends up in storage, a message must not earn less than the
+        # roll it started with.
+        for bad in (0, 0.5, -3, None, "fast"):
+            with self.subTest(multiplier=bad):
+                self.assertGreaterEqual(boosted_xp(10, bad), 10)
+
+    def test_a_boosted_gain_is_rounded_rather_than_floored(self):
+        from cogs.levels import boosted_xp
+
+        # 5 * 1.5 is 7.5. Flooring it would hand back less than half of what
+        # the booster promised on small rolls.
+        self.assertEqual(boosted_xp(5, 1.5), 8)
+
+    def test_a_message_always_earns_something(self):
+        from cogs.levels import boosted_xp
+
+        self.assertEqual(boosted_xp(0, 1.5), 1)
+
+
 class WalletStorageTests(unittest.TestCase):
     """Shop state has to survive a restart, including on an old database."""
 

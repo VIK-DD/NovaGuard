@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.admin import require_admin
+from core import shop
 from core.admin_auth import record_audit
 from core.database import load_economy_data, upsert_economy_wallets
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -19,13 +20,9 @@ CURRENCY = "🪙"
 DAILY_BASE = 200
 DAILY_STREAK_BONUS = 50
 WORK_COOLDOWN = timedelta(hours=1)
-TROPHIES = {
-    "star": ("⭐ Star", 1000),
-    "rocket": ("🚀 Rocket", 2500),
-    "gem": ("💎 Gem", 5000),
-    "crown": ("👑 Crown", 10000),
-    "trophy": ("🏆 Golden Trophy", 25000),
-}
+# How late a claim can be and still continue a streak. Past this the streak
+# resets - unless a shield is spent.
+STREAK_GRACE = timedelta(hours=48)
 SLOT_REELS = ["🍒", "🍋", "🍇", "💎", "7️⃣"]
 WORK_FLAVORS = [
     "You debugged production at 3 AM",
@@ -119,6 +116,24 @@ class Economy(commands.Cog):
         except Exception as error:
             print(f"Economy flush skipped due to storage issue: {error!r}")
 
+    def wallet_snapshot(self, guild_id, user_id):
+        """Read a wallet without creating one.
+
+        Other cogs ask this to find out what someone bought. get_wallet would
+        write an empty wallet for every member who ever sent a message, which
+        is a lot of rows for a question that is almost always "nothing".
+        """
+        return self.data.get(str(guild_id), {}).get(str(user_id))
+
+    def xp_multiplier(self, guild_id, user_id) -> float:
+        """How much XP a member currently earns per message, as a factor."""
+        wallet = self.wallet_snapshot(guild_id, user_id)
+        return shop.effect_value(wallet, shop.XP_BOOST) if wallet else 1.0
+
+    def worn_title(self, guild_id, user_id):
+        wallet = self.wallet_snapshot(guild_id, user_id)
+        return shop.worn_title(wallet) if wallet else None
+
     @tasks.loop(seconds=ECONOMY_FLUSH_SECONDS)
     async def flush_loop(self):
         try:
@@ -134,18 +149,39 @@ class Economy(commands.Cog):
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, target.id)
 
+        title = shop.worn_title(wallet)
         embed = make_embed(
             f"💰 {target.display_name}'s wallet",
             f"# {CURRENCY} {humanize_number(wallet['coins'])}",
             color=Palette.GOLD,
         )
+        if title:
+            embed.set_author(name=f"{title} · {target.display_name}", icon_url=target.display_avatar.url)
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.add_field(name="🔥 Daily streak", value=f"`{wallet.get('daily_streak', 0)} day(s)`", inline=True)
-        trophies = wallet.get("trophies", [])
+
+        shields = shop.shields(wallet)
+        if shields:
+            embed.add_field(name="🛡️ Streak shields", value=f"`{shields}`", inline=True)
+
+        trophies = [key for key in wallet.get("trophies", []) if shop.item(key)]
         if trophies:
-            shelf = " ".join(TROPHIES[t][0].split()[0] for t in trophies if t in TROPHIES)
+            shelf = " ".join(shop.item(key)["icon"] for key in trophies)
             embed.add_field(name="🏆 Trophy shelf", value=shelf, inline=True)
-        brand_footer(embed, "Economy")
+
+        effects = shop.active_effects(wallet)
+        if effects:
+            embed.add_field(
+                name="✨ Active",
+                value="\n".join(
+                    f"{shop.label_for(record.get('item'))} —"
+                    f" ends {discord.utils.format_dt(shop.parse_time(record['expires_at']), 'R')}"
+                    for record in effects.values()
+                ),
+                inline=False,
+            )
+
+        brand_footer(embed, "Economy · /shop to spend, /inventory for yours")
         await respond(interaction, embed)
 
     @app_commands.command(name="daily", description="Claim your daily coins (streak bonus!)")
@@ -166,8 +202,13 @@ class Economy(commands.Cog):
                 )
                 brand_footer(embed, "Economy")
                 return await respond(interaction, embed, ephemeral=True)
-            streak = wallet.get("daily_streak", 0) + 1 if now - last_daily < timedelta(hours=48) else 1
+            on_time = now - last_daily < STREAK_GRACE
+            # The shield is only spent on a streak that was actually about to
+            # break, and only when there is one to protect.
+            saved = not on_time and wallet.get("daily_streak", 0) > 0 and shop.use_shield(wallet)
+            streak = wallet.get("daily_streak", 0) + 1 if on_time or saved else 1
         else:
+            saved = False
             streak = 1
 
         reward = DAILY_BASE + DAILY_STREAK_BONUS * min(streak - 1, 10)
@@ -181,6 +222,12 @@ class Economy(commands.Cog):
             f"# +{CURRENCY} {reward}\n\n🔥 Streak: `{streak} day(s)` {progress_bar(min(streak, 11), 11, slots=11, filled='🔥', empty='▫️')}",
             color=Palette.GOLD,
         )
+        if saved:
+            embed.add_field(
+                name="🛡️ Shield used",
+                value=f"Your streak survived the missed day. `{shop.shields(wallet)}` left.",
+                inline=False,
+            )
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins")
         await respond(interaction, embed)
 
@@ -191,10 +238,11 @@ class Economy(commands.Cog):
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         now = datetime.now(UTC)
 
+        cooldown = shop.work_cooldown(wallet, WORK_COOLDOWN, now)
         last_work = parse_saved_datetime(wallet.get("last_work"))
         if last_work:
-            if now - last_work < WORK_COOLDOWN:
-                next_shift = last_work + WORK_COOLDOWN
+            if now - last_work < cooldown:
+                next_shift = last_work + cooldown
                 embed = make_embed(
                     "😮‍💨 Still on break",
                     f"Next shift starts {discord.utils.format_dt(next_shift, 'R')}.",
@@ -213,6 +261,12 @@ class Economy(commands.Cog):
             f"{random.choice(WORK_FLAVORS)} and earned **{CURRENCY} {earnings}**!",
             color=Palette.TEAL,
         )
+        if cooldown < WORK_COOLDOWN:
+            embed.add_field(
+                name="🛠️ Work Rush",
+                value=f"Next shift in `{int(cooldown.total_seconds() // 60)}m` instead of `60m`.",
+                inline=False,
+            )
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins")
         await respond(interaction, embed)
 
@@ -336,49 +390,196 @@ class Economy(commands.Cog):
         brand_footer(embed, "Economy leaderboard")
         await respond(interaction, embed)
 
-    @app_commands.command(name="shop", description="Browse the trophy shop")
+    @app_commands.command(name="shop", description="Browse the shop")
     @app_commands.guild_only()
-    async def shop(self, interaction: discord.Interaction):
-        lines = [
-            f"{label} — {CURRENCY} `{humanize_number(price)}`"
-            for label, price in TROPHIES.values()
-        ]
+    async def shop_command(self, interaction: discord.Interaction):
+        wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
         embed = make_embed(
-            "🛍️ Trophy shop",
-            "Flex on the leaderboard — trophies show on your `/balance`.\n\n" + "\n".join(lines),
+            "🛍️ Shop",
+            f"You have {CURRENCY} `{humanize_number(wallet['coins'])}`. Buy with `/buy`.",
             color=Palette.PURPLE,
         )
-        brand_footer(embed, "Buy with /buy")
+
+        for kind, heading in (
+            (shop.BOOSTER, "⚡ Boosters"),
+            (shop.PERK, "🛠️ Perks"),
+            (shop.TITLE, "🎖️ Titles"),
+            (shop.TROPHY, "🏆 Trophies"),
+            (shop.CRATE, "📦 Crates"),
+        ):
+            entries = shop.catalog(kind)
+            if not entries:
+                continue
+            lines = []
+            for entry in entries:
+                owned = " *(owned)*" if shop.owns(wallet, entry["key"]) else ""
+                note = f"\n-# {entry['description']}" if entry.get("description") else ""
+                lines.append(
+                    f"{shop.label_for(entry['key'])} — {CURRENCY} `{humanize_number(entry['price'])}`"
+                    f"{owned}{note}"
+                )
+            embed.add_field(name=heading, value="\n".join(lines), inline=False)
+
+        brand_footer(embed, "Crates open with /crate · titles equip with /title")
         await respond(interaction, embed)
 
-    @app_commands.command(name="buy", description="Buy a trophy from the shop")
-    @app_commands.describe(item="Which trophy?")
+    @app_commands.command(name="buy", description="Buy something from the shop")
+    @app_commands.describe(item="What are you buying?")
     @app_commands.choices(
-        item=[app_commands.Choice(name=f"{label} — {price}", value=key) for key, (label, price) in TROPHIES.items()]
+        item=[
+            app_commands.Choice(name=f"{entry['label']} — {entry['price']}", value=entry["key"])
+            for entry in shop.catalog()
+            if entry["kind"] != shop.CRATE
+        ]
     )
     @app_commands.guild_only()
     async def buy(self, interaction: discord.Interaction, item: app_commands.Choice[str]):
-        label, price = TROPHIES[item.value]
-        data = self.data
-        wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
+        wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
+        label = shop.label_for(item.value)
+        result = shop.purchase(wallet, item.value)
 
-        if item.value in wallet.get("trophies", []):
-            embed = make_embed("🤷 Already owned", f"You already have {label}.", color=Palette.WARNING)
-            brand_footer(embed)
+        if not result.ok:
+            messages = {
+                "owned": ("🤷 Already owned", f"You already have {label}."),
+                "poor": (
+                    "💸 Not enough coins",
+                    f"You need {CURRENCY} `{humanize_number(result.spent)}` more for {label}.",
+                ),
+                "crate": ("📦 Crates open, not buy", "Use `/crate` to open one."),
+                "unknown": ("🤷 No such item", "That item is not in the shop."),
+            }
+            title, description = messages.get(result.error, ("🤷 Not available", "Try something else."))
+            embed = make_embed(title, description, color=Palette.WARNING)
+            brand_footer(embed, "Economy")
             return await respond(interaction, embed, ephemeral=True)
 
-        if wallet["coins"] < price:
-            missing = price - wallet["coins"]
-            embed = make_embed("💸 Not enough coins", f"You need {CURRENCY} `{humanize_number(missing)}` more for {label}.", color=Palette.DANGER)
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
-
-        wallet["coins"] -= price
-        wallet.setdefault("trophies", []).append(item.value)
         await self._save(interaction.guild_id, interaction.user.id)
 
-        embed = make_embed("🛍️ Purchase complete!", f"{label} is now on your shelf. Flex responsibly. 😎", color=Palette.SUCCESS)
+        embed = make_embed(
+            "🛍️ Purchase complete",
+            f"{label} is yours.",
+            color=Palette.SUCCESS,
+        )
+        if result.expires_at:
+            embed.add_field(
+                name="Runs until",
+                value=discord.utils.format_dt(result.expires_at, "R"),
+                inline=True,
+            )
+        if shop.item(item.value)["kind"] == shop.TITLE:
+            embed.add_field(name="Wear it", value="`/title` to put it on.", inline=True)
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins")
+        await respond(interaction, embed)
+
+    @app_commands.command(name="inventory", description="What you own and what is running")
+    @app_commands.describe(member="Whose inventory? (defaults to you)")
+    @app_commands.guild_only()
+    async def inventory(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        target = member or interaction.user
+        wallet = get_wallet(self.data, interaction.guild_id, target.id)
+
+        worn = shop.worn_title(wallet)
+        embed = make_embed(
+            f"🎒 {target.display_name}'s inventory",
+            f"Wearing **{worn}**." if worn else "No title worn.",
+            color=Palette.PURPLE,
+        )
+
+        effects = shop.active_effects(wallet)
+        embed.add_field(
+            name="✨ Running now",
+            value="\n".join(
+                f"{shop.label_for(record.get('item'))} —"
+                f" ends {discord.utils.format_dt(shop.parse_time(record['expires_at']), 'R')}"
+                for record in effects.values()
+            )
+            or "-# Nothing active.",
+            inline=False,
+        )
+
+        owned = [key for key in shop.owned_keys(wallet) if shop.item(key)]
+        embed.add_field(
+            name="📦 Owned",
+            value=" · ".join(shop.label_for(key) for key in owned) or "-# Nothing yet.",
+            inline=False,
+        )
+
+        shields = shop.shields(wallet)
+        if shields:
+            embed.add_field(name="🛡️ Streak shields", value=f"`{shields}`", inline=True)
+
+        brand_footer(embed, "Economy · /shop to buy more")
+        await respond(interaction, embed)
+
+    @app_commands.command(name="crate", description="Open a mystery crate")
+    @app_commands.guild_only()
+    async def crate(self, interaction: discord.Interaction):
+        wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
+        before = wallet["coins"]
+        result = shop.open_crate(wallet)
+
+        if not result.ok:
+            embed = make_embed(
+                "💸 Not enough coins",
+                f"A crate costs {CURRENCY} `{humanize_number(shop.SHOP_ITEMS[shop.CRATE]['price'])}`."
+                f" You need {CURRENCY} `{humanize_number(result.spent)}` more.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Economy")
+            return await respond(interaction, embed, ephemeral=True)
+
+        await self._save(interaction.guild_id, interaction.user.id)
+
+        embed = make_embed(
+            "📦 Crate opened",
+            f"Inside: **{', '.join(result.granted)}**",
+            color=Palette.FUN,
+        )
+        embed.add_field(name="Spent", value=f"{CURRENCY} `{result.spent}`", inline=True)
+        embed.add_field(
+            name="Balance",
+            value=f"{CURRENCY} `{humanize_number(wallet['coins'])}`"
+            f" ({wallet['coins'] - before:+d})",
+            inline=True,
+        )
+        brand_footer(embed, "Economy")
+        await respond(interaction, embed)
+
+    @app_commands.command(name="title", description="Wear a title you own")
+    @app_commands.describe(title="Which title? Leave empty to take yours off")
+    @app_commands.choices(
+        title=[
+            app_commands.Choice(name=entry["label"], value=entry["key"])
+            for entry in shop.catalog(shop.TITLE)
+        ]
+    )
+    @app_commands.guild_only()
+    async def title(
+        self,
+        interaction: discord.Interaction,
+        title: app_commands.Choice[str] | None = None,
+    ):
+        wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
+        key = title.value if title else None
+
+        if not shop.equip_title(wallet, key):
+            embed = make_embed(
+                "🤷 Not yours yet",
+                f"Buy {shop.label_for(key)} in `/shop` before wearing it.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Economy")
+            return await respond(interaction, embed, ephemeral=True)
+
+        await self._save(interaction.guild_id, interaction.user.id)
+
+        worn = shop.worn_title(wallet)
+        embed = make_embed(
+            "🎖️ Title updated",
+            f"You are now **{worn}**." if worn else "Title removed.",
+            color=Palette.SUCCESS,
+        )
+        brand_footer(embed, "Shows on /balance and /rank")
         await respond(interaction, embed)
 
     @app_commands.command(name="grant", description="Owner: add or remove coins from a member")

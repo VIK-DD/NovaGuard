@@ -217,6 +217,25 @@ def shields(wallet) -> int:
         return 0
 
 
+def use_shield(wallet) -> bool:
+    """Spend one streak shield. Returns whether there was one to spend."""
+    count = shields(wallet)
+    if count <= 0:
+        return False
+    wallet["streak_shields"] = count - 1
+    return True
+
+
+def work_cooldown(wallet, base: timedelta, moment=None) -> timedelta:
+    """How long this member waits between shifts, perk included.
+
+    Returned as a duration rather than applied by the caller so the perk
+    cannot be forgotten in one of the two places /work checks the clock.
+    """
+    factor = effect_value(wallet, WORK_RUSH, moment, default=1.0)
+    return timedelta(seconds=max(0.0, base.total_seconds() * factor))
+
+
 class PurchaseResult:
     """Why a purchase worked, or why it did not.
 
