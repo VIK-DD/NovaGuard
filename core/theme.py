@@ -44,9 +44,22 @@ def make_embed(title=None, description=None, color=Palette.PRIMARY, timestamp=Tr
     return embed
 
 
+# The site's own favicon/nav icon, already public at novaguard.fun. Reused
+# here rather than uploaded anywhere new, so the bot and the site carry the
+# same mark instead of two different ones.
+BRAND_ICON_URL = "https://novaguard.fun/assets/novaguard-icon-96.png"
+
+
 def brand_footer(embed, label=None):
-    text = f"{github_config.brand_name} • {label}" if label else github_config.brand_name
-    embed.set_footer(text=text)
+    """Every embed's footer, always the same: icon plus the brand name.
+
+    ``label`` used to vary per command - a category, a joke, sometimes live
+    data like a balance or an ID. 205 call sites each made their own call on
+    what belonged there, which read as inconsistent as it was. The brand is
+    the one thing every embed should say the same way, so the parameter stays
+    for call sites that still pass one, but it is no longer rendered.
+    """
+    embed.set_footer(text=github_config.brand_name, icon_url=BRAND_ICON_URL)
     return embed
 
 
