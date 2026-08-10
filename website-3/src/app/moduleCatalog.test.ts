@@ -1,0 +1,75 @@
+import { describe, expect, it } from "vitest";
+import type { GuildSettings } from "../lib/api/schemas";
+import { CONFIG_MODULES, isModuleActive } from "./moduleCatalog";
+
+const emptySettings: GuildSettings = {
+  welcome_channel: null,
+  goodbye_channel: null,
+  log_channel: null,
+  voice_report_channel: null,
+  update_channel: null,
+  github_event_channel: null,
+  error_log_channel: null,
+  autorole: null,
+  ticket_staff_role: null,
+  automod: { invites: false, spam: false, badwords: [] },
+  levels: {
+    enabled: false,
+    announce: "dm",
+    announce_channel: null,
+    xp_min: 5,
+    xp_max: 10,
+    cooldown: 120,
+    ignored_channels: [],
+    ignored_roles: [],
+  },
+};
+
+describe("configuration module catalog", () => {
+  it("places every configurable setting in exactly one module", () => {
+    const fields = CONFIG_MODULES.flatMap((module) => [...module.fields]).sort();
+    expect(fields).toEqual(
+      [
+        "automod",
+        "autorole",
+        "error_log_channel",
+        "github_event_channel",
+        "goodbye_channel",
+        "levels",
+        "log_channel",
+        "ticket_staff_role",
+        "update_channel",
+        "voice_report_channel",
+        "welcome_channel",
+      ].sort(),
+    );
+    expect(new Set(fields).size).toBe(fields.length);
+  });
+
+  it("uses unique, stable keys for direct module links", () => {
+    const keys = CONFIG_MODULES.map((module) => module.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual(["welcome", "moderation", "levels", "voice", "tickets", "updates"]);
+  });
+
+  it("derives module state from the settings that actually power it", () => {
+    expect(CONFIG_MODULES.every((module) => !isModuleActive(emptySettings, module.key))).toBe(true);
+
+    const configured = structuredClone(emptySettings);
+    configured.autorole = "123";
+    configured.automod.badwords = ["spoiler"];
+    configured.levels.enabled = true;
+    configured.voice_report_channel = "456";
+    configured.ticket_staff_role = "789";
+    configured.github_event_channel = "101";
+
+    expect(CONFIG_MODULES.map((module) => isModuleActive(configured, module.key))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
+});

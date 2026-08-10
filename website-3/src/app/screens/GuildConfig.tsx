@@ -15,6 +15,7 @@ import IgnoreListEditor from "../components/IgnoreListEditor";
 import RoleSelect from "../components/RoleSelect";
 import SaveBar from "../components/SaveBar";
 import { diffSettings, isDirty, mapValidationDetails, validateSettings } from "../lib/configForm";
+import { CONFIG_MODULES, isModuleActive, type ConfigModuleKey } from "../moduleCatalog";
 import { useGuildConfig } from "../queries/guilds";
 import { useUnsavedChanges } from "../unsavedChanges";
 
@@ -135,24 +136,76 @@ const NumberField = memo(function NumberField(props: {
 });
 
 function Section(props: {
+  id: ConfigModuleKey;
   icon: IconName;
   kicker: string;
   description: string;
+  active: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-6 rounded-[var(--radius-card)] border border-line bg-card p-5 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] sm:p-6">
+    <section
+      id={props.id}
+      aria-labelledby={`${props.id}-title`}
+      className="scroll-mt-6 rounded-[var(--radius-card)] border border-line bg-card p-5 shadow-[0_1px_0_hsl(0_0%_100%/0.03)_inset] sm:p-6"
+    >
       <div className="flex items-start gap-3.5">
         <span className="bg-line/40 grid h-10 w-10 shrink-0 place-items-center rounded-[8px] border border-line text-ink">
           <Icon name={props.icon} size={20} />
         </span>
-        <div className="min-w-0 pt-0.5">
-          <p className="text-xs tracking-[0.2em] text-primary uppercase">{props.kicker}</p>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p id={`${props.id}-title`} className="text-xs tracking-[0.2em] text-primary uppercase">
+              {props.kicker}
+            </p>
+            <span
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                props.active
+                  ? "border-good/35 bg-good/10 text-good"
+                  : "border-line bg-bg-subtle text-ink-muted"
+              }`}
+            >
+              {props.active ? "Active" : "Not configured"}
+            </span>
+          </div>
           <p className="mt-1 text-sm text-ink-muted">{props.description}</p>
         </div>
       </div>
       <div className="mt-6">{props.children}</div>
     </section>
+  );
+}
+
+function ModuleNav({ settings }: { settings: GuildSettings }) {
+  return (
+    <nav aria-label="Configuration modules" className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {CONFIG_MODULES.map((module) => {
+        const active = isModuleActive(settings, module.key);
+        return (
+          <a
+            key={module.key}
+            href={`#${module.key}`}
+            className="ng-pressable group flex min-h-[5.5rem] items-start gap-3 rounded-[var(--radius-card)] border border-line bg-card p-4 transition-colors hover:border-line-strong"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-line bg-bg-subtle text-ink">
+              <Icon name={module.icon} size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">{module.label}</span>
+                <span
+                  aria-label={active ? "Active" : "Not configured"}
+                  className={`h-2 w-2 shrink-0 rounded-full ${active ? "bg-good" : "bg-line-strong"}`}
+                />
+              </span>
+              <span className="mt-1 line-clamp-2 block text-xs leading-5 text-ink-muted">
+                {module.description}
+              </span>
+            </span>
+          </a>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -385,161 +438,242 @@ export default function GuildConfig() {
 
   return (
     <>
-      <main className="mx-auto max-w-3xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
+      <main className="mx-auto max-w-5xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
         <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
           {guild.member_count.toLocaleString("en")} members
         </p>
-        <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">{guild.name}</h1>
+        <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">Manage {guild.name}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-muted">
+          Configure NovaGuard by feature. Changes stay local until you save them, and every saved
+          update is recorded in the audit log.
+        </p>
 
-      <Section
-        icon="hash"
-        kicker="Channels"
-        description="Where NovaGuard posts activity for this server."
-      >
-        <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-          {CHANNEL_FIELDS.map(([key, label]) => (
-            <ChannelSelect
-              key={key}
-              label={label}
-              value={draft[key]}
-              channels={channels}
-              error={fieldErrors[key]}
-              onChange={channelFieldHandlers[key]}
+        <ModuleNav settings={draft} />
+
+        <div className="mt-8 grid gap-5">
+          <Section
+            id="welcome"
+            icon="users-three"
+            kicker="Welcome"
+            description="Greet new members, announce departures and assign a starter role."
+            active={isModuleActive(draft, "welcome")}
+          >
+            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+              <ChannelSelect
+                label="Welcome channel"
+                value={draft.welcome_channel}
+                channels={channels}
+                error={fieldErrors.welcome_channel}
+                onChange={channelFieldHandlers.welcome_channel}
+              />
+              <ChannelSelect
+                label="Goodbye channel"
+                value={draft.goodbye_channel}
+                channels={channels}
+                error={fieldErrors.goodbye_channel}
+                onChange={channelFieldHandlers.goodbye_channel}
+              />
+              <RoleSelect
+                label="Auto-role for newcomers"
+                value={draft.autorole}
+                roles={roles.filter((role) => role.assignable)}
+                error={fieldErrors.autorole}
+                onChange={onAutoroleChange}
+              />
+            </div>
+          </Section>
+
+          <Section
+            id="moderation"
+            icon="shield-check"
+            kicker="Moderation"
+            description="Filter unwanted messages and keep staff-facing activity in the right channels."
+            active={isModuleActive(draft, "moderation")}
+          >
+            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+              <ChannelSelect
+                label="Server log channel"
+                value={draft.log_channel}
+                channels={channels}
+                error={fieldErrors.log_channel}
+                onChange={channelFieldHandlers.log_channel}
+              />
+              <ChannelSelect
+                label="Error log channel"
+                value={draft.error_log_channel}
+                channels={channels}
+                error={fieldErrors.error_log_channel}
+                onChange={channelFieldHandlers.error_log_channel}
+              />
+            </div>
+            <div className="mt-6 border-t border-line pt-2">
+              <Toggle
+                label="Block Discord invites"
+                checked={draft.automod.invites}
+                onChange={onInvitesChange}
+              />
+              <Toggle label="Anti-spam" checked={draft.automod.spam} onChange={onSpamChange} />
+              <div className="border-t border-line pt-4">
+                <BadwordsEditor
+                  value={draft.automod.badwords}
+                  error={fieldErrors.badwords ?? fieldErrors.automod}
+                  onChange={onBadwordsChange}
+                />
+              </div>
+            </div>
+          </Section>
+
+          <Section
+            id="levels"
+            icon="trophy"
+            kicker="Levels"
+            description="Reward server activity with XP and level-up announcements."
+            active={isModuleActive(draft, "levels")}
+          >
+            <Toggle
+              label="Give XP for messages"
+              checked={draft.levels.enabled}
+              onChange={onLevelsEnabledChange}
             />
-          ))}
-        </div>
-      </Section>
+            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+                  Level-up announcement
+                </span>
+                <select
+                  value={draft.levels.announce}
+                  aria-invalid={fieldErrors["levels.announce"] ? true : undefined}
+                  onChange={(event) => setLevels({ announce: event.target.value as AnnounceMode })}
+                  className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
+                    fieldErrors["levels.announce"] ? "border-primary" : "border-line"
+                  }`}
+                >
+                  <option value="dm">Direct message</option>
+                  <option value="channel">In a channel</option>
+                  <option value="off">Don't announce</option>
+                </select>
+                {fieldErrors["levels.announce"] && (
+                  <p className="text-primary mt-1 text-xs">{fieldErrors["levels.announce"]}</p>
+                )}
+              </label>
+              {draft.levels.announce === "channel" && (
+                <ChannelSelect
+                  label="Announcement channel"
+                  value={draft.levels.announce_channel}
+                  channels={channels}
+                  error={fieldErrors["levels.announce_channel"]}
+                  onChange={onAnnounceChannelChange}
+                />
+              )}
+            </div>
+            <div className="mt-5 grid gap-5 sm:grid-cols-3">
+              <NumberField
+                label="XP minimum"
+                value={draft.levels.xp_min}
+                min={1}
+                max={100}
+                error={fieldErrors["levels.xp_min"]}
+                onChange={onXpMinChange}
+              />
+              <NumberField
+                label="XP maximum"
+                value={draft.levels.xp_max}
+                min={1}
+                max={100}
+                error={fieldErrors["levels.xp_max"]}
+                onChange={onXpMaxChange}
+              />
+              <NumberField
+                label="Cooldown"
+                suffix="seconds"
+                value={draft.levels.cooldown}
+                min={0}
+                max={3600}
+                error={fieldErrors["levels.cooldown"]}
+                onChange={onCooldownChange}
+              />
+            </div>
+            <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+              <IgnoreListEditor
+                label="Channels without XP"
+                prefix="#"
+                value={draft.levels.ignored_channels}
+                options={channels}
+                error={fieldErrors["levels.ignored_channels"]}
+                onChange={onIgnoredChannelsChange}
+              />
+              <IgnoreListEditor
+                label="Roles without XP"
+                prefix="@"
+                value={draft.levels.ignored_roles}
+                options={roles}
+                error={fieldErrors["levels.ignored_roles"]}
+                onChange={onIgnoredRolesChange}
+              />
+            </div>
+          </Section>
 
-      <Section
-        icon="users-three"
-        kicker="Roles"
-        description="Assigned automatically, or held by ticket staff."
-      >
-        <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-          <RoleSelect
-            label="Auto-role for newcomers"
-            value={draft.autorole}
-            roles={roles.filter((r) => r.assignable)}
-            error={fieldErrors.autorole}
-            onChange={onAutoroleChange}
-          />
-          <RoleSelect
-            label="Ticket staff role"
-            value={draft.ticket_staff_role}
-            roles={roles}
-            error={fieldErrors.ticket_staff_role}
-            onChange={onTicketRoleChange}
-          />
-        </div>
-      </Section>
+          <Section
+            id="voice"
+            icon="users-three"
+            kicker="Voice reports"
+            description="Choose where completed voice-session reports are published."
+            active={isModuleActive(draft, "voice")}
+          >
+            <div className="max-w-md border-t border-line pt-6">
+              <ChannelSelect
+                label="Voice report channel"
+                value={draft.voice_report_channel}
+                channels={channels}
+                error={fieldErrors.voice_report_channel}
+                onChange={channelFieldHandlers.voice_report_channel}
+              />
+            </div>
+          </Section>
 
-      <Section
-        icon="shield-check"
-        kicker="AutoMod"
-        description="Automatic moderation for invites, spam and blocked words."
-      >
-        <Toggle
-          label="Block Discord invites"
-          checked={draft.automod.invites}
-          onChange={onInvitesChange}
-        />
-        <Toggle label="Anti-spam" checked={draft.automod.spam} onChange={onSpamChange} />
-        <div className="border-t border-line pt-4">
-          <BadwordsEditor
-            value={draft.automod.badwords}
-            error={fieldErrors.badwords ?? fieldErrors.automod}
-            onChange={onBadwordsChange}
-          />
-        </div>
-      </Section>
+          <Section
+            id="tickets"
+            icon="clipboard-text"
+            kicker="Tickets"
+            description="Choose which role can claim and manage member support tickets."
+            active={isModuleActive(draft, "tickets")}
+          >
+            <div className="max-w-md border-t border-line pt-6">
+              <RoleSelect
+                label="Ticket staff role"
+                value={draft.ticket_staff_role}
+                roles={roles}
+                error={fieldErrors.ticket_staff_role}
+                onChange={onTicketRoleChange}
+              />
+            </div>
+          </Section>
 
-      <Section
-        icon="trophy"
-        kicker="Levels"
-        description="XP, level-up announcements and who's exempt."
-      >
-        <Toggle
-          label="Give XP for messages"
-          checked={draft.levels.enabled}
-          onChange={onLevelsEnabledChange}
-        />
-        <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-              Level-up announcement
-            </span>
-            <select
-              value={draft.levels.announce}
-              aria-invalid={fieldErrors["levels.announce"] ? true : undefined}
-              onChange={(e) => setLevels({ announce: e.target.value as AnnounceMode })}
-              className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
-                fieldErrors["levels.announce"] ? "border-primary" : "border-line"
-              }`}
-            >
-              <option value="dm">Direct message</option>
-              <option value="channel">In a channel</option>
-              <option value="off">Don't announce</option>
-            </select>
-            {fieldErrors["levels.announce"] && (
-              <p className="text-primary mt-1 text-xs">{fieldErrors["levels.announce"]}</p>
-            )}
-          </label>
-          {draft.levels.announce === "channel" && (
-            <ChannelSelect
-              label="Announcement channel"
-              value={draft.levels.announce_channel}
-              channels={channels}
-              error={fieldErrors["levels.announce_channel"]}
-              onChange={onAnnounceChannelChange}
-            />
-          )}
+          <Section
+            id="updates"
+            icon="arrows-clockwise"
+            kicker="Updates"
+            description="Route NovaGuard releases and repository activity into this server."
+            active={isModuleActive(draft, "updates")}
+          >
+            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+              <ChannelSelect
+                label="NovaGuard update channel"
+                value={draft.update_channel}
+                channels={channels}
+                error={fieldErrors.update_channel}
+                onChange={channelFieldHandlers.update_channel}
+              />
+              <ChannelSelect
+                label="GitHub event channel"
+                value={draft.github_event_channel}
+                channels={channels}
+                error={fieldErrors.github_event_channel}
+                onChange={channelFieldHandlers.github_event_channel}
+              />
+            </div>
+          </Section>
         </div>
-        <div className="mt-5 grid gap-5 sm:grid-cols-3">
-          <NumberField
-            label="XP minimum"
-            value={draft.levels.xp_min}
-            min={1}
-            max={100}
-            error={fieldErrors["levels.xp_min"]}
-            onChange={onXpMinChange}
-          />
-          <NumberField
-            label="XP maximum"
-            value={draft.levels.xp_max}
-            min={1}
-            max={100}
-            error={fieldErrors["levels.xp_max"]}
-            onChange={onXpMaxChange}
-          />
-          <NumberField
-            label="Cooldown"
-            suffix="seconds"
-            value={draft.levels.cooldown}
-            min={0}
-            max={3600}
-            error={fieldErrors["levels.cooldown"]}
-            onChange={onCooldownChange}
-          />
-        </div>
-        <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-          <IgnoreListEditor
-            label="Channels without XP"
-            prefix="#"
-            value={draft.levels.ignored_channels}
-            options={channels}
-            error={fieldErrors["levels.ignored_channels"]}
-            onChange={onIgnoredChannelsChange}
-          />
-          <IgnoreListEditor
-            label="Roles without XP"
-            prefix="@"
-            value={draft.levels.ignored_roles}
-            options={roles}
-            error={fieldErrors["levels.ignored_roles"]}
-            onChange={onIgnoredRolesChange}
-          />
-        </div>
-      </Section>
 
         <SaveBar
           visible={dirty}

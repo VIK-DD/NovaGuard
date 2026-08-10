@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, inviteUrl } from "../../lib/api/client";
 import type { Dashboard } from "../../lib/api/schemas";
 import Icon from "../components/Icon";
+import type { ConfigModuleKey } from "../moduleCatalog";
 import { runGuildAction, useGuildDashboard } from "../queries/guilds";
 
 const timeFmt = new Intl.DateTimeFormat("en-US", {
@@ -77,23 +78,47 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-function ToggleRow({ label, enabled }: { label: string; enabled: boolean }) {
+const moduleSection: Record<string, ConfigModuleKey> = {
+  welcome: "welcome",
+  logs: "moderation",
+  automod: "moderation",
+  moderation: "moderation",
+  levels: "levels",
+  voice: "voice",
+  tickets: "tickets",
+  updates: "updates",
+};
+
+function ModuleRow({
+  guildId,
+  module,
+}: {
+  guildId: string;
+  module: Dashboard["modules"][number];
+}) {
+  const section = moduleSection[module.key] ?? "moderation";
   return (
-    <div className="flex items-center justify-between border-t border-line py-3 first:border-t-0">
-      <span className="text-sm">{label}</span>
+    <Link
+      to="/g/$guildId/settings"
+      params={{ guildId }}
+      hash={section}
+      className="ng-pressable flex min-h-11 items-center justify-between border-t border-line py-3 text-sm first:border-t-0 hover:text-primary"
+    >
+      <span>{module.label}</span>
       <span
-        aria-hidden="true"
+        aria-label={module.enabled ? "Active" : "Not configured"}
         className={`relative h-5 w-9 rounded-full border transition-colors ${
-          enabled ? "border-primary bg-primary" : "border-line-strong bg-bg-subtle"
+          module.enabled ? "border-primary bg-primary" : "border-line-strong bg-bg-subtle"
         }`}
       >
         <span
+          aria-hidden="true"
           className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-transform ${
-            enabled ? "translate-x-[18px]" : "translate-x-[2px]"
+            module.enabled ? "translate-x-[18px]" : "translate-x-[2px]"
           }`}
         />
       </span>
-    </div>
+    </Link>
   );
 }
 
@@ -392,13 +417,13 @@ export default function GuildOverview() {
             title="Modules"
             action={
               <Link to="/g/$guildId/settings" params={{ guildId }} className="text-sm text-primary hover:underline">
-                Edit settings
+                Manage modules
               </Link>
             }
           >
             <div className="grid gap-x-6 sm:grid-cols-2">
               {data.modules.map((module) => (
-                <ToggleRow key={module.key} label={module.label} enabled={module.enabled} />
+                <ModuleRow key={module.key} guildId={guildId} module={module} />
               ))}
             </div>
             <div className="mt-4 grid gap-3 border-t border-line pt-4 sm:grid-cols-3">
@@ -527,7 +552,7 @@ export default function GuildOverview() {
             params={{ guildId }}
             className="ng-pressable flex min-h-12 items-center justify-between rounded-[var(--radius-card)] border border-line bg-card px-4 text-sm hover:border-line-strong"
           >
-            Configure server <Icon name="shield-check" size={18} />
+            Manage modules <Icon name="shield-check" size={18} />
           </Link>
           <Link
             to="/g/$guildId/audit"

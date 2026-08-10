@@ -1174,12 +1174,34 @@ class WebServer:
 
         automod = resolve_automod(settings)
         modules = [
-            {"key": "welcome", "label": "Welcome", "enabled": bool(settings.get("welcome_channel"))},
-            {"key": "logs", "label": "Server logs", "enabled": bool(settings.get("log_channel"))},
-            {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
-            {"key": "automod", "label": "AutoMod", "enabled": bool(automod.get("invites") or automod.get("spam") or automod.get("badwords"))},
+            {
+                "key": "welcome",
+                "label": "Welcome",
+                "enabled": bool(
+                    settings.get("welcome_channel")
+                    or settings.get("goodbye_channel")
+                    or settings.get("autorole")
+                ),
+            },
+            {
+                "key": "moderation",
+                "label": "Moderation",
+                "enabled": bool(
+                    settings.get("log_channel")
+                    or settings.get("error_log_channel")
+                    or automod.get("invites")
+                    or automod.get("spam")
+                    or automod.get("badwords")
+                ),
+            },
             {"key": "levels", "label": "Levels", "enabled": bool(levels_settings.get("enabled"))},
-            {"key": "updates", "label": "Updates", "enabled": bool(settings.get("update_channel"))},
+            {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
+            {"key": "tickets", "label": "Tickets", "enabled": bool(settings.get("ticket_staff_role"))},
+            {
+                "key": "updates",
+                "label": "Updates",
+                "enabled": bool(settings.get("update_channel") or settings.get("github_event_channel")),
+            },
         ]
 
         return {

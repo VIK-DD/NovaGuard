@@ -244,16 +244,30 @@ function dashboardPayload(id: string): Json | null {
       recommended_total: 4,
     },
     modules: [
-      { key: "welcome", label: "Welcome", enabled: Boolean(settings.welcome_channel) },
-      { key: "logs", label: "Server logs", enabled: Boolean(settings.log_channel) },
-      { key: "voice", label: "Voice reports", enabled: Boolean(settings.voice_report_channel) },
       {
-        key: "automod",
-        label: "AutoMod",
-        enabled: Boolean(settings.automod.invites || settings.automod.spam || settings.automod.badwords.length),
+        key: "welcome",
+        label: "Welcome",
+        enabled: Boolean(settings.welcome_channel || settings.goodbye_channel || settings.autorole),
+      },
+      {
+        key: "moderation",
+        label: "Moderation",
+        enabled: Boolean(
+          settings.log_channel ||
+            settings.error_log_channel ||
+            settings.automod.invites ||
+            settings.automod.spam ||
+            settings.automod.badwords.length,
+        ),
       },
       { key: "levels", label: "Levels", enabled: settings.levels.enabled },
-      { key: "updates", label: "Updates", enabled: Boolean(settings.update_channel) },
+      { key: "voice", label: "Voice reports", enabled: Boolean(settings.voice_report_channel) },
+      { key: "tickets", label: "Tickets", enabled: Boolean(settings.ticket_staff_role) },
+      {
+        key: "updates",
+        label: "Updates",
+        enabled: Boolean(settings.update_channel || settings.github_event_channel),
+      },
     ],
     automod: {
       invites: settings.automod.invites,

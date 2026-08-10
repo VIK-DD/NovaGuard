@@ -58,7 +58,7 @@ function GuildLayout() {
             activeProps={{ className: `${tab} border-primary text-ink` }}
             inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
           >
-            Settings
+            Modules
           </Link>
           <Link
             to="/g/$guildId/audit"
