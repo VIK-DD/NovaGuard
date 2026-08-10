@@ -1,94 +1,76 @@
 [
   {
-    "created_at": "2026-08-01T23:21:39.433739+00:00",
+    "created_at": "2026-08-09T13:08:54.494803+00:00",
     "build": 38,
-    "added_lines": 456,
-    "removed_lines": 89,
-    "changed_files": 5,
+    "added_lines": 271,
+    "removed_lines": 0,
+    "changed_files": 1,
     "changes": [
-      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "Automatic backups added with manual `/config backup` support",
-      "Health monitoring now tracks event-loop lag and sends admin alerts",
-      "Updated command behavior: `/backup remote`",
-      "Updated project files: `.env.example`, `SETUP.md`"
+      "Behind-the-scenes improvements to release versions"
     ]
   },
   {
-    "created_at": "2026-08-01T22:59:22.103131+00:00",
+    "created_at": "2026-08-09T02:32:15.227934+00:00",
     "build": 37,
-    "added_lines": 268,
-    "removed_lines": 19,
-    "changed_files": 7,
+    "added_lines": 19,
+    "removed_lines": 3,
+    "changed_files": 1,
     "changes": [
-      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "SQLite now powers server config, XP levels and economy wallets",
-      "Automatic backups added with manual `/config backup` support",
-      "Health monitoring now tracks event-loop lag and sends admin alerts",
-      "Levels and economy migrate safely from JSON into SQLite",
-      "Added commands: `/backup inspect`, `/backup remote`, `/backup restore`",
-      "Updated command behavior: `/voice pending`",
-      "Updated project files: `SETUP.md`"
+      "Behind-the-scenes improvements to the backup system"
     ]
   },
   {
-    "created_at": "2026-08-01T11:39:07.912108+00:00",
+    "created_at": "2026-08-09T02:14:07.562942+00:00",
     "build": 36,
-    "added_lines": 315,
-    "removed_lines": 46,
+    "added_lines": 123,
+    "removed_lines": 8,
     "changed_files": 4,
     "changes": [
-      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "Automatic backups added with manual `/config backup` support",
-      "Health monitoring now tracks event-loop lag and sends admin alerts",
-      "Updated project files: `SETUP.md`",
-      "Internal engine improvements: `cogs/setup.py`, `cogs/system.py`, `core/backups.py`"
+      "New commands ready to try: `/grant`",
+      "Improved commands — same names, smoother behavior: `/levels backfill run`"
     ]
   },
   {
-    "created_at": "2026-08-01T01:40:13.601860+00:00",
+    "created_at": "2026-08-09T02:05:50.270434+00:00",
     "build": 35,
-    "added_lines": 212,
-    "removed_lines": 167,
-    "changed_files": 6,
-    "changes": [
-      "Setup wizard upgraded with select menus, channel picker and `/config` admin tools",
-      "Automatic backups added with manual `/config backup` support",
-      "Health monitoring now tracks event-loop lag and sends admin alerts",
-      "Removed commands: `/voice export last`, `/voice recover`",
-      "Updated project files: `SETUP.md`"
-    ]
-  },
-  {
-    "created_at": "2026-08-01T00:48:31.613363+00:00",
-    "build": 34,
-    "added_lines": 187,
+    "added_lines": 20,
     "removed_lines": 2,
-    "changed_files": 2,
+    "changed_files": 3,
     "changes": [
-      "Added commands: `/voice recover`",
-      "Updated command behavior: `/voice status`",
-      "Updated project files: `SETUP.md`"
+      "Behind-the-scenes improvements to admin, the setup wizard and the health & status tools"
     ]
   },
   {
-    "created_at": "2026-08-01T00:14:28.047994+00:00",
+    "created_at": "2026-08-09T01:23:21.042602+00:00",
+    "build": 34,
+    "added_lines": 33,
+    "removed_lines": 2,
+    "changed_files": 1,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/resync`"
+    ]
+  },
+  {
+    "created_at": "2026-08-09T01:17:43.738680+00:00",
     "build": 33,
-    "added_lines": 6,
-    "removed_lines": 3,
-    "changed_files": 2,
+    "added_lines": 779,
+    "removed_lines": 8,
+    "changed_files": 8,
     "changes": [
-      "Updated project files: `.env.example`, `SETUP.md`"
+      "New commands ready to try: `/admin audit`, `/admin lock`, `/admin status`, `/admin unlock`, `/guilds`, `/leaveguild`",
+      "Improved commands — same names, smoother behavior: `/backup create`, `/backup inspect`, `/backup list`, `/backup remote`, `/backup restore`, `/backup status`, `/backup test`, `/config backup`, `/maintenance`, `/resync`",
+      "Refreshed docs and examples: `.env.example`, `SETUP.md`"
     ]
   },
   {
-    "created_at": "2026-07-31T23:21:36.146193+00:00",
+    "created_at": "2026-08-06T00:26:25.833949+00:00",
     "build": 32,
-    "added_lines": 11365,
+    "added_lines": 17055,
     "removed_lines": 0,
-    "changed_files": 35,
+    "changed_files": 45,
     "changes": [
       "Initial tracked release for v3.1.0 \"Nova\"",
-      "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/backup create`, `/backup list`, `/backup status`, `/backup test`, `/balance`, `/ban`, `/botinfo`, `/buy` +75 more",
+      "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/backup create`, `/backup inspect`, `/backup list`, `/backup remote`, `/backup restore`, `/backup status`, `/backup test`, `/balance` +90 more",
       "Streaming status rotation is active",
       "GitHub system is connected to `VIK-DD/NovaGuard`"
     ]
