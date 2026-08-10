@@ -17,14 +17,14 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 [![discord.py](https://img.shields.io/badge/discord.py-2.7+-5865F2)](https://discordpy.readthedocs.io/)
 [![SQLite](https://img.shields.io/badge/SQLite-config%20%2B%20state-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![PM2](https://img.shields.io/badge/PM2-keep%20alive-2B037A?logo=pm2&logoColor=white)](https://pm2.keymetrics.io/)
-[![Runs on Raspberry Pi](https://img.shields.io/badge/runs%20on-Raspberry%20Pi-A22846?logo=raspberrypi&logoColor=white)](#-running-on-a-raspberry-pi)
+[![Runs on Raspberry Pi](https://img.shields.io/badge/runs%20on-Raspberry%20Pi-A22846?logo=raspberrypi&logoColor=white)](#running-on-a-raspberry-pi)
 [![CI](https://img.shields.io/github/actions/workflow/status/VIK-DD/NovaGuard/ci.yml?branch=main&label=CI)](https://github.com/VIK-DD/NovaGuard/actions/workflows/ci.yml)
 
-[![Slash commands](https://img.shields.io/badge/slash%20commands-62+-5865F2)](#-command-categories)
-[![GitHub feed](https://img.shields.io/badge/GitHub-feed%20%2B%20cards-181717?logo=github&logoColor=white)](#-github-intelligence)
-[![Auto updates](https://img.shields.io/badge/auto-changelogs-live-0891B2)](#-automatic-updates)
-[![Health checks](https://img.shields.io/badge/doctor-health%20alerts-DC2626)](#-health-monitoring--backups)
-[![AI](https://img.shields.io/badge/AI-Claude%20optional-D97706)](#-ai-assistant-optional)
+[![Slash commands](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.novaguard.fun%2Fapi%2Fv1%2Fstats&query=%24.commands&label=slash%20commands&color=5865F2)](#command-categories)
+[![GitHub feed](https://img.shields.io/badge/GitHub-feed%20%2B%20cards-181717?logo=github&logoColor=white)](#github-intelligence)
+[![Auto updates](https://img.shields.io/badge/changelogs-written%20by%20the%20bot-0891B2)](#automatic-updates)
+[![Health checks](https://img.shields.io/badge/doctor-health%20alerts-DC2626)](#health-monitoring--backups)
+[![AI](https://img.shields.io/badge/AI-Claude%20optional-D97706)](#ai-assistant-optional)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 <br/>
@@ -38,21 +38,21 @@ checks and Raspberry Pi-friendly deployment in one polished Python bot.
 
 ## Table of contents
 
-- [Features](#-features)
-- [Tech stack](#-tech-stack)
-- [Quick start (local)](#-quick-start-local)
-- [Running on a Raspberry Pi](#-running-on-a-raspberry-pi)
-- [Environment configuration](#-environment-configuration)
-- [Setup flow](#-setup-flow)
-- [Command categories](#-command-categories)
-- [GitHub intelligence](#-github-intelligence)
-- [Automatic updates](#-automatic-updates)
-- [Health, monitoring & backups](#-health-monitoring--backups)
-- [AI assistant (optional)](#-ai-assistant-optional)
-- [Project structure](#-project-structure)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Quick start (local)](#quick-start-local)
+- [Running on a Raspberry Pi](#running-on-a-raspberry-pi)
+- [Environment configuration](#environment-configuration)
+- [Setup flow](#setup-flow)
+- [Command categories](#command-categories)
+- [GitHub intelligence](#github-intelligence)
+- [Automatic updates](#automatic-updates)
+- [Health, monitoring & backups](#health-monitoring--backups)
+- [AI assistant (optional)](#ai-assistant-optional)
+- [Project structure](#project-structure)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -364,7 +364,9 @@ Run the bot locally, verify the slash-command flow, and keep changes friendly to
 
 ---
 
-<a id="-license"></a>
+<!-- The heading below is HTML, so GitHub generates no anchor for it. This
+     one is written by hand, and named to match every other section. -->
+<a id="license"></a>
 
 <h2 align="center">License</h2>
 
