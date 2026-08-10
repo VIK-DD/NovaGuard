@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.png" alt="NovaGuard logo" width="170"/>
+<img src="docs/assets/logo-shield.png" alt="NovaGuard logo" width="170"/>
 
 # NovaGuard
 
