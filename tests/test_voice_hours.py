@@ -21,6 +21,7 @@ from core.voice_hours import (  # noqa: E402
     rewardable,
     shift_month,
     split_by_month,
+    voice_payout,
     voice_timezone_name,
 )
 
@@ -214,6 +215,52 @@ class EligibilityTests(unittest.TestCase):
     def test_two_members_together_can_earn(self):
         self.assertTrue(rewardable(2))
         self.assertTrue(rewardable(9))
+
+
+class PayoutTests(unittest.TestCase):
+    def test_an_unfinished_block_pays_nothing_yet(self):
+        coins, xp, remainder = voice_payout(300)
+
+        self.assertEqual((coins, xp), (0, 0))
+        self.assertEqual(remainder, 300)
+
+    def test_a_finished_block_pays_once(self):
+        coins, xp, remainder = voice_payout(600)
+
+        self.assertGreater(coins, 0)
+        self.assertGreater(xp, 0)
+        self.assertEqual(remainder, 0)
+
+    def test_several_blocks_pay_together(self):
+        one, _, _ = voice_payout(600)
+        three, _, _ = voice_payout(1800)
+
+        self.assertEqual(three, one * 3)
+
+    def test_the_remainder_is_carried_rather_than_dropped(self):
+        # Time split across ticks has to pay exactly what the same time in one
+        # stretch would, or a busy server quietly underpays everyone.
+        banked = 0.0
+        paid = 0
+        for _ in range(4):
+            coins, _, banked = voice_payout(banked + 300)
+            paid += coins
+
+        in_one_go, _, _ = voice_payout(1200)
+
+        self.assertEqual(paid, in_one_go)
+
+    def test_nothing_banked_pays_nothing(self):
+        self.assertEqual(voice_payout(0), (0, 0, 0.0))
+        self.assertEqual(voice_payout(None), (0, 0, 0.0))
+
+    def test_negative_time_cannot_pay(self):
+        self.assertEqual(voice_payout(-5000), (0, 0, 0.0))
+
+    def test_the_rate_can_be_overridden_for_a_calculation(self):
+        coins, xp, _ = voice_payout(600, block=600, coins=100, xp=7)
+
+        self.assertEqual((coins, xp), (100, 7))
 
 
 class LedgerStorageTests(unittest.TestCase):

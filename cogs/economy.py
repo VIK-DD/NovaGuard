@@ -134,6 +134,18 @@ class Economy(commands.Cog):
         wallet = self.wallet_snapshot(guild_id, user_id)
         return shop.worn_title(wallet) if wallet else None
 
+    async def award_coins(self, guild_id, user_id, amount) -> int:
+        """Pay a member for something earned outside this cog.
+
+        Voice time uses this. It goes through the wallet rather than the
+        database directly so the balance in memory, the one every command
+        reads, is the one that changed.
+        """
+        wallet = get_wallet(self.data, guild_id, user_id)
+        wallet["coins"] = max(0, int(wallet.get("coins", 0)) + int(amount))
+        await self._save(guild_id, user_id)
+        return wallet["coins"]
+
     @tasks.loop(seconds=ECONOMY_FLUSH_SECONDS)
     async def flush_loop(self):
         try:

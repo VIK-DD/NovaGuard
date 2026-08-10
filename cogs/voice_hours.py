@@ -29,12 +29,17 @@ from core.database import (
 )
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.voice_hours import (
+    COINS_PER_BLOCK,
+    PAYOUT_BLOCK_SECONDS,
+    XP_PER_BLOCK,
     counts_towards_hours,
     current_month,
     format_hours,
     month_label,
+    rewardable,
     shift_month,
     split_by_month,
+    voice_payout,
     voice_timezone,
 )
 
@@ -71,6 +76,11 @@ class VoiceHours(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.last_tick: datetime | None = None
+        # Voice time banked but not yet worth a payout, per member. Kept in
+        # memory on purpose: a restart costs someone at most one unfinished
+        # block, which is not worth a wallet write every five minutes for
+        # everyone who happens to be in a call.
+        self.unpaid: dict[tuple[str, str], float] = {}
 
     async def cog_load(self):
         self.ledger_tick.start()
@@ -78,8 +88,13 @@ class VoiceHours(commands.Cog):
     async def cog_unload(self):
         self.ledger_tick.cancel()
 
-    def collect(self, elapsed: float) -> list[tuple[str, str, list[tuple[str, float]]]]:
-        """Who is in voice right now, and which months their time belongs to."""
+    def collect(self, elapsed: float) -> list[dict]:
+        """Who is in voice right now, and whether their time also earns.
+
+        Alone in a channel still counts towards the hours - it happened - but
+        does not pay, or an idle mic would be the best-paying thing on the
+        server.
+        """
         ended_at = now_utc()
         buckets = split_by_month(ended_at - timedelta(seconds=elapsed), ended_at, voice_timezone())
         if not buckets:
@@ -90,10 +105,39 @@ class VoiceHours(commands.Cog):
             afk_id = guild.afk_channel.id if guild.afk_channel else None
             for channel in [*guild.voice_channels, *guild.stage_channels]:
                 is_afk = channel.id == afk_id
-                for member in channel.members:
-                    if counts_towards_hours(member_record(member), channel_is_afk=is_afk):
-                        rows.append((str(guild.id), str(member.id), buckets))
+                present = [
+                    member
+                    for member in channel.members
+                    if counts_towards_hours(member_record(member), channel_is_afk=is_afk)
+                ]
+                earns = rewardable(len(present))
+                for member in present:
+                    rows.append(
+                        {
+                            "guild": guild,
+                            "guild_id": str(guild.id),
+                            "user_id": str(member.id),
+                            "buckets": buckets,
+                            "earns": earns,
+                        }
+                    )
         return rows
+
+    async def _pay(self, row: dict, elapsed: float):
+        """Bank a member's time and pay out whatever whole blocks it completes."""
+        key = (row["guild_id"], row["user_id"])
+        coins, xp, remainder = voice_payout(self.unpaid.get(key, 0.0) + elapsed)
+        self.unpaid[key] = remainder
+        if not coins and not xp:
+            return
+
+        economy = self.bot.get_cog("Economy")
+        if economy is not None and coins:
+            await economy.award_coins(row["guild_id"], row["user_id"], coins)
+
+        levels = self.bot.get_cog("Levels")
+        if levels is not None and xp:
+            levels.award_voice_xp(row["guild"], row["user_id"], xp)
 
     @tasks.loop(seconds=TICK_SECONDS)
     async def ledger_tick(self):
@@ -109,8 +153,19 @@ class VoiceHours(commands.Cog):
             return
 
         try:
-            for guild_id, user_id, buckets in self.collect(elapsed):
-                await asyncio.to_thread(add_voice_seconds, guild_id, user_id, buckets)
+            rows = self.collect(elapsed)
+            for row in rows:
+                await asyncio.to_thread(
+                    add_voice_seconds, row["guild_id"], row["user_id"], row["buckets"]
+                )
+                if row["earns"]:
+                    await self._pay(row, elapsed)
+
+            # Members who left keep nothing banked: their part-block is gone
+            # with them, and holding it would let someone bank minutes across
+            # an evening of joining and leaving.
+            live = {(row["guild_id"], row["user_id"]) for row in rows}
+            self.unpaid = {key: value for key, value in self.unpaid.items() if key in live}
         except Exception as error:
             # Losing a tick is a rounding error. Letting the exception out
             # would stop every future tick for the life of the process.
@@ -189,6 +244,13 @@ class VoiceHours(commands.Cog):
                 inline=False,
             )
 
+        per_hour = 3600 // PAYOUT_BLOCK_SECONDS
+        embed.add_field(
+            name="Time pays",
+            value=f"-# `{COINS_PER_BLOCK * per_hour}` coins and `{XP_PER_BLOCK * per_hour}` XP"
+            " an hour, while someone else is in the channel with you.",
+            inline=False,
+        )
         brand_footer(embed, f"Measured in {tz.key}")
         await interaction.response.send_message(embed=embed)
 

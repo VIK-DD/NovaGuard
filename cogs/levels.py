@@ -520,6 +520,28 @@ class Levels(commands.Cog):
             print(f"XP multiplier lookup skipped: {error!r}")
             return 1.0
 
+    def award_voice_xp(self, guild, user_id, amount) -> bool:
+        """Credit XP earned in voice, if this server has levels switched on.
+
+        Deliberately does not announce a level-up: there is no channel the
+        member was talking in, and picking one to shout into would be the bot
+        interrupting a conversation it was not part of. The new level is
+        waiting on /rank.
+        """
+        if amount <= 0:
+            return False
+        config = resolve_levels(get_guild_settings(guild.id))
+        if not config["enabled"]:
+            return False
+
+        guild_data = self.data.setdefault(str(guild.id), {})
+        record = guild_data.setdefault(
+            str(user_id), {"xp": 0, "messages": 0, "last_gain": None}
+        )
+        record["xp"] = record.get("xp", 0) + int(amount)
+        self.dirty_keys.add((str(guild.id), str(user_id)))
+        return True
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or message.guild is None or message.webhook_id:

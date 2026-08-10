@@ -133,6 +133,33 @@ def rewardable(member_count: int) -> bool:
     return member_count >= 2
 
 
+# Voice time is paid in blocks rather than per tick. A tick is five minutes
+# and the hourly rates do not divide into it evenly, so paying per tick would
+# round away a slice of every payment; a block that divides cleanly does not.
+PAYOUT_BLOCK_SECONDS = 600
+COINS_PER_BLOCK = 8
+XP_PER_BLOCK = 10
+
+
+def voice_payout(
+    unpaid_seconds: float,
+    *,
+    block: int = PAYOUT_BLOCK_SECONDS,
+    coins: int = COINS_PER_BLOCK,
+    xp: int = XP_PER_BLOCK,
+) -> tuple[int, int, float]:
+    """Turn banked voice time into ``(coins, xp, seconds still owed)``.
+
+    The remainder is handed back rather than dropped, so ten minutes spread
+    over three ticks pays exactly the same as ten minutes in one.
+    """
+    banked = max(0.0, float(unpaid_seconds or 0))
+    blocks = int(banked // block)
+    if blocks <= 0:
+        return 0, 0, banked
+    return blocks * coins, blocks * xp, banked - blocks * block
+
+
 def format_hours(seconds: float) -> str:
     """``9420`` as ``2h 37m``. Hours lead the format even when the total is
     under one, because hours are what the command is named after."""
