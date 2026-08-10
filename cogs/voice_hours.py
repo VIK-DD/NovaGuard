@@ -19,6 +19,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from cogs.voice import VOICE_REPORT_CHANNEL_KEY
 from core.database import (
     add_voice_seconds,
     voice_member_history,
@@ -27,6 +28,7 @@ from core.database import (
     voice_month_summary,
     voice_month_total,
 )
+from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.voice_hours import (
     COINS_PER_BLOCK,
@@ -39,6 +41,7 @@ from core.voice_hours import (
     month_label,
     month_window,
     projected_total,
+    recap_due,
     rewardable,
     shift_month,
     split_by_month,
@@ -53,6 +56,11 @@ TICK_SECONDS = 300
 MAX_TICK_CREDIT_SECONDS = TICK_SECONDS * 2
 LEADERBOARD_SIZE = 10
 HISTORY_MONTHS = 6
+# Checked hourly rather than once a day, so a bot that was offline exactly at
+# midnight on the 1st still catches up within the hour instead of waiting a
+# full day for the next chance.
+RECAP_CHECK_SECONDS = 3600
+RECAP_LAST_POSTED_KEY = "voice_recap_last_month"
 
 
 def now_utc() -> datetime:
@@ -87,9 +95,11 @@ class VoiceHours(commands.Cog):
 
     async def cog_load(self):
         self.ledger_tick.start()
+        self.recap_check.start()
 
     async def cog_unload(self):
         self.ledger_tick.cancel()
+        self.recap_check.cancel()
 
     def collect(self, elapsed: float) -> list[dict]:
         """Who is in voice right now, and whether their time also earns.
@@ -176,6 +186,88 @@ class VoiceHours(commands.Cog):
 
     @ledger_tick.before_loop
     async def before_ledger_tick(self):
+        await self.bot.wait_until_ready()
+
+    def _leaderboard_embed(self, title: str, board: list[dict], footer: str) -> discord.Embed:
+        """The ranked list /voicetop shows, and the monthly recap posts unasked.
+
+        One builder for both, so the recap looks like the leaderboard a member
+        would have pulled up themselves rather than a second, different-looking
+        format nobody asked for.
+        """
+        if not board:
+            embed = make_embed(title, "Nobody was in voice.", color=Palette.PRIMARY)
+            brand_footer(embed, footer)
+            return embed
+
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        embed = make_embed(
+            title,
+            "\n".join(
+                f"{medals.get(index, f'`#{index}`')} <@{row['user_id']}>"
+                f" — `{format_hours(row['seconds'])}`"
+                for index, row in enumerate(board, 1)
+            ),
+            color=Palette.PRIMARY,
+        )
+        brand_footer(embed, footer)
+        return embed
+
+    async def _recap_guild(self, guild: discord.Guild):
+        """Post last month's leaderboard once, the first time it is checked
+        after that month has finished."""
+        tz = voice_timezone()
+        target_month = shift_month(current_month(tz), -1)
+
+        settings = get_guild_settings(guild.id)
+        if not recap_due(settings.get(RECAP_LAST_POSTED_KEY), target_month):
+            return
+
+        channel_id = settings.get(VOICE_REPORT_CHANNEL_KEY)
+        if not channel_id:
+            # Nowhere to post, and nothing to catch up on: recap goes to the
+            # same channel as session reports, and a server that never set
+            # one gets no automatic messages from this cog either.
+            return
+        channel = guild.get_channel(int(channel_id)) if str(channel_id).isdigit() else None
+        if not isinstance(channel, discord.TextChannel):
+            return
+
+        board = await asyncio.to_thread(
+            voice_month_leaderboard, guild.id, target_month, LEADERBOARD_SIZE
+        )
+        # An empty month (no report channel until partway through, or a quiet
+        # month) still marks the recap done - there is nothing to show, and
+        # re-checking it every hour forever would be pure waste.
+        if board:
+            summary = await asyncio.to_thread(voice_month_summary, guild.id, target_month)
+            embed = self._leaderboard_embed(
+                f"🎧 Voice recap • {month_label(target_month)}",
+                board,
+                f"Server total {format_hours(summary['seconds'])} · Measured in {tz.key}",
+            )
+            try:
+                await channel.send(embed=embed)
+            except discord.HTTPException as error:
+                # A send failure should not lose the month permanently, only
+                # delay it to the next hourly check.
+                print(f"Voice recap send failed for guild {guild.id}: {error!r}")
+                return
+
+        update_guild_settings(guild.id, **{RECAP_LAST_POSTED_KEY: target_month})
+
+    @tasks.loop(seconds=RECAP_CHECK_SECONDS)
+    async def recap_check(self):
+        for guild in self.bot.guilds:
+            try:
+                await self._recap_guild(guild)
+            except Exception as error:
+                # One guild's bad state (missing channel, storage hiccup)
+                # must not stop every other guild's recap from being checked.
+                print(f"Voice recap check skipped for guild {guild.id}: {error!r}")
+
+    @recap_check.before_loop
+    async def before_recap_check(self):
         await self.bot.wait_until_ready()
 
     @app_commands.command(name="voicehours", description="Voice hours banked so far this month")
@@ -299,27 +391,10 @@ class VoiceHours(commands.Cog):
             voice_month_leaderboard, interaction.guild_id, key, LEADERBOARD_SIZE
         )
 
-        if not board:
-            embed = make_embed(
-                f"🎧 Voice leaderboard • {window['label']}",
-                "Nobody has been in voice yet this month.",
-                color=Palette.PRIMARY,
-            )
-            brand_footer(embed, f"Measured in {tz.key}")
-            return await interaction.response.send_message(embed=embed)
-
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-        embed = make_embed(
-            f"🎧 Voice leaderboard • {window['label']}",
-            "\n".join(
-                f"{medals.get(index, f'`#{index}`')} <@{row['user_id']}>"
-                f" — `{format_hours(row['seconds'])}`"
-                for index, row in enumerate(board, 1)
-            ),
-            color=Palette.PRIMARY,
-        )
         note = f" · {window['remaining']} day(s) left" if window["current"] else ""
-        brand_footer(embed, f"Measured in {tz.key}{note}")
+        embed = self._leaderboard_embed(
+            f"🎧 Voice leaderboard • {window['label']}", board, f"Measured in {tz.key}{note}"
+        )
         await interaction.response.send_message(embed=embed)
 
 

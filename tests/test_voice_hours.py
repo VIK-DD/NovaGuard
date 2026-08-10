@@ -21,6 +21,7 @@ from core.voice_hours import (  # noqa: E402
     month_label,
     month_window,
     projected_total,
+    recap_due,
     rewardable,
     shift_month,
     split_by_month,
@@ -292,6 +293,22 @@ class PaceTests(unittest.TestCase):
 
     def test_nothing_banked_projects_to_nothing(self):
         self.assertEqual(projected_total(0, 10, 31), 0.0)
+
+
+class RecapDueTests(unittest.TestCase):
+    def test_a_month_never_posted_is_due(self):
+        self.assertTrue(recap_due(None, "2026-07"))
+
+    def test_the_same_month_twice_is_not_due(self):
+        self.assertFalse(recap_due("2026-07", "2026-07"))
+
+    def test_a_new_completed_month_is_due(self):
+        self.assertTrue(recap_due("2026-06", "2026-07"))
+
+    def test_catching_up_after_being_offline_is_still_just_due_once(self):
+        # Whether the bot checked on day 1 or day 5 after downtime, the
+        # question is only ever "have we posted this exact month yet?".
+        self.assertTrue(recap_due("2026-05", "2026-07"))
 
 
 class PayoutTests(unittest.TestCase):

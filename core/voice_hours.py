@@ -222,5 +222,16 @@ def format_hours(seconds: float) -> str:
     return f"{total}s"
 
 
+def recap_due(last_posted_month: str | None, target_month: str) -> bool:
+    """Whether the monthly recap for ``target_month`` still needs posting.
+
+    A guild's "last posted" month is the only state this needs: as soon as it
+    stops matching the month that just finished, one recap is owed - whether
+    that is because the month rolled over on schedule or because the bot was
+    offline through the 1st and is only now catching up.
+    """
+    return last_posted_month != target_month
+
+
 def decimal_hours(seconds: float) -> float:
     return round(max(0.0, float(seconds or 0)) / 3600, 2)
