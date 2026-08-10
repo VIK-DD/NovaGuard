@@ -5,15 +5,15 @@ const OK_GREEN = "#3d8a57";
 const STATUS_CACHE_KEY = "ng-status-snapshot-v1";
 const STATUS_CACHE_TTL_MS = 10 * 60_000;
 
-// The bot's own version (currently 3.1.0 "Nova") is an internal number for
-// Discord and means nothing to a visitor here. What belongs on a public
-// status page is the release version shown on /updates - fixed at build
-// time from the baked-in archive, so it is computed once rather than
-// re-derived on every live poll below.
+// The baked release is an offline fallback. A healthy status snapshot replaces
+// it with the canonical release calculated by the bot from its live update
+// history, so 2.0 -> 2.1 propagates without a website rebuild.
 const PUBLIC_RELEASE = currentRelease(archive as Parameters<typeof currentRelease>[0]);
 
 type StatusStats = {
   version: string;
+  phase_label?: string;
+  release_label?: string;
   codename: string;
   guilds: number;
   members: number;
@@ -91,6 +91,7 @@ const applySnapshot = (snapshot: StatusSnapshot) => {
   );
   setDot(allGood ? OK_GREEN : "hsl(var(--primary))");
   set("status", allGood ? "Operational" : "Degraded");
+  set("version", stats.release_label ?? `${stats.version} · ${stats.phase_label ?? "Open Beta"}`);
   set("uptime", fmtUptime(uptime));
   set("guilds", fmt(stats.guilds));
   set("members", fmt(stats.members));

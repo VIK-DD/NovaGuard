@@ -1,12 +1,17 @@
 ---
 import HeroVisual from "./HeroVisualStatic.astro";
+import archive from "../data/updates-archive.json";
+import { currentRelease } from "../data/releases";
+import type { Release } from "../data/updates";
+
+const release = currentRelease(archive as Release[]);
 ---
 
 <section>
   <div class="mx-auto grid max-w-6xl gap-8 px-5 py-14 sm:gap-10 sm:px-6 sm:py-28 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-6">
     <div>
       <p data-hero-item class="font-mono text-xs tracking-[0.14em] text-primary uppercase">
-        NovaGuard — v3.0.0 "Nova"
+        NovaGuard — <span data-public-release>v{release.version} {release.phaseLabel}</span>
       </p>
       <h1
         data-hero-item
@@ -41,3 +46,17 @@ import HeroVisual from "./HeroVisualStatic.astro";
     <HeroVisual />
   </div>
 </section>
+
+<script is:inline>
+  (() => {
+    const target = document.querySelector("[data-public-release]");
+    const getLiveStats = window.__ngGetLiveStats;
+    if (!target || typeof getLiveStats !== "function") return;
+    getLiveStats()
+      .then((stats) => {
+        const release = stats.release_label ?? `${stats.version} ${stats.phase_label ?? "Open Beta"}`;
+        target.textContent = `v${release}`;
+      })
+      .catch(() => {});
+  })();
+</script>

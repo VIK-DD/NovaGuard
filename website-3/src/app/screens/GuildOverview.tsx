@@ -132,7 +132,9 @@ function SystemStatusPanel({ data, setupPercent }: { data: Dashboard; setupPerce
 
           <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2">
             <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Version</p>
-            <p className="mt-1 truncate text-sm font-semibold">v{data.status.version}</p>
+            <p className="mt-1 truncate text-sm font-semibold">
+              v{data.status.version}{data.status.phase_label ? ` · ${data.status.phase_label}` : ""}
+            </p>
           </div>
 
           <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2 sm:col-span-2 lg:col-span-1">
@@ -229,7 +231,11 @@ function GuildHero({ data }: { data: Dashboard }) {
             <Stat label="Members" value={compactNumber(data.guild.member_count)} />
             <Stat label="Commands" value={String(data.status.commands)} />
             <Stat label="Uptime" value={duration(data.status.uptime_seconds)} />
-            <Stat label="Tracked XP" value={compactNumber(data.levels.tracked_members)} />
+            <Stat
+              label="Total XP"
+              value={compactNumber(data.levels.total_xp ?? 0)}
+              sub={`${compactNumber(data.levels.tracked_members)} tracked members`}
+            />
           </div>
         </div>
         <div className="mt-3">
@@ -416,7 +422,11 @@ export default function GuildOverview() {
                 ))}
               </ol>
             ) : (
-              <p className="text-sm text-ink-muted">No XP records yet.</p>
+              <p className="text-sm text-ink-muted">
+                {data.levels.enabled
+                  ? "XP is enabled, but no eligible messages have been recorded for this server yet."
+                  : "Levels are disabled for this server."}
+              </p>
             )}
           </Card>
 

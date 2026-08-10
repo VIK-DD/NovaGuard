@@ -47,8 +47,8 @@ const totalUpdates = (archive as Release[]).length;
             <div>
               <dt class="text-xs tracking-wider text-ink-faint uppercase">Current</dt>
               <dd class="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                {live.version}
-                <span class="ml-2 align-middle text-xs font-medium tracking-wider text-primary uppercase">
+                <span data-current-release-version>{live.version}</span>
+                <span data-current-release-phase class="ml-2 align-middle text-xs font-medium tracking-wider text-primary uppercase">
                   {live.phaseLabel}
                 </span>
               </dd>
@@ -66,6 +66,7 @@ const totalUpdates = (archive as Release[]).length;
               </dd>
             </div>
           </dl>
+          <p data-release-sync-note hidden class="mt-4 text-sm text-ink-muted" aria-live="polite"></p>
         )
       }
 
@@ -92,3 +93,31 @@ const totalUpdates = (archive as Release[]).length;
   </main>
   <Footer />
 </Base>
+
+<script is:inline>
+  (() => {
+    const versionNode = document.querySelector("[data-current-release-version]");
+    const phaseNode = document.querySelector("[data-current-release-phase]");
+    const note = document.querySelector("[data-release-sync-note]");
+    const getLiveStats = window.__ngGetLiveStats;
+    if (!versionNode || !phaseNode || typeof getLiveStats !== "function") return;
+    getLiveStats()
+      .then((stats) => {
+        versionNode.textContent = stats.version;
+        phaseNode.textContent = stats.phase_label || "Open Beta";
+        const matchingCard = document.querySelector(
+          `[data-release-version="${CSS.escape(stats.version)}"]`,
+        );
+        document.querySelectorAll("[data-current-release-marker]").forEach((marker) => {
+          marker.hidden = !matchingCard || !matchingCard.contains(marker);
+        });
+        if (!matchingCard && note) {
+          note.hidden = false;
+          note.textContent =
+            `Release ${stats.version} ${stats.phase_label || "Open Beta"} is live. ` +
+            "Its detailed changelog is syncing into the archive.";
+        }
+      })
+      .catch(() => {});
+  })();
+</script>

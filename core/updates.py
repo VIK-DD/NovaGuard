@@ -14,7 +14,8 @@ from datetime import UTC, datetime
 import aiohttp
 import discord
 
-from .config import BASE_DIR, BOT_CODENAME, BOT_VERSION, UPDATE_STATE_FILE, github_config
+from .config import BASE_DIR, UPDATE_STATE_FILE, github_config
+from .release_versions import current_project_release
 from .guild_config import resolve_configured_channels
 from .storage import load_json_file, save_json_file
 from .theme import Palette
@@ -335,7 +336,8 @@ def summarize_changes(old_files, new_files, has_history=False):
             ]
         else:
             command_names = sorted(extract_all_commands(new_files))
-            summary = [f"Initial tracked release for v{BOT_VERSION} \"{BOT_CODENAME}\""]
+            release = current_project_release()
+            summary = [f"Initial tracked release for v{release['version']} {release['phase_label']}"]
             if command_names:
                 summary.append("Available slash commands: " + format_command_list(command_names))
             if extract_all_stream_texts(new_files):
@@ -522,6 +524,20 @@ def public_build_number(update_entry, update_history=None):
     return update_entry.get("build", "?")
 
 
+def public_release_text(update_history=None, latest=None):
+    """Version text for update embeds, derived from the same release history."""
+    if update_history is None and latest is None:
+        release = current_project_release()
+    else:
+        release = current_project_release(
+            {
+                "history": list(update_history or []),
+                "latest": latest,
+            }
+        )
+    return f"v{release['version']} {release['phase_label']}"
+
+
 def clamp(text, limit=1024):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
@@ -536,6 +552,7 @@ def bullet_list(items):
 
 def build_code_update_embed(update_entry, update_history=None):
     build_number = public_build_number(update_entry, update_history)
+    release_text = public_release_text(update_history, update_entry)
     summary_items = update_entry.get("summary", []) or ["General improvements"]
     highlight_items = [item for item in summary_items if is_release_highlight(item)]
     change_items = [item for item in summary_items if not is_release_highlight(item)]
@@ -575,7 +592,7 @@ def build_code_update_embed(update_entry, update_history=None):
     if update_entry.get("build"):
         embed.add_field(
             name="🏗️ Build",
-            value=f"`#{build_number}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
+            value=f"`#{build_number}` • {release_text}",
             inline=True,
         )
     embed.set_footer(text=f"{github_config.brand_name} • Automatic update summary")
@@ -584,6 +601,7 @@ def build_code_update_embed(update_entry, update_history=None):
 
 def build_restart_update_embed(update_entry, update_history=None):
     build_number = public_build_number(update_entry, update_history)
+    release_text = public_release_text(update_history, update_entry)
     summary_items = update_entry.get("summary", []) or ["General improvements"]
     highlight_items = [item for item in summary_items if is_release_highlight(item)]
     change_items = [item for item in summary_items if not is_release_highlight(item)]
@@ -596,7 +614,7 @@ def build_restart_update_embed(update_entry, update_history=None):
     )
     embed.add_field(
         name="🏗️ Live Build",
-        value=f"`#{build_number}` • v{BOT_VERSION} \"{BOT_CODENAME}\"",
+        value=f"`#{build_number}` • {release_text}",
         inline=True,
     )
     embed.add_field(
@@ -622,6 +640,7 @@ def build_update_history_overview_embed(update_history):
     first_update = update_history[0]
     latest_time = parse_github_datetime(latest_update.get("created_at"))
     first_time = parse_github_datetime(first_update.get("created_at"))
+    release_text = public_release_text(update_history, latest_update)
 
     embed = discord.Embed(
         title="📜 Bot Release Timeline",
@@ -642,7 +661,7 @@ def build_update_history_overview_embed(update_history):
         name="Current Build",
         value=(
             f"Build: `#{public_build_number(latest_update, update_history)}`\n"
-            f"Version: `v{BOT_VERSION} \"{BOT_CODENAME}\"`\n"
+            f"Version: `{release_text}`\n"
             f"Tracked files: `{len(tracked_files())}`\n"
             f"Primary repo: `{github_config.primary_repo or 'Not set'}`"
         ),

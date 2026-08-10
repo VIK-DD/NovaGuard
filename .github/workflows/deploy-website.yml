@@ -6,6 +6,13 @@ on:
       - main
     paths:
       - "website-3/**"
+      - "core/release_versions.py"
+      - "core/updates_archive.json"
+  # Refresh the baked release archive even when a runtime update did not touch
+  # website files. Live badges update immediately through /stats; detailed
+  # release notes catch up here within an hour.
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 jobs:

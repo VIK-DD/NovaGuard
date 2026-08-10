@@ -27,6 +27,7 @@ function span(group: ReleaseGroup): string {
   {
     groups.map((group, index) => (
       <details
+        data-release-version={group.version}
         class="group release-item rounded-[var(--radius)] border border-line bg-card transition-colors duration-300 hover:border-line-strong"
         open={index === 0}
       >
@@ -41,10 +42,10 @@ function span(group: ReleaseGroup): string {
                 group.current ? "bg-primary-soft text-primary" : "border border-line text-ink-faint",
               ]}
             >
-              {group.phaseLabel}
+              <span data-release-phase>{group.phaseLabel}</span>
             </span>
             {group.current && (
-              <span class="hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex">
+              <span data-current-release-marker class="hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex">
                 <span class="live-dot size-1.5 rounded-full bg-good" />
                 Current
               </span>

@@ -223,7 +223,13 @@ async def main():
 
         async with http.get(f"{V1}/stats") as r:
             data = await r.json()
-            await check("stats fields", r.status == 200 and {"version", "guilds", "commands"} <= set(data))
+            await check(
+                "stats expose canonical public release",
+                r.status == 200
+                and data.get("version") == "2.0"
+                and data.get("phase_label") == "Open Beta"
+                and {"release_label", "runtime_version", "guilds", "commands"} <= set(data),
+            )
 
         # ── error envelope carries a machine-readable code (fix #2) ───
         async with http.get(f"{V1}/me") as r:

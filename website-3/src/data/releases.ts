@@ -87,6 +87,7 @@ function highlightsOf(release: Release): string[] {
 
 /** Whether this update should push the version number forward. */
 export function isSignificant(release: Release): boolean {
+  if (typeof release.significant === "boolean") return release.significant;
   return highlightsOf(release).some((item) => {
     const text = (item ?? "").trim();
     if (!text) return false;
@@ -209,7 +210,9 @@ export function releaseGroups(releases: Release[]): ReleaseGroup[] {
     // Newest update first inside a version: people read the latest change
     // before the one that opened the version weeks earlier.
     group.updates.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-    group.current = index === 0;
+    // Alpha is closed. If the baked archive has not yet received its first
+    // beta update, 1.9 is history rather than the current release.
+    group.current = index === 0 && group.phase === BETA_PHASE;
   }
   return ordered;
 }
@@ -217,7 +220,7 @@ export function releaseGroups(releases: Release[]): ReleaseGroup[] {
 /** The version the project is on right now. */
 export function currentRelease(releases: Release[]): { version: string; phaseLabel: string } {
   const groups = releaseGroups(releases);
-  if (!groups.length) {
+  if (!groups.length || groups[0].phase !== BETA_PHASE) {
     return { version: `${BETA_MAJOR}.0`, phaseLabel: PHASE_LABELS[BETA_PHASE] };
   }
   return { version: groups[0].version, phaseLabel: groups[0].phaseLabel };

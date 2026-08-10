@@ -8,7 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 UPDATE_STATE_FILE = BASE_DIR / ".update_state.json"
 GITHUB_STATE_FILE = BASE_DIR / ".github_state.json"
 
-BOT_VERSION = "3.1.0"
+# Internal runtime/API generation. This is deliberately not the public product
+# version: the public release is derived from the update history in
+# core.release_versions and advances automatically (2.0, 2.1, ...).
+BOT_RUNTIME_VERSION = "3.1.0"
+# Backwards-compatible alias for older integrations. New user-facing code must
+# use current_project_release() instead of displaying this value.
+BOT_VERSION = BOT_RUNTIME_VERSION
 BOT_CODENAME = "Nova"
 STREAM_URL = "https://www.twitch.tv/the8bitdrummer"
 
