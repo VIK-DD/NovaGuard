@@ -14,10 +14,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.voice_hours import (  # noqa: E402
     counts_towards_hours,
     current_month,
+    daily_pace,
     decimal_hours,
     format_hours,
     month_key,
     month_label,
+    month_window,
+    projected_total,
     rewardable,
     shift_month,
     split_by_month,
@@ -215,6 +218,80 @@ class EligibilityTests(unittest.TestCase):
     def test_two_members_together_can_earn(self):
         self.assertTrue(rewardable(2))
         self.assertTrue(rewardable(9))
+
+
+class MonthWindowTests(unittest.TestCase):
+    """The command answers "so far this month", so it has to say how far."""
+
+    def test_a_running_month_counts_only_the_days_that_happened(self):
+        window = month_window("2026-08", utc(2026, 8, 10, 12), CHISINAU)
+
+        self.assertTrue(window["current"])
+        self.assertEqual(window["elapsed"], 10)
+        self.assertEqual(window["days"], 31)
+        self.assertEqual(window["remaining"], 21)
+        self.assertEqual(window["label"], "1–10 August 2026")
+
+    def test_a_finished_month_covers_all_of_its_days(self):
+        window = month_window("2026-07", utc(2026, 8, 10, 12), CHISINAU)
+
+        self.assertFalse(window["current"])
+        self.assertEqual(window["elapsed"], 31)
+        self.assertEqual(window["remaining"], 0)
+
+    def test_short_months_are_not_assumed_to_have_thirty_one_days(self):
+        self.assertEqual(month_window("2026-02", utc(2026, 3, 1), CHISINAU)["days"], 28)
+        self.assertEqual(month_window("2026-04", utc(2026, 5, 1), CHISINAU)["days"], 30)
+
+    def test_a_leap_february_has_its_extra_day(self):
+        self.assertEqual(month_window("2028-02", utc(2028, 3, 1), CHISINAU)["days"], 29)
+
+    def test_the_first_day_of_a_month_is_day_one_not_day_zero(self):
+        window = month_window("2026-08", utc(2026, 8, 1, 6), CHISINAU)
+
+        self.assertEqual(window["elapsed"], 1)
+        self.assertEqual(window["label"], "1–1 August 2026")
+
+    def test_late_utc_on_the_last_day_is_already_the_next_month_locally(self):
+        # 21:30 UTC on 31 July is 00:30 on 1 August in Chisinau, so August is
+        # the month that is running.
+        window = month_window("2026-08", utc(2026, 7, 31, 21, 30), CHISINAU)
+
+        self.assertTrue(window["current"])
+        self.assertEqual(window["elapsed"], 1)
+
+    def test_a_month_that_has_not_started_has_banked_nothing(self):
+        window = month_window("2026-12", utc(2026, 8, 10), CHISINAU)
+
+        self.assertEqual(window["elapsed"], 0)
+        self.assertFalse(window["current"])
+
+    def test_a_broken_key_does_not_crash_the_command(self):
+        window = month_window("nonsense", utc(2026, 8, 10), CHISINAU)
+
+        self.assertEqual(window["days"], 0)
+        self.assertFalse(window["current"])
+
+
+class PaceTests(unittest.TestCase):
+    def test_pace_is_the_average_across_the_days_so_far(self):
+        self.assertEqual(daily_pace(36000, 10), 3600.0)
+
+    def test_a_month_with_no_elapsed_days_has_no_pace(self):
+        # Guards the division rather than letting the command raise.
+        self.assertEqual(daily_pace(36000, 0), 0.0)
+        self.assertEqual(daily_pace(36000, -3), 0.0)
+
+    def test_the_projection_extends_the_pace_to_the_end_of_the_month(self):
+        # An hour a day for ten days projects to 31 hours across August.
+        self.assertEqual(projected_total(36000, 10, 31), 3600.0 * 31)
+
+    def test_a_projection_needs_days_to_extend_from(self):
+        self.assertEqual(projected_total(36000, 0, 31), 0.0)
+        self.assertEqual(projected_total(36000, 10, 0), 0.0)
+
+    def test_nothing_banked_projects_to_nothing(self):
+        self.assertEqual(projected_total(0, 10, 31), 0.0)
 
 
 class PayoutTests(unittest.TestCase):

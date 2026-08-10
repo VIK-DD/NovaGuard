@@ -34,8 +34,11 @@ from core.voice_hours import (
     XP_PER_BLOCK,
     counts_towards_hours,
     current_month,
+    daily_pace,
     format_hours,
     month_label,
+    month_window,
+    projected_total,
     rewardable,
     shift_month,
     split_by_month,
@@ -175,13 +178,13 @@ class VoiceHours(commands.Cog):
     async def before_ledger_tick(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="vh", description="See voice hours for this month")
+    @app_commands.command(name="voicehours", description="Voice hours banked so far this month")
     @app_commands.describe(
         member="Whose hours? (defaults to you)",
         month="How far back? 0 is this month, 1 is last month",
     )
     @app_commands.guild_only()
-    async def vh(
+    async def voicehours(
         self,
         interaction: discord.Interaction,
         member: discord.Member | None = None,
@@ -190,6 +193,7 @@ class VoiceHours(commands.Cog):
         target = member or interaction.user
         tz = voice_timezone()
         key = shift_month(current_month(tz), -int(month))
+        window = month_window(key, tz=tz)
         guild_id = interaction.guild_id
 
         totals = await asyncio.to_thread(voice_month_total, guild_id, target.id, key)
@@ -198,7 +202,7 @@ class VoiceHours(commands.Cog):
 
         if seconds <= 0:
             embed = make_embed(
-                f"🎧 Voice hours • {month_label(key)}",
+                f"🎧 Voice hours • {window['label']}",
                 f"{target.mention} has no voice time recorded for {month_label(key)}.",
                 color=Palette.PRIMARY,
             )
@@ -215,9 +219,16 @@ class VoiceHours(commands.Cog):
             voice_member_history, guild_id, target.id, HISTORY_MONTHS
         )
 
+        # The month is named with the days it actually covers, because someone
+        # asking on the 10th wants what they have banked so far, not a figure
+        # that reads like the finished month.
+        counted = (
+            f"day 1 to day {window['elapsed']}" if window["current"] else "the whole month"
+        )
         embed = make_embed(
-            f"🎧 Voice hours • {month_label(key)}",
-            f"{target.mention} spent **{format_hours(seconds)}** in voice.",
+            f"🎧 Voice hours • {window['label']}",
+            f"{target.mention} has **{format_hours(seconds)}** in voice"
+            f" across {counted}.",
             color=Palette.PRIMARY,
         )
         embed.add_field(
@@ -230,6 +241,25 @@ class VoiceHours(commands.Cog):
         embed.add_field(
             name="Server total", value=f"`{format_hours(summary['seconds'])}`", inline=True
         )
+
+        if window["current"] and window["elapsed"] > 0:
+            pace = daily_pace(seconds, window["elapsed"])
+            projection = projected_total(seconds, window["elapsed"], window["days"])
+            embed.add_field(
+                name="Pace",
+                value=f"`{format_hours(pace)}` a day",
+                inline=True,
+            )
+            embed.add_field(
+                name=f"On track for day {window['days']}",
+                value=f"`{format_hours(projection)}`",
+                inline=True,
+            )
+            embed.add_field(
+                name="Month left",
+                value=f"`{window['remaining']}` day(s)",
+                inline=True,
+            )
 
         trend = [row for row in history if row["month"] != key][: HISTORY_MONTHS - 1]
         if trend:
@@ -254,23 +284,24 @@ class VoiceHours(commands.Cog):
         brand_footer(embed, f"Measured in {tz.key}")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="vhtop", description="Who spent the most time in voice this month")
+    @app_commands.command(name="voicetop", description="Most time in voice this month")
     @app_commands.describe(month="How far back? 0 is this month, 1 is last month")
     @app_commands.guild_only()
-    async def vhtop(
+    async def voicetop(
         self,
         interaction: discord.Interaction,
         month: app_commands.Range[int, 0, 11] = 0,
     ):
         tz = voice_timezone()
         key = shift_month(current_month(tz), -int(month))
+        window = month_window(key, tz=tz)
         board = await asyncio.to_thread(
             voice_month_leaderboard, interaction.guild_id, key, LEADERBOARD_SIZE
         )
 
         if not board:
             embed = make_embed(
-                f"🎧 Voice leaderboard • {month_label(key)}",
+                f"🎧 Voice leaderboard • {window['label']}",
                 "Nobody has been in voice yet this month.",
                 color=Palette.PRIMARY,
             )
@@ -279,7 +310,7 @@ class VoiceHours(commands.Cog):
 
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         embed = make_embed(
-            f"🎧 Voice leaderboard • {month_label(key)}",
+            f"🎧 Voice leaderboard • {window['label']}",
             "\n".join(
                 f"{medals.get(index, f'`#{index}`')} <@{row['user_id']}>"
                 f" — `{format_hours(row['seconds'])}`"
@@ -287,7 +318,8 @@ class VoiceHours(commands.Cog):
             ),
             color=Palette.PRIMARY,
         )
-        brand_footer(embed, f"Measured in {tz.key}")
+        note = f" · {window['remaining']} day(s) left" if window["current"] else ""
+        brand_footer(embed, f"Measured in {tz.key}{note}")
         await interaction.response.send_message(embed=embed)
 
 

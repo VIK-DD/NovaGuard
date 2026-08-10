@@ -10,6 +10,7 @@ month" means the month on their wall clock. A call that runs across midnight on
 the 1st is split, so neither month is credited with the other's minutes.
 """
 
+import calendar
 import os
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -59,6 +60,54 @@ def month_label(key: str) -> str:
         return datetime(year, month, 1).strftime("%B %Y")
     except (AttributeError, TypeError, ValueError):
         return str(key)
+
+
+def month_window(key: str, moment: datetime | None = None, tz: ZoneInfo | None = None) -> dict:
+    """How far through a month we are: ``1st to today``, or the whole month.
+
+    A member checking mid-month is asking what they have banked *so far*, not
+    what the month will end up being, so the answer has to say which stretch
+    of days it covers.
+    """
+    tz = tz or voice_timezone()
+    moment = moment or datetime.now(UTC)
+    try:
+        year, month = (int(part) for part in str(key).split("-", 1))
+        total = calendar.monthrange(year, month)[1]
+    except (AttributeError, TypeError, ValueError, calendar.IllegalMonthError):
+        return {"days": 0, "elapsed": 0, "current": False, "label": str(key)}
+
+    local = moment.astimezone(tz)
+    if (local.year, local.month) == (year, month):
+        elapsed, current = local.day, True
+    elif (local.year, local.month) < (year, month):
+        # A month that has not started yet has banked nothing.
+        elapsed, current = 0, False
+    else:
+        elapsed, current = total, False
+
+    name = month_label(key)
+    return {
+        "days": total,
+        "elapsed": elapsed,
+        "remaining": max(0, total - elapsed),
+        "current": current,
+        "label": f"1–{elapsed} {name}" if elapsed else name,
+    }
+
+
+def daily_pace(seconds: float, elapsed_days: int) -> float:
+    """Average seconds per day so far. Zero days means no pace, not a crash."""
+    if elapsed_days <= 0:
+        return 0.0
+    return max(0.0, float(seconds or 0)) / elapsed_days
+
+
+def projected_total(seconds: float, elapsed_days: int, total_days: int) -> float:
+    """What the month ends at if the current pace holds."""
+    if elapsed_days <= 0 or total_days <= 0:
+        return 0.0
+    return daily_pace(seconds, elapsed_days) * total_days
 
 
 def shift_month(key: str, months: int) -> str:
