@@ -85,7 +85,9 @@ class GuildExportTests(unittest.TestCase):
     def test_counts_describe_what_was_exported(self):
         payload = self.database.export_guild_data("111")
 
-        self.assertEqual(payload["counts"], {"settings": 2, "levels": 2, "economy": 1})
+        self.assertEqual(
+            payload["counts"], {"settings": 2, "levels": 2, "economy": 1, "voice": 0}
+        )
 
     def test_a_guild_with_no_data_exports_an_empty_shell(self):
         payload = self.database.export_guild_data("999999")
@@ -93,6 +95,7 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual(payload["settings"], {})
         self.assertEqual(payload["levels"], [])
         self.assertEqual(payload["economy"], [])
+        self.assertEqual(payload["voice"], [])
 
     def test_ids_are_accepted_as_numbers_too(self):
         self.assertEqual(

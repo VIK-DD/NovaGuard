@@ -38,6 +38,7 @@ COGS = (
     "moderation",
     "levels",
     "voice",
+    "voice_hours",
     "welcome",
     "logs",
     "roles",

@@ -115,6 +115,27 @@ def init_database():
             )
             """
         )
+        # Voice time that survives the session it was earned in. voice_state
+        # holds the live session and is emptied when the channel is; this is
+        # the running per-member total /vh reads. Months are local months -
+        # see core.voice_hours for why.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_minutes (
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                month TEXT NOT NULL,
+                seconds REAL NOT NULL DEFAULT 0,
+                sessions INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (guild_id, user_id, month)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_voice_minutes_board"
+            " ON voice_minutes (guild_id, month, seconds DESC)"
+        )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS music_cache (
@@ -196,6 +217,14 @@ def export_guild_data(guild_id):
                 (key,),
             )
         ]
+        voice = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT user_id, month, seconds, sessions FROM voice_minutes"
+                " WHERE guild_id = ? ORDER BY month DESC, seconds DESC",
+                (key,),
+            )
+        ]
 
     return {
         "guild_id": key,
@@ -203,10 +232,12 @@ def export_guild_data(guild_id):
         "settings": settings,
         "levels": levels,
         "economy": wallets,
+        "voice": voice,
         "counts": {
             "settings": len(settings),
             "levels": len(levels),
             "economy": len(wallets),
+            "voice": len(voice),
         },
     }
 
@@ -381,6 +412,128 @@ def load_voice_store(store, default=None):
         return {} if default is None else default
     value = decode_value(row["payload"])
     return value if value is not None else ({} if default is None else default)
+
+
+def add_voice_seconds(guild_id, user_id, buckets, *, sessions=0):
+    """Add ``(month, seconds)`` pieces to one member's running voice total.
+
+    ``sessions`` is credited to the first bucket only: one stretch of voice
+    time is one session even when it straddles a month boundary, and counting
+    it in both would make the totals disagree with themselves.
+    """
+    init_database()
+    rows = [(str(month), float(seconds)) for month, seconds in (buckets or []) if seconds > 0]
+    if not rows:
+        return
+
+    now = utc_now()
+    with _LOCK, connect() as connection:
+        for index, (month, seconds) in enumerate(rows):
+            connection.execute(
+                """
+                INSERT INTO voice_minutes (guild_id, user_id, month, seconds, sessions, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id, month) DO UPDATE SET
+                    seconds = voice_minutes.seconds + excluded.seconds,
+                    sessions = voice_minutes.sessions + excluded.sessions,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(guild_id),
+                    str(user_id),
+                    month,
+                    seconds,
+                    int(sessions) if index == 0 else 0,
+                    now,
+                ),
+            )
+        connection.commit()
+
+
+def voice_month_total(guild_id, user_id, month):
+    """One member's ``{"seconds", "sessions"}`` for one month. Never ``None``:
+    a member with no voice time has a real answer, and it is zero."""
+    init_database()
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT seconds, sessions FROM voice_minutes"
+            " WHERE guild_id = ? AND user_id = ? AND month = ?",
+            (str(guild_id), str(user_id), str(month)),
+        ).fetchone()
+    if not row:
+        return {"seconds": 0.0, "sessions": 0}
+    return {"seconds": float(row["seconds"] or 0), "sessions": int(row["sessions"] or 0)}
+
+
+def voice_month_leaderboard(guild_id, month, limit=10):
+    """The month's most active members, busiest first."""
+    init_database()
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT user_id, seconds, sessions FROM voice_minutes"
+            " WHERE guild_id = ? AND month = ? AND seconds > 0"
+            " ORDER BY seconds DESC LIMIT ?",
+            (str(guild_id), str(month), int(limit)),
+        ).fetchall()
+    return [
+        {
+            "user_id": row["user_id"],
+            "seconds": float(row["seconds"] or 0),
+            "sessions": int(row["sessions"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def voice_member_history(guild_id, user_id, limit=6):
+    """A member's recent months, newest first, for the trend line on /vh."""
+    init_database()
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT month, seconds, sessions FROM voice_minutes"
+            " WHERE guild_id = ? AND user_id = ?"
+            " ORDER BY month DESC LIMIT ?",
+            (str(guild_id), str(user_id), int(limit)),
+        ).fetchall()
+    return [
+        {
+            "month": row["month"],
+            "seconds": float(row["seconds"] or 0),
+            "sessions": int(row["sessions"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def voice_month_summary(guild_id, month):
+    """Server-wide totals for the month, so /vh can say where a member stands."""
+    init_database()
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS members, COALESCE(SUM(seconds), 0) AS seconds"
+            " FROM voice_minutes WHERE guild_id = ? AND month = ? AND seconds > 0",
+            (str(guild_id), str(month)),
+        ).fetchone()
+    return {"members": int(row["members"] or 0), "seconds": float(row["seconds"] or 0)}
+
+
+def voice_month_rank(guild_id, user_id, month):
+    """Where a member sits in the month, or ``None`` if they have no time yet."""
+    init_database()
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT seconds FROM voice_minutes"
+            " WHERE guild_id = ? AND user_id = ? AND month = ?",
+            (str(guild_id), str(user_id), str(month)),
+        ).fetchone()
+        if not row or not float(row["seconds"] or 0):
+            return None
+        ahead = connection.execute(
+            "SELECT COUNT(*) AS ahead FROM voice_minutes"
+            " WHERE guild_id = ? AND month = ? AND seconds > ?",
+            (str(guild_id), str(month), float(row["seconds"])),
+        ).fetchone()
+    return int(ahead["ahead"] or 0) + 1
 
 
 def get_voice_store_status():
