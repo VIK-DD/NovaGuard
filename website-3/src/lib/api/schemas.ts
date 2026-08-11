@@ -72,6 +72,7 @@ export const GuildSettingsSchema = z.object({
   github_event_channel: z.string().nullable(),
   error_log_channel: z.string().nullable(),
   ticket_panel_channel: z.string().nullable(),
+  role_panel_channel: z.string().nullable(),
   autorole: z.string().nullable(),
   ticket_staff_role: z.string().nullable(),
   automod: AutomodSchema,
@@ -105,6 +106,16 @@ export const GuildConfigSchema = z.object({
       }),
     ),
   }),
+  role_panels: z.array(
+    z.object({
+      message_id: z.string(),
+      channel_id: z.string(),
+      title: z.string(),
+      description: z.string(),
+      role_ids: z.array(z.string()),
+      updated_at: z.string(),
+    }),
+  ),
   channels: z.array(
     z.object({ id: z.string(), name: z.string(), category: z.string().nullable() }),
   ),
@@ -247,6 +258,16 @@ export const DashboardActionSchema = z.object({
   action: z.string(),
   message: z.string(),
   channel_id: z.string().optional(),
+  panel: z
+    .object({
+      message_id: z.string(),
+      channel_id: z.string(),
+      title: z.string(),
+      description: z.string(),
+      role_ids: z.array(z.string()),
+      updated_at: z.string(),
+    })
+    .optional(),
   backup: z
     .object({
       name: z.string(),
@@ -271,6 +292,7 @@ export type SettingsPatch = Partial<{
   github_event_channel: string | null;
   error_log_channel: string | null;
   ticket_panel_channel: string | null;
+  role_panel_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: Partial<z.infer<typeof AutomodSchema>>;

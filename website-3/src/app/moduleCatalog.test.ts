@@ -16,6 +16,7 @@ const emptySettings: GuildSettings = {
   github_event_channel: null,
   error_log_channel: null,
   ticket_panel_channel: null,
+  role_panel_channel: null,
   autorole: null,
   ticket_staff_role: null,
   automod: {
@@ -52,6 +53,7 @@ describe("configuration module catalog", () => {
         "goodbye_channel",
         "levels",
         "log_channel",
+        "role_panel_channel",
         "ticket_staff_role",
         "ticket_panel_channel",
         "update_channel",
@@ -65,7 +67,15 @@ describe("configuration module catalog", () => {
   it("uses unique, stable keys for direct module links", () => {
     const keys = CONFIG_MODULES.map((module) => module.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toEqual(["welcome", "moderation", "levels", "voice", "tickets", "updates"]);
+    expect(keys).toEqual([
+      "welcome",
+      "moderation",
+      "levels",
+      "voice",
+      "tickets",
+      "roles",
+      "updates",
+    ]);
   });
 
   it("resolves direct module routes without accepting unknown keys", () => {
@@ -85,9 +95,11 @@ describe("configuration module catalog", () => {
     configured.levels.enabled = true;
     configured.voice_report_channel = "456";
     configured.ticket_staff_role = "789";
+    configured.role_panel_channel = "456";
     configured.github_event_channel = "101";
 
     expect(CONFIG_MODULES.map((module) => isModuleActive(configured, module.key))).toEqual([
+      true,
       true,
       true,
       true,

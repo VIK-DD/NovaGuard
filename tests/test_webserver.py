@@ -433,7 +433,8 @@ async def main():
                 and len(data["channels"]) == 2
                 and "automod" in data["settings"]
                 and "voice_report_channel" in data["settings"]
-                and data.get("tickets", {}).get("open_count") == 0,
+                and data.get("tickets", {}).get("open_count") == 0
+                and data.get("role_panels") == [],
             )
         async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
             data = await r.json()
@@ -488,6 +489,7 @@ async def main():
             "welcome_channel": "111",
             "log_channel": "112",
             "ticket_panel_channel": "111",
+            "role_panel_channel": "112",
             "automod": {
                 "invites": False,
                 "badwords": ["Spoiler", "spoiler", "  x  "],
@@ -505,10 +507,24 @@ async def main():
                 r.status == 200
                 and saved.get("welcome_channel") == "111"
                 and saved.get("ticket_panel_channel") == "111"
+                and saved.get("role_panel_channel") == "112"
                 and saved.get("automod", {}).get("invites") is False
                 and saved.get("automod", {}).get("badwords") == ["spoiler", "x"]
                 and saved.get("automod", {}).get("ignored_channels") == ["111"]
                 and saved.get("automod", {}).get("spam_messages") == 8,
+            )
+
+        async with http.post(
+            f"{V1}/guilds/{TEST_GUILD_ID}/actions/role_panel_publish",
+            json={"title": "", "description": "", "role_ids": []},
+            cookies=cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "role panel action rejects an invalid payload",
+                r.status == 400
+                and data.get("code") == "validation_failed"
+                and len(data.get("details", [])) == 3,
             )
 
         async with http.post(

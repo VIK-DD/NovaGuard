@@ -51,9 +51,12 @@ from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import (
     connect,
     count_open_tickets,
+    get_role_panel_record,
     list_ticket_records,
+    list_role_panel_records,
     load_levels_data,
     load_voice_store,
+    save_role_panel_record,
 )
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
 from .levels_settings import resolve_levels, validate_levels
@@ -170,8 +173,8 @@ CHANNEL_KEYS = (
     "github_event_channel",
     "error_log_channel",
 )
-TICKET_CHANNEL_KEYS = ("ticket_panel_channel",)
-CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + TICKET_CHANNEL_KEYS
+NATIVE_MANAGER_CHANNEL_KEYS = ("ticket_panel_channel", "role_panel_channel")
+CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
 DASHBOARD_XP_PER_LEVEL = 118
 DASHBOARD_MAX_LEVEL = 169
@@ -1145,9 +1148,10 @@ class WebServer:
     async def _config_payload(self, guild):
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         automod = resolve_automod(settings)
-        open_tickets, open_ticket_count = await asyncio.gather(
+        open_tickets, open_ticket_count, role_panels = await asyncio.gather(
             asyncio.to_thread(list_ticket_records, guild.id, open_only=True, limit=20),
             asyncio.to_thread(count_open_tickets, guild.id),
+            asyncio.to_thread(list_role_panel_records, guild.id, limit=20),
         )
         ticket_channel = (
             guild.get_channel(int(settings["ticket_panel_channel"]))
@@ -1210,6 +1214,17 @@ class WebServer:
                     for row in open_tickets
                 ],
             },
+            "role_panels": [
+                {
+                    "message_id": panel["message_id"],
+                    "channel_id": panel["channel_id"],
+                    "title": panel["title"],
+                    "description": panel["description"],
+                    "role_ids": panel["role_ids"],
+                    "updated_at": panel["updated_at"],
+                }
+                for panel in role_panels
+            ],
             "channels": [
                 {"id": str(channel.id), "name": channel.name,
                  "category": channel.category.name if channel.category else None}
@@ -1360,6 +1375,7 @@ class WebServer:
             {"key": "levels", "label": "Levels", "enabled": bool(levels_settings.get("enabled"))},
             {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
             {"key": "tickets", "label": "Tickets", "enabled": bool(settings.get("ticket_staff_role"))},
+            {"key": "roles", "label": "Role panels", "enabled": bool(settings.get("role_panel_channel"))},
             {
                 "key": "updates",
                 "label": "Updates",
@@ -1629,6 +1645,106 @@ class WebServer:
             "channel_id": str(channel.id),
         }
 
+    async def _handle_role_panel_publish_action(self, request, guild, entry):
+        import discord
+
+        from cogs.roles import publish_role_panel, validate_role_panel_input
+
+        try:
+            body = await request.json()
+        except Exception:
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+        if not isinstance(body, dict):
+            raise ApiError(400, "Body must be a JSON object.", code="bad_request")
+
+        title, description, role_ids, errors = validate_role_panel_input(
+            body.get("title"), body.get("description"), body.get("role_ids")
+        )
+        roles = []
+        for role_id in role_ids:
+            if not role_id.isdigit():
+                continue
+            role = guild.get_role(int(role_id))
+            if role is None:
+                errors.append(f"role_ids: {role_id} is not a role in this guild")
+            elif role.is_default() or role.managed or role >= guild.me.top_role:
+                errors.append(f"role_ids: @{role.name} cannot be assigned by NovaGuard")
+            else:
+                roles.append(role)
+        if errors:
+            raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)
+
+        previous_message_id = body.get("panel_message_id")
+        previous_panel = None
+        if previous_message_id not in (None, ""):
+            if not str(previous_message_id).isdigit():
+                raise ApiError(400, "Invalid role panel id.", code="invalid_role_panel")
+            previous_panel = await asyncio.to_thread(
+                get_role_panel_record, guild.id, previous_message_id
+            )
+            if previous_panel is None:
+                raise ApiError(404, "That role panel is no longer tracked.", code="role_panel_not_found")
+
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        channel_id = (
+            previous_panel["channel_id"]
+            if previous_panel is not None
+            else settings.get("role_panel_channel")
+        )
+        channel = guild.get_channel(int(channel_id)) if channel_id else None
+        if channel is None:
+            raise ApiError(
+                400,
+                "Choose and save a default role-panel channel first.",
+                code="role_panel_channel_missing",
+            )
+
+        try:
+            message, created = await asyncio.wait_for(
+                publish_role_panel(
+                    channel,
+                    title,
+                    description,
+                    roles,
+                    previous_panel["message_id"] if previous_panel else None,
+                ),
+                timeout=10,
+            )
+        except (discord.Forbidden, discord.HTTPException, asyncio.TimeoutError) as error:
+            log.warning("Dashboard role panel publish failed for #%s", channel.id, exc_info=True)
+            raise ApiError(
+                502,
+                "Discord did not accept the role panel.",
+                code="role_panel_failed",
+                details=[type(error).__name__],
+            ) from error
+
+        panel = await asyncio.to_thread(
+            save_role_panel_record,
+            guild.id,
+            message.id,
+            channel.id,
+            title,
+            description,
+            role_ids,
+            created_by=entry["user"]["id"],
+            previous_message_id=previous_panel["message_id"] if previous_panel else None,
+        )
+        return {
+            "ok": True,
+            "action": "role_panel_publish",
+            "message": f"Role panel {'published' if created else 'updated'} in #{channel.name}.",
+            "channel_id": str(channel.id),
+            "panel": {
+                "message_id": panel["message_id"],
+                "channel_id": panel["channel_id"],
+                "title": panel["title"],
+                "description": panel["description"],
+                "role_ids": panel["role_ids"],
+                "updated_at": panel["updated_at"],
+            },
+        }
+
     async def handle_guild_action(self, request):
         self._rate_limit(request, "write")
         self._check_origin(request)
@@ -1643,6 +1759,8 @@ class WebServer:
             payload = await self._handle_update_preview_action(guild)
         elif action == "ticket_panel_publish":
             payload = await self._handle_ticket_panel_publish_action(guild)
+        elif action == "role_panel_publish":
+            payload = await self._handle_role_panel_publish_action(request, guild, entry)
         else:
             raise ApiError(404, "Unknown dashboard action.", code="unknown_action")
 

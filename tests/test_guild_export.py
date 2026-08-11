@@ -72,6 +72,13 @@ class GuildExportTests(unittest.TestCase):
                     " VALUES (?, ?, 'support', ?, 'Member', ?)",
                     (thread, guild, opener, stamp),
                 )
+            for guild, message, channel in (("111", "p-1", "general"), ("222", "p-2", "other")):
+                connection.execute(
+                    "INSERT INTO role_panels"
+                    " (message_id, guild_id, channel_id, title, description, role_ids,"
+                    " created_at, updated_at) VALUES (?, ?, ?, 'Roles', 'Choose', '[\"7\"]', ?, ?)",
+                    (message, guild, channel, stamp, stamp),
+                )
             connection.commit()
 
     def test_the_export_carries_this_guilds_own_data(self):
@@ -82,6 +89,7 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual({row["user_id"] for row in payload["levels"]}, {"a", "b"})
         self.assertEqual({row["user_id"] for row in payload["economy"]}, {"a"})
         self.assertEqual([row["thread_id"] for row in payload["tickets"]], ["t-1"])
+        self.assertEqual([row["message_id"] for row in payload["role_panels"]], ["p-1"])
 
     def test_no_other_guild_leaks_into_the_export(self):
         blob = repr(self.database.export_guild_data("111"))
@@ -95,7 +103,14 @@ class GuildExportTests(unittest.TestCase):
 
         self.assertEqual(
             payload["counts"],
-            {"settings": 2, "levels": 2, "economy": 1, "voice": 0, "tickets": 1},
+            {
+                "settings": 2,
+                "levels": 2,
+                "economy": 1,
+                "voice": 0,
+                "tickets": 1,
+                "role_panels": 1,
+            },
         )
 
     def test_a_guild_with_no_data_exports_an_empty_shell(self):
@@ -105,6 +120,8 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual(payload["levels"], [])
         self.assertEqual(payload["economy"], [])
         self.assertEqual(payload["voice"], [])
+        self.assertEqual(payload["tickets"], [])
+        self.assertEqual(payload["role_panels"], [])
 
     def test_ids_are_accepted_as_numbers_too(self):
         self.assertEqual(

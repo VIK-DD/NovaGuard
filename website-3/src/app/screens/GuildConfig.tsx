@@ -36,6 +36,7 @@ const CHANNEL_FIELDS: ReadonlyArray<
     | "github_event_channel"
     | "error_log_channel"
     | "ticket_panel_channel"
+    | "role_panel_channel"
   >, string]
 > = [
   ["welcome_channel", "Welcome channel"],
@@ -46,6 +47,7 @@ const CHANNEL_FIELDS: ReadonlyArray<
   ["github_event_channel", "GitHub events"],
   ["error_log_channel", "Error log"],
   ["ticket_panel_channel", "Ticket panel"],
+  ["role_panel_channel", "Role panels"],
 ];
 
 // Memoized like the field components in components/ — see the note in
@@ -231,6 +233,11 @@ export default function GuildConfig() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [justSaved, setJustSaved] = useState(false);
   const [ticketPanelNotice, setTicketPanelNotice] = useState<string | null>(null);
+  const [rolePanelTitle, setRolePanelTitle] = useState("");
+  const [rolePanelDescription, setRolePanelDescription] = useState("");
+  const [rolePanelRoleIds, setRolePanelRoleIds] = useState<string[]>([]);
+  const [editingRolePanelId, setEditingRolePanelId] = useState<string | null>(null);
+  const [rolePanelNotice, setRolePanelNotice] = useState<string | null>(null);
 
   // Reseed the draft whenever fresh server state arrives (fetch or save).
   useEffect(() => {
@@ -281,6 +288,38 @@ export default function GuildConfig() {
     onError: (error) => {
       setTicketPanelNotice(
         error instanceof ApiError ? error.message : "The ticket panel could not be published.",
+      );
+    },
+  });
+
+  const resetRolePanelDraft = useCallback(() => {
+    setRolePanelTitle("");
+    setRolePanelDescription("");
+    setRolePanelRoleIds([]);
+    setEditingRolePanelId(null);
+  }, []);
+
+  const publishRolePanel = useMutation({
+    mutationFn: () =>
+      apiFetch(`/guilds/${guildId}/actions/role_panel_publish`, DashboardActionSchema, {
+        method: "POST",
+        body: JSON.stringify({
+          title: rolePanelTitle,
+          description: rolePanelDescription,
+          role_ids: rolePanelRoleIds,
+          panel_message_id: editingRolePanelId,
+        }),
+      }),
+    onSuccess: (data) => {
+      setRolePanelNotice(data.message);
+      resetRolePanelDraft();
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "config"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "audit"] });
+    },
+    onError: (error) => {
+      setRolePanelNotice(
+        error instanceof ApiError ? error.message : "The role panel could not be published.",
       );
     },
   });
@@ -395,21 +434,26 @@ export default function GuildConfig() {
   );
 
   const dirty = Boolean(config.data && draft && isDirty(config.data.settings, draft));
+  const rolePanelDirty = Boolean(
+    rolePanelTitle || rolePanelDescription || rolePanelRoleIds.length || editingRolePanelId,
+  );
+  const hasUnsavedChanges = dirty || rolePanelDirty;
   const discardDraft = useCallback(() => {
     if (!config.data) return;
     setDraft(structuredClone(config.data.settings));
     setFieldErrors({});
+    resetRolePanelDraft();
     resetSave();
-  }, [config.data, resetSave]);
+  }, [config.data, resetRolePanelDraft, resetSave]);
 
   useEffect(() => {
-    registerUnsavedChanges(dirty, discardDraft);
+    registerUnsavedChanges(hasUnsavedChanges, discardDraft);
     return () => registerUnsavedChanges(false);
-  }, [dirty, discardDraft, registerUnsavedChanges]);
+  }, [hasUnsavedChanges, discardDraft, registerUnsavedChanges]);
 
   const blocker = useBlocker({
-    shouldBlockFn: () => dirty,
-    enableBeforeUnload: dirty,
+    shouldBlockFn: () => hasUnsavedChanges,
+    enableBeforeUnload: hasUnsavedChanges,
     withResolver: true,
   });
 
@@ -882,6 +926,208 @@ export default function GuildConfig() {
             </Section>
           )}
 
+          {selectedModule?.key === "roles" && (
+            <Section
+              id="roles"
+              icon="users-three"
+              kicker="Role panels"
+              description="Let members add and remove safe, self-service roles without staff intervention."
+              active={isModuleActive(draft, "roles")}
+            >
+              <div className="max-w-md border-t border-line pt-6">
+                <ChannelSelect
+                  label="Default panel channel"
+                  value={draft.role_panel_channel}
+                  channels={channels}
+                  error={fieldErrors.role_panel_channel}
+                  onChange={channelFieldHandlers.role_panel_channel}
+                />
+                <p className="mt-2 text-xs leading-5 text-ink-muted">
+                  Save a new default channel before publishing a new panel. Existing panels stay in
+                  their original channel when edited.
+                </p>
+              </div>
+
+              <div className="mt-7 rounded-lg border border-line bg-bg-subtle p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {editingRolePanelId ? "Edit role panel" : "Create role panel"}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-ink-muted">
+                      One panel can offer up to five roles that NovaGuard is allowed to assign.
+                    </p>
+                  </div>
+                  {editingRolePanelId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetRolePanelDraft();
+                        setRolePanelNotice(null);
+                      }}
+                      className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-ink-muted hover:text-ink"
+                    >
+                      Cancel editing
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-5 grid gap-5">
+                  <label className="block">
+                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+                      Panel title
+                    </span>
+                    <input
+                      value={rolePanelTitle}
+                      maxLength={80}
+                      onChange={(event) => {
+                        setRolePanelTitle(event.target.value);
+                        setRolePanelNotice(null);
+                      }}
+                      placeholder="Community roles"
+                      className="mt-1.5 w-full rounded-md border border-line bg-card px-3 py-2 text-sm outline-none focus:border-ink"
+                    />
+                    <span className="mt-1 block text-right text-xs text-ink-faint">
+                      {rolePanelTitle.length}/80
+                    </span>
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+                      Description
+                    </span>
+                    <textarea
+                      value={rolePanelDescription}
+                      maxLength={1000}
+                      rows={4}
+                      onChange={(event) => {
+                        setRolePanelDescription(event.target.value);
+                        setRolePanelNotice(null);
+                      }}
+                      placeholder="Choose the roles that match what you want to follow."
+                      className="mt-1.5 w-full resize-y rounded-md border border-line bg-card px-3 py-2 text-sm leading-6 outline-none focus:border-ink"
+                    />
+                    <span className="mt-1 block text-right text-xs text-ink-faint">
+                      {rolePanelDescription.length}/1000
+                    </span>
+                  </label>
+
+                  <IgnoreListEditor
+                    label="Self-assignable roles"
+                    prefix="@"
+                    value={rolePanelRoleIds}
+                    options={roles.filter(
+                      (role) => role.assignable || rolePanelRoleIds.includes(role.id),
+                    )}
+                    maxItems={5}
+                    onChange={(value) => {
+                      setRolePanelRoleIds(value);
+                      setRolePanelNotice(null);
+                    }}
+                  />
+                </div>
+
+                <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs leading-5 text-ink-muted">
+                    {dirty
+                      ? "Save the channel change before publishing."
+                      : editingRolePanelId
+                        ? "The tracked Discord message will be updated in place."
+                        : "Publishing creates one persistent Discord message."}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={
+                      dirty ||
+                      (!editingRolePanelId && !draft.role_panel_channel) ||
+                      !rolePanelTitle.trim() ||
+                      !rolePanelDescription.trim() ||
+                      rolePanelRoleIds.length === 0 ||
+                      publishRolePanel.isPending
+                    }
+                    onClick={() => {
+                      setRolePanelNotice(null);
+                      publishRolePanel.mutate();
+                    }}
+                    className="ng-touch-target inline-flex shrink-0 items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {publishRolePanel.isPending
+                      ? "Publishing…"
+                      : editingRolePanelId
+                        ? "Update panel"
+                        : "Publish panel"}
+                  </button>
+                </div>
+
+                {rolePanelNotice && (
+                  <p
+                    role={publishRolePanel.isError ? "alert" : "status"}
+                    className={`mt-3 border-t border-line pt-3 text-sm ${
+                      publishRolePanel.isError ? "text-primary" : "text-good"
+                    }`}
+                  >
+                    {rolePanelNotice}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-7 border-t border-line pt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium">Tracked panels</p>
+                  <span className="rounded-full border border-line bg-bg-subtle px-2.5 py-1 text-xs text-ink-muted">
+                    {config.data.role_panels.length}
+                  </span>
+                </div>
+                {config.data.role_panels.length > 0 ? (
+                  <ul className="mt-3 divide-y divide-line border-y border-line">
+                    {config.data.role_panels.map((panel) => {
+                      const channel = channels.find((item) => item.id === panel.channel_id);
+                      return (
+                        <li
+                          key={panel.message_id}
+                          className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm text-ink">{panel.title}</span>
+                            <span className="mt-0.5 block text-xs text-ink-faint">
+                              #{channel?.name ?? "deleted-channel"} · {panel.role_ids.length} roles ·
+                              updated {new Date(panel.updated_at).toLocaleString("en-US")}
+                            </span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRolePanelId(panel.message_id);
+                                setRolePanelTitle(panel.title);
+                                setRolePanelDescription(panel.description);
+                                setRolePanelRoleIds(panel.role_ids);
+                                setRolePanelNotice(null);
+                              }}
+                              className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-ink-muted hover:text-ink"
+                            >
+                              Edit
+                            </button>
+                            <a
+                              href={`https://discord.com/channels/${guildId}/${panel.channel_id}/${panel.message_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-primary hover:underline"
+                            >
+                              Open ↗
+                            </a>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-ink-muted">No role panels are tracked yet.</p>
+                )}
+              </div>
+            </Section>
+          )}
+
           {selectedModule?.key === "updates" && (
             <Section
             id="updates"
@@ -939,7 +1185,7 @@ export default function GuildConfig() {
               Leave without saving?
             </h2>
             <p id="leave-settings-description" className="mt-3 text-sm leading-6 text-ink-muted">
-              Your recent settings changes will be discarded.
+              Your recent configuration changes will be discarded.
             </p>
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button

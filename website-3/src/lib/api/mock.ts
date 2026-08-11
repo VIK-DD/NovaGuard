@@ -72,6 +72,7 @@ type Settings = {
   github_event_channel: string | null;
   error_log_channel: string | null;
   ticket_panel_channel: string | null;
+  role_panel_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: {
@@ -129,6 +130,7 @@ const settingsByGuild: Record<string, Settings> = {
     github_event_channel: "c9",
     error_log_channel: "c10",
     ticket_panel_channel: "c8",
+    role_panel_channel: "c4",
     autorole: "r1",
     ticket_staff_role: "r6",
     automod: {
@@ -156,6 +158,7 @@ const settingsByGuild: Record<string, Settings> = {
     github_event_channel: "c9",
     error_log_channel: null,
     ticket_panel_channel: null,
+    role_panel_channel: null,
     autorole: null,
     ticket_staff_role: null,
     automod: { ...automodDefaults(), invites: false },
@@ -170,6 +173,7 @@ const settingsByGuild: Record<string, Settings> = {
     github_event_channel: null,
     error_log_channel: null,
     ticket_panel_channel: null,
+    role_panel_channel: "c4",
     autorole: "r1",
     ticket_staff_role: null,
     automod: { ...automodDefaults(), spam: false, badwords: ["spoiler"] },
@@ -194,6 +198,28 @@ const openTicketsByGuild: Record<
       opener_id: "member-42",
       opener_name: "Sorin",
       created_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    },
+  ],
+};
+const rolePanelsByGuild: Record<
+  string,
+  Array<{
+    message_id: string;
+    channel_id: string;
+    title: string;
+    description: string;
+    role_ids: string[];
+    updated_at: string;
+  }>
+> = {
+  "1001": [
+    {
+      message_id: "9001001",
+      channel_id: "c4",
+      title: "Community roles",
+      description: "Pick the updates and community groups you want to follow.",
+      role_ids: ["r2", "r3"],
+      updated_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
     },
   ],
 };
@@ -257,6 +283,7 @@ function configPayload(id: string): Json | null {
       open_count: (openTicketsByGuild[id] ?? []).length,
       open: openTicketsByGuild[id] ?? [],
     },
+    role_panels: rolePanelsByGuild[id] ?? [],
     channels,
     roles,
   };
@@ -323,6 +350,7 @@ function dashboardPayload(id: string): Json | null {
       { key: "levels", label: "Levels", enabled: settings.levels.enabled },
       { key: "voice", label: "Voice reports", enabled: Boolean(settings.voice_report_channel) },
       { key: "tickets", label: "Tickets", enabled: Boolean(settings.ticket_staff_role) },
+      { key: "roles", label: "Role panels", enabled: Boolean(settings.role_panel_channel) },
       {
         key: "updates",
         label: "Updates",
@@ -492,14 +520,44 @@ function route(pathname: string, method: string, body: Json | null): { status: n
         },
       };
     }
+    if (actionName === "role_panel_publish" && !settings.role_panel_channel) {
+      return {
+        status: 400,
+        data: {
+          error: "Choose and save a default role-panel channel first.",
+          code: "role_panel_channel_missing",
+        },
+      };
+    }
     const messages: Record<string, string> = {
       backup_check: "Latest backup passed the restore check.",
       voice_test: "Voice report preview sent to #voice-reports.",
       update_preview: "Latest update was sent to the configured update channel.",
       ticket_panel_publish: "Ticket panel updated in #mod-alerts.",
+      role_panel_publish: "Role panel published in #general.",
     };
     if (!messages[actionName]) return { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
     if (actionName === "ticket_panel_publish") ticketPanelMessageByGuild[id] = `panel-${id}`;
+    let panel: (typeof rolePanelsByGuild)[string][number] | undefined;
+    if (actionName === "role_panel_publish") {
+      const payload = (body ?? {}) as Record<string, unknown>;
+      const previousId = typeof payload.panel_message_id === "string" ? payload.panel_message_id : null;
+      const previous = (rolePanelsByGuild[id] ?? []).find((item) => item.message_id === previousId);
+      panel = {
+        message_id: previous?.message_id ?? String(Date.now()),
+        channel_id: previous?.channel_id ?? settings.role_panel_channel!,
+        title: typeof payload.title === "string" ? payload.title : "Role panel",
+        description: typeof payload.description === "string" ? payload.description : "Choose a role.",
+        role_ids: Array.isArray(payload.role_ids)
+          ? payload.role_ids.map(String).slice(0, 5)
+          : [],
+        updated_at: now(),
+      };
+      rolePanelsByGuild[id] = [
+        panel,
+        ...(rolePanelsByGuild[id] ?? []).filter((item) => item.message_id !== previousId),
+      ];
+    }
     (auditByGuild[id] ??= []).unshift({
       id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,
       username: me.user.username,
@@ -508,7 +566,10 @@ function route(pathname: string, method: string, body: Json | null): { status: n
       changes: { ok: true },
       created_at: now(),
     });
-    return { status: 200, data: { ok: true, action: actionName, message: messages[actionName] } };
+    return {
+      status: 200,
+      data: { ok: true, action: actionName, message: messages[actionName], ...(panel ? { panel } : {}) },
+    };
   }
 
   const aud = p.match(/^\/guilds\/([^/]+)\/audit$/);

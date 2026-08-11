@@ -38,6 +38,13 @@ export const CONFIG_MODULES = [
     fields: ["ticket_panel_channel", "ticket_staff_role"],
   },
   {
+    key: "roles",
+    label: "Role panels",
+    description: "Publish self-service role panels and keep them editable from the web.",
+    icon: "users-three",
+    fields: ["role_panel_channel"],
+  },
+  {
     key: "updates",
     label: "Updates",
     description: "Send NovaGuard releases and GitHub activity to Discord.",
@@ -80,6 +87,8 @@ export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): b
       return Boolean(settings.voice_report_channel);
     case "tickets":
       return Boolean(settings.ticket_panel_channel || settings.ticket_staff_role);
+    case "roles":
+      return Boolean(settings.role_panel_channel);
     case "updates":
       return Boolean(settings.update_channel || settings.github_event_channel);
   }

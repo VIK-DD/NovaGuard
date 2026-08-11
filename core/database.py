@@ -170,6 +170,25 @@ def init_database():
             "CREATE INDEX IF NOT EXISTS idx_ticket_records_member_open"
             " ON ticket_records (guild_id, opener_id, closed_at)"
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS role_panels (
+                message_id TEXT PRIMARY KEY,
+                guild_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                role_ids TEXT NOT NULL,
+                created_by TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_role_panels_guild_updated"
+            " ON role_panels (guild_id, updated_at DESC)"
+        )
         # Only the hash of the admin key is ever stored. A leaked database
         # must not hand anyone the key itself; the plaintext exists only in
         # the operator's password manager.
@@ -278,6 +297,13 @@ def export_guild_data(guild_id):
                 (key,),
             )
         ]
+        role_panels = [
+            _decode_role_panel_row(row)
+            for row in connection.execute(
+                "SELECT * FROM role_panels WHERE guild_id = ? ORDER BY updated_at DESC",
+                (key,),
+            )
+        ]
 
     return {
         "guild_id": key,
@@ -287,12 +313,14 @@ def export_guild_data(guild_id):
         "economy": wallets,
         "voice": voice,
         "tickets": tickets,
+        "role_panels": role_panels,
         "counts": {
             "settings": len(settings),
             "levels": len(levels),
             "economy": len(wallets),
             "voice": len(voice),
             "tickets": len(tickets),
+            "role_panels": len(role_panels),
         },
     }
 
@@ -374,6 +402,87 @@ def count_open_tickets(guild_id):
             (str(guild_id),),
         ).fetchone()
     return int(row["count"])
+
+
+def _decode_role_panel_row(row):
+    payload = dict(row)
+    try:
+        role_ids = json.loads(payload.get("role_ids") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        role_ids = []
+    payload["role_ids"] = [str(role_id) for role_id in role_ids]
+    return payload
+
+
+def save_role_panel_record(
+    guild_id,
+    message_id,
+    channel_id,
+    title,
+    description,
+    role_ids,
+    *,
+    created_by=None,
+    previous_message_id=None,
+):
+    """Insert/update a panel, replacing a missing Discord message atomically."""
+    init_database()
+    now = utc_now()
+    encoded_roles = json.dumps([str(role_id) for role_id in role_ids], ensure_ascii=True)
+    with _LOCK, connect() as connection:
+        if previous_message_id and str(previous_message_id) != str(message_id):
+            connection.execute(
+                "DELETE FROM role_panels WHERE guild_id = ? AND message_id = ?",
+                (str(guild_id), str(previous_message_id)),
+            )
+        connection.execute(
+            """
+            INSERT INTO role_panels
+                (message_id, guild_id, channel_id, title, description, role_ids,
+                 created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(message_id) DO UPDATE SET
+                channel_id = excluded.channel_id,
+                title = excluded.title,
+                description = excluded.description,
+                role_ids = excluded.role_ids,
+                updated_at = excluded.updated_at
+            """,
+            (
+                str(message_id),
+                str(guild_id),
+                str(channel_id),
+                str(title),
+                str(description),
+                encoded_roles,
+                str(created_by) if created_by is not None else None,
+                now,
+                now,
+            ),
+        )
+        connection.commit()
+    return get_role_panel_record(guild_id, message_id)
+
+
+def get_role_panel_record(guild_id, message_id):
+    init_database()
+    with _LOCK, connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM role_panels WHERE guild_id = ? AND message_id = ?",
+            (str(guild_id), str(message_id)),
+        ).fetchone()
+    return _decode_role_panel_row(row) if row else None
+
+
+def list_role_panel_records(guild_id, *, limit=20):
+    init_database()
+    limit = min(max(int(limit), 1), 100)
+    with _LOCK, connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM role_panels WHERE guild_id = ? ORDER BY updated_at DESC LIMIT ?",
+            (str(guild_id), limit),
+        ).fetchall()
+    return [_decode_role_panel_row(row) for row in rows]
 
 
 def encode_value(value):

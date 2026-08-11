@@ -1,13 +1,63 @@
 """🎭 Roles category — self-service role panels with persistent buttons."""
 
+import asyncio
 import time
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.database import save_role_panel_record
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond
+
+
+def validate_role_panel_input(title, description, role_ids):
+    errors = []
+    clean_title = " ".join(str(title or "").split())
+    clean_description = " ".join(str(description or "").split())
+    clean_role_ids = []
+    for role_id in role_ids if isinstance(role_ids, (list, tuple)) else ():
+        value = str(role_id)
+        if value not in clean_role_ids:
+            clean_role_ids.append(value)
+
+    if not clean_title or len(clean_title) > 80:
+        errors.append("title must contain 1–80 characters")
+    if not clean_description or len(clean_description) > 1000:
+        errors.append("description must contain 1–1000 characters")
+    if not 1 <= len(clean_role_ids) <= 5:
+        errors.append("choose between 1 and 5 unique roles")
+    if any(not role_id.isdigit() for role_id in clean_role_ids):
+        errors.append("every role id must be a Discord snowflake")
+    return clean_title, clean_description, clean_role_ids, errors
+
+
+def build_role_panel(title, description, roles):
+    view = discord.ui.View(timeout=None)
+    for role in roles:
+        view.add_item(RoleButton(role.id, label=role.name))
+
+    embed = make_embed(
+        f"🎭 {title}",
+        f"{description}\n\n" + "\n".join(f"• {role.mention}" for role in roles),
+        color=Palette.PURPLE,
+    )
+    brand_footer(embed, "Click a button to toggle a role")
+    return embed, view
+
+
+async def publish_role_panel(channel, title, description, roles, previous_message_id=None):
+    """Publish a new role panel, or update its tracked Discord message in place."""
+    embed, view = build_role_panel(title, description, roles)
+    if previous_message_id:
+        try:
+            message = await channel.fetch_message(int(previous_message_id))
+            await message.edit(embed=embed, view=view)
+            return message, False
+        except (discord.NotFound, ValueError, TypeError):
+            pass
+    return await channel.send(embed=embed, view=view), True
 
 
 class RoleButton(
@@ -109,7 +159,23 @@ class Roles(commands.Cog):
         role4: discord.Role | None = None,
         role5: discord.Role | None = None,
     ):
-        roles = [role for role in (role1, role2, role3, role4, role5) if role]
+        roles = []
+        seen_role_ids = set()
+        for role in (role1, role2, role3, role4, role5):
+            if role is not None and role.id not in seen_role_ids:
+                roles.append(role)
+                seen_role_ids.add(role.id)
+        title, description, _, text_errors = validate_role_panel_input(
+            title, description, [role.id for role in roles]
+        )
+        if text_errors:
+            embed = make_embed(
+                "⚠️ Invalid role panel",
+                "\n".join(f"• {error}" for error in text_errors),
+                color=Palette.DANGER,
+            )
+            brand_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
 
         blocked = [
             role for role in roles
@@ -125,17 +191,23 @@ class Roles(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        view = discord.ui.View(timeout=None)
-        for role in roles:
-            view.add_item(RoleButton(role.id, label=role.name))
-
-        embed = make_embed(
-            f"🎭 {title}",
-            f"{description}\n\n" + "\n".join(f"• {role.mention}" for role in roles),
-            color=Palette.PURPLE,
+        embed, view = build_role_panel(title, description, roles)
+        message = await respond(interaction, embed, view=view)
+        if message is None:
+            try:
+                message = await interaction.original_response()
+            except discord.HTTPException:
+                return
+        await asyncio.to_thread(
+            save_role_panel_record,
+            interaction.guild_id,
+            message.id,
+            interaction.channel_id,
+            title,
+            description,
+            [role.id for role in roles],
+            created_by=interaction.user.id,
         )
-        brand_footer(embed, "Click a button to toggle a role")
-        await respond(interaction, embed, view=view)
 
 
 async def setup(bot):

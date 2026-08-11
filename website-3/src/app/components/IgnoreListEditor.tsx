@@ -12,6 +12,7 @@ interface Props {
   value: string[];
   options: Option[];
   error?: string;
+  maxItems?: number;
   onChange: (value: string[]) => void;
 }
 
@@ -28,10 +29,11 @@ function IgnoreListEditor({
   value,
   options,
   error,
+  maxItems = 50,
   onChange,
 }: Props) {
   const byId = new Map(options.map((o) => [o.id, o]));
-  const atLimit = value.length >= 50;
+  const atLimit = value.length >= maxItems;
   const available = atLimit ? [] : options.filter((o) => !value.includes(o.id));
 
   return (
@@ -51,7 +53,7 @@ function IgnoreListEditor({
       >
         <option value="">
           {atLimit
-            ? "— 50-item limit reached —"
+            ? `— ${maxItems}-item limit reached —`
             : available.length === 0
               ? "— all added —"
               : "— add one —"}

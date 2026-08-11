@@ -137,6 +137,7 @@ same value on every guild this bot serves, derived from the bot's
     "log_channel": "…|null", "voice_report_channel": "…|null", "update_channel": "…|null",
     "github_event_channel": "…|null", "error_log_channel": "…|null",
     "ticket_panel_channel": "…|null",
+    "role_panel_channel": "…|null",
     "autorole": "…|null", "ticket_staff_role": "…|null",
     "automod": {
       "invites": true, "spam": true, "badwords": ["…"],
@@ -155,6 +156,11 @@ same value on every guild this bot serves, derived from the bot's
     "open": [ { "thread_id": "…", "opener_id": "…", "opener_name": "Vik",
       "created_at": "…" } ]
   },
+  "role_panels": [ {
+    "message_id": "…", "channel_id": "…", "title": "Community roles",
+    "description": "Choose what you want to follow.", "role_ids": ["…"],
+    "updated_at": "…"
+  } ],
   "channels": [ { "id": "…", "name": "…", "category": "…|null" } ],
   "roles": [ { "id": "…", "name": "…", "color": "#RRGGBB",
     "assignable": true, "manages_threads": false } ]
@@ -243,6 +249,10 @@ actions:
   configured update channel only.
 - `ticket_panel_publish`: publishes the saved ticket panel or updates its
   existing Discord message in place. Requires a saved panel channel and staff role.
+- `role_panel_publish`: creates a self-role panel in the saved default channel,
+  or updates a tracked panel in its original channel. JSON body: `title` (1–80
+  chars), `description` (1–1000 chars), `role_ids` (1–5 unique assignable roles),
+  and optional `panel_message_id` when editing.
 
 ```json
 { "ok": true, "action": "backup_check",

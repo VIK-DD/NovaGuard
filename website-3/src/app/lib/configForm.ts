@@ -10,6 +10,7 @@ const ID_KEYS = [
   "github_event_channel",
   "error_log_channel",
   "ticket_panel_channel",
+  "role_panel_channel",
   "autorole",
   "ticket_staff_role",
 ] as const;
