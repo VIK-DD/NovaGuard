@@ -104,6 +104,7 @@ export type GuildRole = GuildConfig["roles"][number];
 export const AuditSchema = z.object({
   audit: z.array(
     z.object({
+      id: z.number(),
       username: z.string(),
       user_id: z.string(),
       action: z.string(),
@@ -112,6 +113,7 @@ export const AuditSchema = z.object({
       created_at: z.string(),
     }),
   ),
+  next_cursor: z.number().nullable(),
 });
 export type AuditEntry = z.infer<typeof AuditSchema>["audit"][number];
 
@@ -189,6 +191,14 @@ export const DashboardSchema = z.object({
     ok: z.boolean(),
     warnings: z.array(z.string()),
     errors: z.array(z.string()),
+    offsite: z.object({
+      configured: z.boolean(),
+      matches_backup: z.boolean(),
+      latest_ok: z.boolean(),
+      uploaded_at: z.string().nullable(),
+      check_ok: z.boolean().nullable(),
+      checked_at: z.string().nullable(),
+    }),
   }),
   updates: z.array(
     z.object({

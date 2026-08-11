@@ -155,6 +155,7 @@ const guildMeta: Record<string, { name: string; member_count: number }> = {
 };
 
 type AuditEntry = {
+  id: number;
   username: string;
   user_id: string;
   action: string;
@@ -165,6 +166,7 @@ type AuditEntry = {
 const auditByGuild: Record<string, AuditEntry[]> = {
   "1001": [
     {
+      id: 3,
       username: "Victor",
       user_id: me.user.id,
       action: "update_automod",
@@ -172,6 +174,7 @@ const auditByGuild: Record<string, AuditEntry[]> = {
       created_at: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
     },
     {
+      id: 2,
       username: "Mira",
       user_id: "88820011",
       action: "update_channels",
@@ -179,6 +182,7 @@ const auditByGuild: Record<string, AuditEntry[]> = {
       created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
     },
     {
+      id: 1,
       username: "Victor",
       user_id: me.user.id,
       action: "update_roles",
@@ -313,6 +317,14 @@ function dashboardPayload(id: string): Json | null {
       ok: true,
       warnings: [],
       errors: [],
+      offsite: {
+        configured: true,
+        matches_backup: true,
+        latest_ok: true,
+        uploaded_at: new Date(Date.now() - 1000 * 60 * 33).toISOString(),
+        check_ok: true,
+        checked_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      },
     },
     updates: [
       {
@@ -354,6 +366,7 @@ function applyPatch(
   if (levels) for (const [k, v] of Object.entries(levels)) flat[`levels.${k}`] = v;
 
   (auditByGuild[id] ??= []).unshift({
+    id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,
     username: me.user.username,
     user_id: me.user.id,
     action: "update_settings",
@@ -363,6 +376,7 @@ function applyPatch(
 }
 
 function route(pathname: string, method: string, body: Json | null): { status: number; data: Json } {
+  const search = new URLSearchParams(pathname.includes("?") ? pathname.split("?", 2)[1] : "");
   const p = pathname.replace(/^.*\/api\/v1/, "").replace(/\?.*$/, "");
 
   if (p === "/me") {
@@ -417,6 +431,7 @@ function route(pathname: string, method: string, body: Json | null): { status: n
     };
     if (!messages[actionName]) return { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
     (auditByGuild[id] ??= []).unshift({
+      id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,
       username: me.user.username,
       user_id: me.user.id,
       action: `dashboard_${actionName}`,
@@ -427,7 +442,32 @@ function route(pathname: string, method: string, body: Json | null): { status: n
   }
 
   const aud = p.match(/^\/guilds\/([^/]+)\/audit$/);
-  if (aud) return { status: 200, data: { audit: auditByGuild[aud[1]] ?? [] } };
+  if (aud) {
+    const limit = Math.min(Math.max(Number(search.get("limit")) || 50, 1), 200);
+    const cursor = Number(search.get("cursor")) || Number.POSITIVE_INFINITY;
+    const kind = search.get("kind");
+    const actor = search.get("actor")?.toLowerCase();
+    const after = search.get("after");
+    const before = search.get("before");
+    const filtered = (auditByGuild[aud[1]] ?? []).filter((entry) => {
+      if (entry.id >= cursor) return false;
+      if (kind === "settings" && entry.action !== "config_update" && !entry.action.startsWith("update_")) return false;
+      if (kind === "actions" && !entry.action.startsWith("dashboard_")) return false;
+      if (kind === "login" && entry.action !== "login") return false;
+      if (actor && !entry.username.toLowerCase().includes(actor) && entry.user_id !== actor) return false;
+      if (after && entry.created_at < after) return false;
+      if (before && entry.created_at >= before) return false;
+      return true;
+    });
+    const page = filtered.slice(0, limit);
+    return {
+      status: 200,
+      data: {
+        audit: page,
+        next_cursor: filtered.length > limit && page.length ? page[page.length - 1].id : null,
+      },
+    };
+  }
 
   return { status: 404, data: { error: "Unknown endpoint.", code: "not_found" } };
 }
@@ -454,7 +494,8 @@ const handler: Handler = async (input, init, real) => {
     }
   }
 
-  const { status, data } = route(new URL(url, window.location.origin).pathname, method, body);
+  const parsed = new URL(url, window.location.origin);
+  const { status, data } = route(`${parsed.pathname}${parsed.search}`, method, body);
   await new Promise((r) => setTimeout(r, LATENCY));
   return new Response(JSON.stringify(data), {
     status,

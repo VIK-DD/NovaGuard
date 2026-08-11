@@ -426,6 +426,25 @@ async def main():
         async with http.get(f"{LEGACY}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
             await check("config GET legacy alias", r.status == 200)
 
+        async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/dashboard", cookies=cookies) as r:
+            data = await r.json()
+            offsite = data.get("backup", {}).get("offsite", {})
+            await check(
+                "dashboard exposes sanitized off-site backup health",
+                r.status == 200
+                and {
+                    "configured",
+                    "matches_backup",
+                    "latest_ok",
+                    "uploaded_at",
+                    "check_ok",
+                    "checked_at",
+                }
+                == set(offsite)
+                and "destination" not in offsite
+                and "remote_path" not in offsite,
+            )
+
         # ── CSRF Origin guard on mutations (fix #8) ───────────────────
         async with http.put(
             f"{V1}/guilds/{TEST_GUILD_ID}/config",
@@ -536,8 +555,58 @@ async def main():
             await check(
                 "audit trail recorded",
                 r.status == 200 and first.get("action") == "config_update"
-                and first.get("username") == "Vik",
+                and first.get("username") == "Vik"
+                and isinstance(first.get("id"), int)
+                and "next_cursor" in data,
             )
+
+        async with http.get(
+            f"{V1}/guilds/{TEST_GUILD_ID}/audit?limit=1", cookies=cookies
+        ) as r:
+            page_one = await r.json()
+            cursor = page_one.get("next_cursor")
+            first_id = (page_one.get("audit") or [{}])[0].get("id")
+            await check(
+                "audit page advertises an older cursor",
+                r.status == 200 and isinstance(cursor, int) and first_id == cursor,
+            )
+        async with http.get(
+            f"{V1}/guilds/{TEST_GUILD_ID}/audit?limit=1&cursor={cursor}", cookies=cookies
+        ) as r:
+            page_two = await r.json()
+            second_id = (page_two.get("audit") or [{}])[0].get("id")
+            await check(
+                "audit cursor returns the next stable page",
+                r.status == 200 and isinstance(second_id, int) and second_id < first_id,
+            )
+
+        async with http.get(
+            f"{V1}/guilds/{TEST_GUILD_ID}/audit?kind=settings&actor=Vik", cookies=cookies
+        ) as r:
+            filtered = await r.json()
+            await check(
+                "audit filters combine safely",
+                r.status == 200
+                and filtered.get("audit")
+                and all(
+                    row.get("username") == "Vik"
+                    and (
+                        row.get("action") == "config_update"
+                        or str(row.get("action", "")).startswith("update_")
+                    )
+                    for row in filtered["audit"]
+                ),
+            )
+
+        for query in ("limit=banana", "limit=-1", "cursor=nope", "kind=nope", "after=not-a-date"):
+            async with http.get(
+                f"{V1}/guilds/{TEST_GUILD_ID}/audit?{query}", cookies=cookies
+            ) as r:
+                payload = await r.json()
+                await check(
+                    f"invalid audit query is rejected: {query}",
+                    r.status == 400 and payload.get("code") == "bad_request",
+                )
 
         # ── bot-starting → 503 (fix #6) ───────────────────────────────
         server.bot.ready = False

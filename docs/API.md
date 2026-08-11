@@ -201,7 +201,10 @@ reports and newest update-feed entries.
       "duration_seconds": 10800, "unique_members": 7, "peak_members": 5 } ] },
   "backup": { "available": true, "latest_name": "novaguard-backup-…zip",
     "latest_size": 812440, "latest_size_text": "793.4 KB", "latest_at": "…",
-    "ok": true, "warnings": [], "errors": [] },
+    "ok": true, "warnings": [], "errors": [],
+    "offsite": { "configured": true, "matches_backup": true,
+      "latest_ok": true, "uploaded_at": "…", "check_ok": true,
+      "checked_at": "…" } },
   "updates": [ { "build": 39, "created_at": "…", "highlights": ["…"] } ]
 }
 ```
@@ -225,10 +228,23 @@ actions:
 ```
 
 ### `GET /guilds/{guild_id}/audit?limit=50`
-Auth + Manage Server. Recent dashboard changes (max `limit` 200).
+Auth + Manage Server. Recent dashboard changes. `limit` is 1–200 and cursor
+pagination is stable while new events arrive.
+
+Optional filters:
+
+- `cursor=<id>` loads events older than the previous page's `next_cursor`.
+- `kind=settings|actions|login` selects the main event family.
+- `action=<exact action>` selects one machine action name.
+- `actor=<name or Discord id>` filters by actor.
+- `after=<ISO timestamp>` and `before=<ISO timestamp>` set an exclusive-end
+  UTC date range.
+
 ```json
-{ "audit": [ { "username": "…", "user_id": "…", "action": "config_update",
-  "changes": { "welcome_channel": 123 }, "created_at": "2026-07-12T14:00:00+00:00" } ] }
+{ "audit": [ { "id": 42, "username": "…", "user_id": "…",
+  "action": "config_update", "changes": { "welcome_channel": 123 },
+  "created_at": "2026-07-12T14:00:00+00:00" } ],
+  "next_cursor": 42 }
 ```
 
 ## Notes for the frontend

@@ -387,17 +387,59 @@ def db_add_audit(guild_id, user, action, changes, ip):
         )
 
 
-def db_get_audit(guild_id, limit):
+def db_get_audit(
+    guild_id,
+    limit,
+    *,
+    cursor=None,
+    kind=None,
+    action=None,
+    actor=None,
+    after=None,
+    before=None,
+):
+    clauses = ["guild_id = ?"]
+    params = [str(guild_id)]
+    if cursor is not None:
+        clauses.append("id < ?")
+        params.append(cursor)
+    if kind == "settings":
+        clauses.append("(action = 'config_update' OR action LIKE 'update_%')")
+    elif kind == "actions":
+        clauses.append("action LIKE 'dashboard_%'")
+    elif kind == "login":
+        clauses.append("action = 'login'")
+    if action:
+        clauses.append("action = ?")
+        params.append(action)
+    if actor:
+        clauses.append("(username LIKE ? OR user_id = ?)")
+        params.extend((f"%{actor}%", actor))
+    if after:
+        clauses.append("created_at >= ?")
+        params.append(after)
+    if before:
+        clauses.append("created_at < ?")
+        params.append(before)
+
+    # Fetch one extra row so the API can advertise a real next page instead
+    # of making the client issue an empty request at the end of the trail.
+    params.append(limit + 1)
     with _DB_LOCK, connect() as db:
         rows = db.execute(
-            """
-            SELECT username, user_id, action, changes_json, created_at
-            FROM web_audit WHERE guild_id = ? ORDER BY id DESC LIMIT ?
+            f"""
+            SELECT id, username, user_id, action, changes_json, created_at
+            FROM web_audit
+            WHERE {' AND '.join(clauses)}
+            ORDER BY id DESC LIMIT ?
             """,
-            (str(guild_id), limit),
+            params,
         ).fetchall()
-    return [
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    entries = [
         {
+            "id": row["id"],
             "username": row["username"],
             "user_id": row["user_id"],
             "action": row["action"],
@@ -406,6 +448,8 @@ def db_get_audit(guild_id, limit):
         }
         for row in rows
     ]
+    next_cursor = entries[-1]["id"] if has_more and entries else None
+    return entries, next_cursor
 
 
 # ── errors ───────────────────────────────────────────────────────────
@@ -544,6 +588,15 @@ class WebServer:
             headers = {"Retry-After": str(error.retry_after)} if error.retry_after else None
             return web.json_response(payload, status=error.status, headers=headers)
         except web.HTTPException as http_error:
+            # Redirect exceptions are control flow, not API failures. Returning
+            # them from middleware is deprecated by aiohttp, while turning them
+            # into JSON here would discard Location and Set-Cookie. Stamp the
+            # headers that the outer middleware cannot add after a raised
+            # redirect, then let aiohttp handle it natively.
+            if 300 <= http_error.status < 400:
+                for key, value in self._security_headers(request).items():
+                    http_error.headers.setdefault(key, value)
+                raise
             # aiohttp's own errors (unknown route → 404, wrong verb → 405, …)
             code = ApiError._DEFAULT_CODES.get(http_error.status, "http_error")
             return web.json_response(
@@ -849,7 +902,7 @@ class WebServer:
         response = web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}")
         response.set_cookie(STATE_COOKIE, state, max_age=STATE_TTL, httponly=True,
                             samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
-        return response
+        raise response
 
     async def handle_callback(self, request):
         self._rate_limit(request, "auth")
@@ -912,7 +965,7 @@ class WebServer:
         response.set_cookie(SESSION_COOKIE, sid, max_age=SESSION_TTL, httponly=True,
                             samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         response.del_cookie(STATE_COOKIE)
-        return response
+        raise response
 
     async def handle_logout(self, request):
         self._check_origin(request)
@@ -1000,7 +1053,7 @@ class WebServer:
             # invite used to dead-end.
             params["redirect_uri"] = INVITE_REDIRECT
             params["response_type"] = "code"
-        return web.HTTPFound(f"https://discord.com/oauth2/authorize?{urlencode(params)}")
+        raise web.HTTPFound(f"https://discord.com/oauth2/authorize?{urlencode(params)}")
 
     async def handle_invite_complete(self, request):
         """Land here after the bot is added, then bounce to the dashboard.
@@ -1011,7 +1064,7 @@ class WebServer:
         purely so the invite ends somewhere that belongs to us instead of on
         Discord's own confirmation screen.
         """
-        return web.HTTPFound(AFTER_INVITE)
+        raise web.HTTPFound(AFTER_INVITE)
 
     async def handle_stats(self, request):
         self._rate_limit(request, "read")
@@ -1200,10 +1253,26 @@ class WebServer:
         backups = await asyncio.to_thread(list_backups, 1)
         newest_backup = backups[0] if backups else None
         backup_report = await asyncio.to_thread(inspect_backup, newest_backup["path"]) if newest_backup else None
-        offsite_backup = await asyncio.to_thread(
+        offsite_status = await asyncio.to_thread(
             remote_backup_status,
             newest_backup["name"] if newest_backup else None,
         )
+        offsite_latest = offsite_status.get("latest") or {}
+        offsite_check = offsite_status.get("latest_remote_check") or offsite_latest.get("check") or {}
+        offsite_backup = {
+            # Deliberately omit destination, remote_path, stdout and stderr.
+            # A Manage Server user needs health, not host storage internals.
+            "configured": bool(offsite_status.get("configured")),
+            "matches_backup": bool(offsite_status.get("matches_backup")),
+            "latest_ok": bool(offsite_latest.get("ok")),
+            "uploaded_at": offsite_latest.get("uploaded_at")
+            if isinstance(offsite_latest.get("uploaded_at"), str)
+            else None,
+            "check_ok": bool(offsite_check.get("ok")) if offsite_check else None,
+            "checked_at": offsite_check.get("checked_at")
+            if isinstance(offsite_check.get("checked_at"), str)
+            else None,
+        }
 
         update_state = load_update_state()
         update_feed = merged_update_feed(
@@ -1472,9 +1541,65 @@ class WebServer:
     async def handle_audit(self, request):
         self._rate_limit(request, "read")
         _, _, guild = await self._authorized_guild(request)
-        limit = min(int(request.query.get("limit", "50") or 50), 200)
-        entries = await asyncio.to_thread(db_get_audit, guild.id, limit)
-        return web.json_response({"audit": entries})
+        raw_limit = request.query.get("limit", "50") or "50"
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            raise ApiError(400, "Audit limit must be a number.", code="bad_request")
+        if limit < 1:
+            raise ApiError(400, "Audit limit must be at least 1.", code="bad_request")
+        limit = min(limit, 200)
+
+        raw_cursor = request.query.get("cursor")
+        cursor = None
+        if raw_cursor:
+            try:
+                cursor = int(raw_cursor)
+            except (TypeError, ValueError):
+                raise ApiError(400, "Audit cursor is invalid.", code="bad_request")
+            if cursor < 1:
+                raise ApiError(400, "Audit cursor is invalid.", code="bad_request")
+
+        kind = (request.query.get("kind") or "").strip().lower() or None
+        if kind not in {None, "settings", "actions", "login"}:
+            raise ApiError(400, "Audit kind is invalid.", code="bad_request")
+
+        action = (request.query.get("action") or "").strip() or None
+        actor = (request.query.get("actor") or "").strip() or None
+        if action and len(action) > 80:
+            raise ApiError(400, "Audit action filter is too long.", code="bad_request")
+        if actor and len(actor) > 100:
+            raise ApiError(400, "Audit actor filter is too long.", code="bad_request")
+
+        def audit_timestamp(name):
+            value = (request.query.get(name) or "").strip()
+            if not value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                raise ApiError(400, f"Audit {name} date is invalid.", code="bad_request")
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC).isoformat()
+
+        after = audit_timestamp("after")
+        before = audit_timestamp("before")
+        if after and before and after >= before:
+            raise ApiError(400, "Audit date range is invalid.", code="bad_request")
+
+        entries, next_cursor = await asyncio.to_thread(
+            db_get_audit,
+            guild.id,
+            limit,
+            cursor=cursor,
+            kind=kind,
+            action=action,
+            actor=actor,
+            after=after,
+            before=before,
+        )
+        return web.json_response({"audit": entries, "next_cursor": next_cursor})
 
     async def handle_config_put(self, request):
         self._rate_limit(request, "write")

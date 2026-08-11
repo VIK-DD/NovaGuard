@@ -349,6 +349,18 @@ export default function GuildOverview() {
 
   const data = dashboard.data;
   const backupTone = data.backup.ok ? "good" : data.backup.available ? "warn" : "muted";
+  const offsite = data.backup.offsite;
+  const offsiteHealthy =
+    offsite.configured && offsite.matches_backup && offsite.latest_ok && offsite.check_ok !== false;
+  const offsiteLabel = !offsite.configured
+    ? "Not configured"
+    : offsiteHealthy
+      ? offsite.check_ok
+        ? "Verified off-site"
+        : "Uploaded off-site"
+      : offsite.latest_ok
+        ? "Out of sync"
+        : "Upload needed";
   const runningAction = action.variables;
   const actionBusy = action.isPending;
   const runAction = (name: string) => action.mutate(name);
@@ -454,7 +466,22 @@ export default function GuildOverview() {
             ) : (
               <p className="text-sm text-ink-muted">No backup archive has been created yet.</p>
             )}
-            <p className="mt-4 text-xs text-ink-muted">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
+              <div>
+                <p className="text-xs font-medium text-ink">Off-site copy</p>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  {offsite.checked_at
+                    ? `Checked ${timeFmt.format(new Date(offsite.checked_at))}`
+                    : offsite.uploaded_at
+                      ? `Uploaded ${timeFmt.format(new Date(offsite.uploaded_at))}`
+                      : "Google Drive or another rclone destination"}
+                </p>
+              </div>
+              <Pill tone={offsiteHealthy ? "good" : offsite.configured ? "warn" : "muted"}>
+                {offsiteLabel}
+              </Pill>
+            </div>
+            <p className="mt-3 text-xs text-ink-muted">
               Run the quick check above or use `/backup test` in Discord.
             </p>
           </Card>

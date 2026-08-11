@@ -1,7 +1,8 @@
 import { Link, useParams } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import type { AuditEntry } from "../../lib/api/schemas";
 import Icon from "../components/Icon";
-import { useAudit } from "../queries/audit";
+import { type AuditFilters, useAudit } from "../queries/audit";
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -120,10 +121,34 @@ function ActivityRow({ entry }: { entry: AuditEntry }) {
 
 export default function AuditLog() {
   const { guildId } = useParams({ strict: false }) as { guildId: string };
-  const audit = useAudit(guildId);
-  const entries = audit.data?.audit ?? [];
+  const [draft, setDraft] = useState({ kind: "", actor: "", after: "", before: "" });
+  const [filters, setFilters] = useState<AuditFilters>({});
+  const audit = useAudit(guildId, filters);
+  const entries = useMemo(
+    () => audit.data?.pages.flatMap((page) => page.audit) ?? [],
+    [audit.data],
+  );
   const actionCount = entries.filter((entry) => entry.action.startsWith("dashboard_")).length;
   const settingsCount = entries.filter((entry) => entry.action === "config_update" || entry.action.startsWith("update_")).length;
+  const hasFilters = Object.values(filters).some(Boolean);
+
+  const applyFilters = () => {
+    const next: AuditFilters = {};
+    if (draft.kind) next.kind = draft.kind as AuditFilters["kind"];
+    if (draft.actor.trim()) next.actor = draft.actor.trim();
+    if (draft.after) next.after = `${draft.after}T00:00:00.000Z`;
+    if (draft.before) {
+      const exclusiveEnd = new Date(`${draft.before}T00:00:00.000Z`);
+      exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+      next.before = exclusiveEnd.toISOString();
+    }
+    setFilters(next);
+  };
+
+  const clearFilters = () => {
+    setDraft({ kind: "", actor: "", after: "", before: "" });
+    setFilters({});
+  };
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
@@ -145,6 +170,71 @@ export default function AuditLog() {
           {audit.isFetching ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+
+      <section className="mt-5 rounded-[var(--radius-card)] border border-line bg-card p-4 sm:p-5">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[1fr_1fr_0.8fr_0.8fr_auto] lg:items-end">
+          <label className="grid gap-1.5 text-xs font-medium text-ink-muted">
+            Event type
+            <select
+              value={draft.kind}
+              onChange={(event) => setDraft((current) => ({ ...current, kind: event.target.value }))}
+              className="min-h-11 rounded-lg border border-line bg-bg px-3 text-sm text-ink outline-none focus:border-primary"
+            >
+              <option value="">All events</option>
+              <option value="settings">Settings</option>
+              <option value="actions">Quick actions</option>
+              <option value="login">Sign-ins</option>
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-ink-muted">
+            Actor
+            <input
+              type="search"
+              value={draft.actor}
+              onChange={(event) => setDraft((current) => ({ ...current, actor: event.target.value }))}
+              placeholder="Name or Discord ID"
+              maxLength={100}
+              className="min-h-11 rounded-lg border border-line bg-bg px-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-primary"
+            />
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-ink-muted">
+            From
+            <input
+              type="date"
+              value={draft.after}
+              onChange={(event) => setDraft((current) => ({ ...current, after: event.target.value }))}
+              className="min-h-11 rounded-lg border border-line bg-bg px-3 text-sm text-ink outline-none focus:border-primary"
+            />
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-ink-muted">
+            Through
+            <input
+              type="date"
+              value={draft.before}
+              onChange={(event) => setDraft((current) => ({ ...current, before: event.target.value }))}
+              className="min-h-11 rounded-lg border border-line bg-bg px-3 text-sm text-ink outline-none focus:border-primary"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={applyFilters}
+              className="ng-pressable min-h-11 rounded-full bg-primary px-4 text-sm font-medium text-primary-ink"
+            >
+              Apply
+            </button>
+            {(hasFilters || Object.values(draft).some(Boolean)) && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="ng-pressable min-h-11 rounded-full border border-line px-4 text-sm"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
         <div className="rounded-[var(--radius-card)] border border-line bg-card p-4">
@@ -183,9 +273,13 @@ export default function AuditLog() {
 
       {audit.data && entries.length === 0 && (
         <div className="mt-6 rounded-[var(--radius-card)] border border-line bg-card p-6">
-          <p className="font-display text-xl font-semibold">No dashboard activity yet.</p>
+          <p className="font-display text-xl font-semibold">
+            {hasFilters ? "No activity matches these filters." : "No dashboard activity yet."}
+          </p>
           <p className="mt-2 text-sm text-ink-muted">
-            Run a quick action or change a setting and the event will appear here automatically.
+            {hasFilters
+              ? "Clear the filters or choose a wider date range."
+              : "Run a quick action or change a setting and the event will appear here automatically."}
           </p>
           <Link
             to="/g/$guildId"
@@ -199,10 +293,23 @@ export default function AuditLog() {
 
       {entries.length > 0 && (
         <ul className="mt-6">
-          {entries.map((entry, i) => (
-            <ActivityRow key={`${entry.created_at}-${i}`} entry={entry} />
+          {entries.map((entry) => (
+            <ActivityRow key={entry.id} entry={entry} />
           ))}
         </ul>
+      )}
+
+      {audit.hasNextPage && (
+        <div className="mt-4 flex justify-center border-t border-line pt-5">
+          <button
+            type="button"
+            onClick={() => void audit.fetchNextPage()}
+            disabled={audit.isFetchingNextPage}
+            className="ng-pressable min-h-11 rounded-full border border-line bg-card px-5 text-sm hover:border-line-strong disabled:opacity-60"
+          >
+            {audit.isFetchingNextPage ? "Loading..." : "Load older activity"}
+          </button>
+        </div>
       )}
     </main>
   );

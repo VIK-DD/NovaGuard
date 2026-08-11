@@ -30,7 +30,7 @@ function GuildLayout() {
   const tab = "inline-flex min-h-11 items-center border-b-2 px-1 text-sm transition-colors";
   const warmAudit = () => {
     void import("./queries/audit").then(({ auditQuery }) =>
-      queryClient.prefetchQuery(auditQuery(guildId)),
+      queryClient.prefetchInfiniteQuery(auditQuery(guildId)),
     );
   };
   return (
