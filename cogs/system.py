@@ -1152,7 +1152,9 @@ class System(commands.Cog):
             await self.apply_maintenance_presence(state)
             embed = make_embed(
                 "🛠️ Maintenance Enabled",
-                "NovaGuard is now in maintenance mode.\nRegular users will see a maintenance notice instead of command results.",
+                "NovaGuard is now in maintenance mode.\n"
+                "Regular users will see a maintenance notice instead of command results, "
+                "and the website dashboard is closed with the same message.",
                 color=Palette.WARNING,
             )
             embed.add_field(name="Presence", value=f"`{state['message']}`", inline=False)

@@ -1,42 +1,258 @@
 ---
-import Base from "../layouts/Base.astro";
+// Deliberately standalone: no Base layout, no site CSS, no islands. This page
+// renders precisely when something else is broken, so every dependency it drops
+// is one less way for it to fail. The look is the Coming Soon face — same
+// palette, type scale and motion — so the two read as one product.
 ---
 
-<Base
-  title="Update in progress — NovaGuard"
-  description="NovaGuard private routes are temporarily in maintenance."
->
-  <main class="grid min-h-screen place-items-center px-5 py-10 sm:px-6 sm:py-16">
-    <section class="w-full max-w-xl text-center" aria-label="NovaGuard update in progress">
-      <a href="/" class="inline-flex items-center gap-3" aria-label="NovaGuard home">
-        <img
-          src="/assets/novaguard-icon-96.png"
-          alt=""
-          width="44"
-          height="44"
-          class="h-11 w-11 rounded-[10px]"
-        />
-        <span class="font-display text-3xl font-semibold tracking-tight">NovaGuard</span>
-      </a>
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <title>Maintenance — NovaGuard</title>
+    <meta name="description" content="The NovaGuard dashboard is briefly closed for maintenance." />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="/assets/novaguard-icon-96.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;800&display=swap"
+    />
+    <script is:inline>
+      // Pre-paint, so the page never flashes the wrong theme. Coming Soon stores
+      // its choice under a different key than the rest of the site; read both so
+      // a theme picked on either surface holds here.
+      (() => {
+        let theme = "dark";
+        try {
+          const stored =
+            localStorage.getItem("ng-theme") || localStorage.getItem("ng-maintenance-theme");
+          if (stored === "light") theme = "light";
+        } catch (error) {
+          // Private browsing or blocked storage. Dark is the default anyway.
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --background: #0a0a0a;
+        --foreground: #f5f5f5;
+        --muted: #8a8a8a;
+        --line: #2a2a2a;
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --background: #fafafa;
+        --foreground: #101010;
+        --muted: #747474;
+        --line: #dedede;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        min-height: 100%;
+        max-width: 100%;
+        overflow-x: clip;
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+        transition:
+          background-color 0.18s ease,
+          color 0.18s ease;
+      }
+      .page {
+        position: relative;
+        display: flex;
+        min-height: 100dvh;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+      }
+      .theme-toggle {
+        position: absolute;
+        top: 1.5rem;
+        right: 1.5rem;
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: transparent;
+        color: var(--foreground);
+        cursor: pointer;
+        transition:
+          border-color 0.18s ease,
+          transform 0.18s ease;
+      }
+      .theme-toggle:hover {
+        transform: scale(1.06);
+      }
+      .theme-toggle:focus-visible {
+        outline: 2px solid var(--foreground);
+        outline-offset: 3px;
+      }
+      .content {
+        display: flex;
+        width: 100%;
+        max-width: 32rem;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(3rem, 10vw, 8rem);
+        font-weight: 800;
+        letter-spacing: -0.075em;
+        line-height: 0.9;
+      }
+      .eyebrow {
+        margin: 1.15rem 0 0;
+        color: var(--muted);
+        font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: clamp(1rem, 1.5vw, 1.12rem);
+        letter-spacing: 0.08em;
+      }
+      .description {
+        margin: 0.7rem auto 0;
+        color: var(--muted);
+        font-size: clamp(0.94rem, 1.45vw, 1.04rem);
+        line-height: 1.6;
+      }
+      /* Filled by the worker from whatever the owner typed into /maintenance.
+         Empty on a direct visit, and an element holding only a comment still
+         counts as :empty, so nothing shows when there is nothing to say. */
+      .message {
+        margin: 1.1rem auto 0;
+        max-width: 26rem;
+        padding: 0.55rem 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--foreground);
+        font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+      }
+      .message:empty {
+        display: none;
+      }
+      .signout {
+        margin-top: 1.8rem;
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-decoration: none;
+        transition:
+          color 0.18s ease,
+          border-color 0.18s ease;
+      }
+      .signout:hover {
+        border-color: var(--foreground);
+        color: var(--foreground);
+      }
+      .signout:focus-visible {
+        outline: 2px solid var(--foreground);
+        outline-offset: 3px;
+      }
+      .credit {
+        margin: 2rem 0 0;
+        color: var(--muted);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+      }
+      @media (max-width: 540px) {
+        .page {
+          padding: 1rem;
+        }
+        .theme-toggle {
+          top: 1rem;
+          right: 1rem;
+          min-width: 44px;
+          min-height: 44px;
+        }
+        h1 {
+          font-size: 50px;
+          line-height: 0.92;
+        }
+        .credit {
+          font-size: 0.64rem;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <button type="button" class="theme-toggle" aria-label="Switch theme"></button>
 
-      <p class="mt-8 font-mono text-xs tracking-[0.28em] text-primary uppercase sm:mt-10 sm:tracking-[0.35em]">
-        Update in progress
-      </p>
-      <h1 class="font-display mx-auto mt-4 max-w-lg text-4xl leading-[0.98] tracking-tight sm:text-6xl">
-        We are rebuilding this space.
-      </h1>
-      <p class="mx-auto mt-5 max-w-md text-base leading-7 text-ink-muted">
-        Protected pages are paused while the next NovaGuard update is being polished.
-      </p>
+      <div class="content">
+        <h1>NovaGuard</h1>
+        <p class="eyebrow">Maintenance</p>
+        <p class="description">
+          The dashboard is paused for a moment while NovaGuard is being updated.
+        </p>
+        <p class="message"><!--ng:message--></p>
+        <a class="signout" href="/api/auth/logout">Sign out</a>
+        <p class="credit">Developed by VIK &amp; CloudMedia</p>
+      </div>
+    </main>
 
-      <a
-        href="/api/auth/logout"
-        class="ng-pressable mt-9 inline-flex min-h-11 items-center rounded-[8px] border border-line px-4 py-2 text-sm text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
-      >
-        Sign out
-      </a>
+    <script is:inline>
+      (() => {
+        const icons = {
+          dark: '<svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>',
+          light:
+            '<svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>',
+        };
+        const button = document.querySelector(".theme-toggle");
 
-      <p class="mt-10 text-xs text-ink-faint">Developed by VIK &amp; CloudMedia</p>
-    </section>
-  </main>
-</Base>
+        const render = () => {
+          const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+          const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+          button.innerHTML = icons[theme];
+          button.setAttribute("aria-label", label);
+          button.setAttribute("title", label);
+        };
+
+        button.addEventListener("click", () => {
+          const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+          document.documentElement.dataset.theme = next;
+          // Written under both keys so the choice survives whichever page the
+          // visitor lands on next.
+          try {
+            localStorage.setItem("ng-theme", next);
+            localStorage.setItem("ng-maintenance-theme", next);
+          } catch (error) {
+            // Storage blocked. The toggle still works for this page view.
+          }
+          document
+            .querySelector('meta[name="theme-color"]')
+            ?.setAttribute("content", next === "light" ? "#fafafa" : "#0a0a0a");
+          render();
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>
