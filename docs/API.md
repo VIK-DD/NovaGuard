@@ -153,11 +153,24 @@ same value on every guild this bot serves, derived from the bot's
     "ai": {
       "enabled": true, "answer_mode": "public|private",
       "channel_id": "…|null", "max_question_chars": 2000
+    },
+    "economy": {
+      "enabled": true, "daily_base": 200, "daily_streak_bonus": 50,
+      "work_min": 50, "work_max": 150, "work_cooldown_minutes": 60,
+      "transfers_enabled": true, "games_enabled": true, "shop_enabled": true,
+      "gamble_max_bet": 1000000, "slots_max_bet": 100000
     }
   },
   "ai_status": {
     "available": true, "model": "claude-…", "minute_calls": 4,
     "minute_cap": 30, "daily_calls": 83, "daily_cap": 500
+  },
+  "economy_status": {
+    "tracked_wallets": 42, "total_coins": 180450,
+    "leaderboard": [ { "position": 1, "user_id": "…", "display_name": "Vik",
+      "coins": 9400, "daily_streak": 11 } ],
+    "shop": [ { "key": "star", "label": "Star", "icon": "⭐",
+      "price": 1000, "kind": "trophy", "description": null } ]
   },
   "tickets": {
     "panel_channel_id": "…|null", "panel_message_id": "…|null",
@@ -215,6 +228,11 @@ only the keys present are changed. Returns the same payload as GET on success.
   `channel_id` is null or a text channel in this guild, and
   `max_question_chars` is an integer from 100 to 2000. `ai_status` exposes
   availability and safe usage counts, never `ANTHROPIC_API_KEY`.
+- `economy` is validated by `core/economy_settings.validate_economy`, which is
+  also read by `/daily`, `/work`, transfers, games, shop commands and voice
+  rewards. Numeric rewards and bets are bounded; `work_min` cannot exceed
+  `work_max`. The dashboard reports aggregate circulation, the leaderboard and
+  the global shop catalogue, but does not allow unaudited wallet edits.
 
 ```json
 { "welcome_channel": "123", "autorole": "456",

@@ -59,6 +59,13 @@ export const CONFIG_MODULES = [
     fields: ["ai"],
   },
   {
+    key: "economy",
+    label: "Economy",
+    description: "Tune rewards, cooldowns, transfers, games and shop access.",
+    icon: "trophy",
+    fields: ["economy"],
+  },
+  {
     key: "updates",
     label: "Updates",
     description: "Send NovaGuard releases and GitHub activity to Discord.",
@@ -107,6 +114,8 @@ export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): b
       return Boolean(settings.giveaway_channel);
     case "ai":
       return settings.ai.enabled;
+    case "economy":
+      return settings.economy.enabled;
     case "updates":
       return Boolean(settings.update_channel || settings.github_event_channel);
   }

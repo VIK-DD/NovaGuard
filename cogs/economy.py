@@ -13,13 +13,15 @@ from cogs.admin import require_admin
 from core import shop
 from core.admin_auth import record_audit
 from core.database import load_economy_data, upsert_economy_wallets
+from core.economy_settings import ECONOMY_DEFAULTS, resolve_economy
+from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import humanize_number, respond
 
 CURRENCY = "🪙"
-DAILY_BASE = 200
-DAILY_STREAK_BONUS = 50
-WORK_COOLDOWN = timedelta(hours=1)
+DAILY_BASE = ECONOMY_DEFAULTS["daily_base"]
+DAILY_STREAK_BONUS = ECONOMY_DEFAULTS["daily_streak_bonus"]
+WORK_COOLDOWN = timedelta(minutes=ECONOMY_DEFAULTS["work_cooldown_minutes"])
 # How late a claim can be and still continue a streak. Past this the streak
 # resets - unless a shield is spent.
 STREAK_GRACE = timedelta(hours=48)
@@ -116,6 +118,61 @@ class Economy(commands.Cog):
         except Exception as error:
             print(f"Economy flush skipped due to storage issue: {error!r}")
 
+    async def _settings_or_reject(self, interaction, feature=None):
+        config = resolve_economy(get_guild_settings(interaction.guild_id))
+        if not config["enabled"]:
+            description = "The economy is disabled on this server."
+        elif feature and not config[feature]:
+            labels = {
+                "transfers_enabled": "Member transfers",
+                "games_enabled": "Games of chance",
+                "shop_enabled": "The economy shop",
+            }
+            description = f"{labels.get(feature, 'This economy feature')} is disabled on this server."
+        else:
+            return config
+        embed = make_embed("💤 Economy unavailable", description, color=Palette.WARNING)
+        brand_footer(embed, "Economy")
+        await respond(interaction, embed, ephemeral=True)
+        return None
+
+    def status_payload(self, guild):
+        guild_data = self.data.get(str(guild.id), {})
+        wallets = [
+            (user_id, wallet)
+            for user_id, wallet in guild_data.items()
+            if isinstance(wallet, dict)
+        ]
+        ordered = sorted(wallets, key=lambda item: int(item[1].get("coins", 0) or 0), reverse=True)
+        leaderboard = []
+        for position, (user_id, wallet) in enumerate(ordered[:10], 1):
+            member = guild.get_member(int(user_id)) if str(user_id).isdigit() else None
+            leaderboard.append(
+                {
+                    "position": position,
+                    "user_id": str(user_id),
+                    "display_name": member.display_name if member else f"Member {user_id}",
+                    "coins": max(0, int(wallet.get("coins", 0) or 0)),
+                    "daily_streak": max(0, int(wallet.get("daily_streak", 0) or 0)),
+                }
+            )
+        return {
+            "tracked_wallets": len(wallets),
+            "total_coins": sum(max(0, int(wallet.get("coins", 0) or 0)) for _, wallet in wallets),
+            "leaderboard": leaderboard,
+            "shop": [
+                {
+                    "key": item["key"],
+                    "label": item["label"],
+                    "icon": item.get("icon") or "🪙",
+                    "price": int(item["price"]),
+                    "kind": item["kind"],
+                    "description": item.get("description"),
+                }
+                for item in shop.catalog()
+            ],
+        }
+
     def wallet_snapshot(self, guild_id, user_id):
         """Read a wallet without creating one.
 
@@ -141,6 +198,9 @@ class Economy(commands.Cog):
         database directly so the balance in memory, the one every command
         reads, is the one that changed.
         """
+        if not resolve_economy(get_guild_settings(guild_id))["enabled"]:
+            wallet = self.wallet_snapshot(guild_id, user_id)
+            return int(wallet.get("coins", 0) or 0) if wallet else 0
         wallet = get_wallet(self.data, guild_id, user_id)
         wallet["coins"] = max(0, int(wallet.get("coins", 0)) + int(amount))
         await self._save(guild_id, user_id)
@@ -157,6 +217,8 @@ class Economy(commands.Cog):
     @app_commands.describe(member="Whose wallet? (defaults to you)")
     @app_commands.guild_only()
     async def balance(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        if await self._settings_or_reject(interaction) is None:
+            return
         target = member or interaction.user
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, target.id)
@@ -199,6 +261,9 @@ class Economy(commands.Cog):
     @app_commands.command(name="daily", description="Claim your daily coins (streak bonus!)")
     @app_commands.guild_only()
     async def daily(self, interaction: discord.Interaction):
+        config = await self._settings_or_reject(interaction)
+        if config is None:
+            return
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         now = datetime.now(UTC)
@@ -223,7 +288,7 @@ class Economy(commands.Cog):
             saved = False
             streak = 1
 
-        reward = DAILY_BASE + DAILY_STREAK_BONUS * min(streak - 1, 10)
+        reward = config["daily_base"] + config["daily_streak_bonus"] * min(streak - 1, 10)
         wallet["coins"] += reward
         wallet["daily_streak"] = streak
         wallet["last_daily"] = now.isoformat()
@@ -246,11 +311,15 @@ class Economy(commands.Cog):
     @app_commands.command(name="work", description="Do an honest hour of work for coins")
     @app_commands.guild_only()
     async def work(self, interaction: discord.Interaction):
+        config = await self._settings_or_reject(interaction)
+        if config is None:
+            return
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         now = datetime.now(UTC)
 
-        cooldown = shop.work_cooldown(wallet, WORK_COOLDOWN, now)
+        base_cooldown = timedelta(minutes=config["work_cooldown_minutes"])
+        cooldown = shop.work_cooldown(wallet, base_cooldown, now)
         last_work = parse_saved_datetime(wallet.get("last_work"))
         if last_work:
             if now - last_work < cooldown:
@@ -263,7 +332,7 @@ class Economy(commands.Cog):
                 brand_footer(embed, "Economy")
                 return await respond(interaction, embed, ephemeral=True)
 
-        earnings = random.randint(50, 150)
+        earnings = random.randint(config["work_min"], config["work_max"])
         wallet["coins"] += earnings
         wallet["last_work"] = now.isoformat()
         await self._save(interaction.guild_id, interaction.user.id)
@@ -273,10 +342,13 @@ class Economy(commands.Cog):
             f"{random.choice(WORK_FLAVORS)} and earned **{CURRENCY} {earnings}**!",
             color=Palette.TEAL,
         )
-        if cooldown < WORK_COOLDOWN:
+        if cooldown < base_cooldown:
             embed.add_field(
                 name="🛠️ Work Rush",
-                value=f"Next shift in `{int(cooldown.total_seconds() // 60)}m` instead of `60m`.",
+                value=(
+                    f"Next shift in `{int(cooldown.total_seconds() // 60)}m` instead of "
+                    f"`{config['work_cooldown_minutes']}m`."
+                ),
                 inline=False,
             )
         brand_footer(embed, f"Balance: {humanize_number(wallet['coins'])} coins")
@@ -291,6 +363,8 @@ class Economy(commands.Cog):
         member: discord.Member,
         amount: app_commands.Range[int, 1, 1000000],
     ):
+        if await self._settings_or_reject(interaction, "transfers_enabled") is None:
+            return
         if member.bot or member.id == interaction.user.id:
             embed = make_embed("🤔 Invalid target", "Pick a real member other than yourself.", color=Palette.WARNING)
             brand_footer(embed)
@@ -324,6 +398,17 @@ class Economy(commands.Cog):
         interaction: discord.Interaction,
         amount: app_commands.Range[int, 10, 1000000],
     ):
+        config = await self._settings_or_reject(interaction, "games_enabled")
+        if config is None:
+            return
+        if amount > config["gamble_max_bet"]:
+            embed = make_embed(
+                "🎚️ Bet too high",
+                f"This server caps `/gamble` bets at {CURRENCY} `{humanize_number(config['gamble_max_bet'])}`.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Economy")
+            return await respond(interaction, embed, ephemeral=True)
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         if wallet["coins"] < amount:
@@ -350,6 +435,17 @@ class Economy(commands.Cog):
         interaction: discord.Interaction,
         amount: app_commands.Range[int, 10, 100000],
     ):
+        config = await self._settings_or_reject(interaction, "games_enabled")
+        if config is None:
+            return
+        if amount > config["slots_max_bet"]:
+            embed = make_embed(
+                "🎚️ Bet too high",
+                f"This server caps `/slots` bets at {CURRENCY} `{humanize_number(config['slots_max_bet'])}`.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Economy")
+            return await respond(interaction, embed, ephemeral=True)
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, interaction.user.id)
         if wallet["coins"] < amount:
@@ -383,6 +479,8 @@ class Economy(commands.Cog):
     @app_commands.command(name="richest", description="Top 10 richest members")
     @app_commands.guild_only()
     async def richest(self, interaction: discord.Interaction):
+        if await self._settings_or_reject(interaction) is None:
+            return
         data = self.data
         guild_data = data.get(str(interaction.guild_id), {})
         ordered = sorted(guild_data.items(), key=lambda kv: kv[1].get("coins", 0), reverse=True)
@@ -405,6 +503,8 @@ class Economy(commands.Cog):
     @app_commands.command(name="shop", description="Browse the shop")
     @app_commands.guild_only()
     async def shop_command(self, interaction: discord.Interaction):
+        if await self._settings_or_reject(interaction, "shop_enabled") is None:
+            return
         wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
         embed = make_embed(
             "🛍️ Shop",
@@ -446,6 +546,8 @@ class Economy(commands.Cog):
     )
     @app_commands.guild_only()
     async def buy(self, interaction: discord.Interaction, item: app_commands.Choice[str]):
+        if await self._settings_or_reject(interaction, "shop_enabled") is None:
+            return
         wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
         label = shop.label_for(item.value)
         result = shop.purchase(wallet, item.value)
@@ -487,6 +589,8 @@ class Economy(commands.Cog):
     @app_commands.describe(member="Whose inventory? (defaults to you)")
     @app_commands.guild_only()
     async def inventory(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        if await self._settings_or_reject(interaction) is None:
+            return
         target = member or interaction.user
         wallet = get_wallet(self.data, interaction.guild_id, target.id)
 
@@ -526,6 +630,8 @@ class Economy(commands.Cog):
     @app_commands.command(name="crate", description="Open a mystery crate")
     @app_commands.guild_only()
     async def crate(self, interaction: discord.Interaction):
+        if await self._settings_or_reject(interaction, "shop_enabled") is None:
+            return
         wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
         before = wallet["coins"]
         result = shop.open_crate(wallet)
@@ -571,6 +677,8 @@ class Economy(commands.Cog):
         interaction: discord.Interaction,
         title: app_commands.Choice[str] | None = None,
     ):
+        if await self._settings_or_reject(interaction) is None:
+            return
         wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
         key = title.value if title else None
 

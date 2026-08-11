@@ -47,6 +47,19 @@ const base: GuildSettings = {
     channel_id: null,
     max_question_chars: 2000,
   },
+  economy: {
+    enabled: true,
+    daily_base: 200,
+    daily_streak_bonus: 50,
+    work_min: 50,
+    work_max: 150,
+    work_cooldown_minutes: 60,
+    transfers_enabled: true,
+    games_enabled: true,
+    shop_enabled: true,
+    gamble_max_bet: 1_000_000,
+    slots_max_bet: 100_000,
+  },
 };
 
 const clone = (): GuildSettings => structuredClone(base);
@@ -161,6 +174,14 @@ describe("diffSettings", () => {
     draft.ai.answer_mode = "private";
     expect(diffSettings(base, draft)).toEqual({ ai: { answer_mode: "private" } });
   });
+
+  it("sends both work reward bounds when either changes", () => {
+    const draft = clone();
+    draft.economy.work_min = 75;
+    expect(diffSettings(base, draft)).toEqual({
+      economy: { work_min: 75, work_max: 150 },
+    });
+  });
 });
 
 describe("isDirty", () => {
@@ -237,6 +258,16 @@ describe("validateSettings", () => {
     const draft = clone();
     draft.ai.max_question_chars = 99;
     expect(validateSettings(draft)).toHaveProperty("ai.max_question_chars");
+  });
+
+  it("validates economy ranges and reward order", () => {
+    const draft = clone();
+    draft.economy.work_min = 200;
+    draft.economy.work_max = 100;
+    draft.economy.work_cooldown_minutes = 0;
+    const errors = validateSettings(draft);
+    expect(errors).toHaveProperty("economy.work_min");
+    expect(errors).toHaveProperty("economy.work_cooldown_minutes");
   });
 });
 

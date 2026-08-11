@@ -440,6 +440,13 @@ export default function GuildConfig() {
     },
     [clearErrors],
   );
+  const setEconomy = useCallback(
+    (patch: Partial<GuildSettings["economy"]>) => {
+      clearErrors(["economy", ...Object.keys(patch).map((key) => `economy.${key}`)]);
+      setDraft((d) => (d ? { ...d, economy: { ...d.economy, ...patch } } : d));
+    },
+    [clearErrors],
+  );
 
   // One stable handler per channel field, built off the stable `set` above —
   // built once, not one fresh arrow function per field per render.
@@ -1542,6 +1549,185 @@ export default function GuildConfig() {
                 to Anthropic only when a member runs the command; NovaGuard does not store a local
                 question history.
               </p>
+            </Section>
+          )}
+
+          {selectedModule?.key === "economy" && (
+            <Section
+              id="economy"
+              icon="trophy"
+              kicker="Economy"
+              description="Tune earning rules and optional features without editing wallet balances."
+              active={isModuleActive(draft, "economy")}
+            >
+              <div className="grid gap-4 border-t border-line py-5 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs tracking-[0.15em] text-ink-muted uppercase">Wallets</p>
+                  <p className="font-display mt-1 text-2xl">
+                    {config.data.economy_status.tracked_wallets.toLocaleString("en")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs tracking-[0.15em] text-ink-muted uppercase">Coins in circulation</p>
+                  <p className="font-display mt-1 text-2xl">
+                    {config.data.economy_status.total_coins.toLocaleString("en")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs tracking-[0.15em] text-ink-muted uppercase">Shop items</p>
+                  <p className="font-display mt-1 text-2xl">
+                    {config.data.economy_status.shop.length}
+                  </p>
+                </div>
+              </div>
+
+              <Toggle
+                label="Enable the economy on this server"
+                checked={draft.economy.enabled}
+                onChange={(value) => setEconomy({ enabled: value })}
+              />
+
+              <div className="mt-6">
+                <p className="text-sm font-medium">Daily rewards</p>
+                <div className="mt-3 grid gap-5 sm:grid-cols-2">
+                  <NumberField
+                    label="Base daily reward"
+                    value={draft.economy.daily_base}
+                    min={0}
+                    max={100000}
+                    suffix="coins"
+                    error={fieldErrors["economy.daily_base"]}
+                    onChange={(value) => setEconomy({ daily_base: value })}
+                  />
+                  <NumberField
+                    label="Streak bonus per day"
+                    value={draft.economy.daily_streak_bonus}
+                    min={0}
+                    max={10000}
+                    suffix="coins"
+                    error={fieldErrors["economy.daily_streak_bonus"]}
+                    onChange={(value) => setEconomy({ daily_streak_bonus: value })}
+                  />
+                </div>
+                <p className="mt-2 text-xs leading-5 text-ink-muted">
+                  The streak bonus grows for at most ten bonus days, matching the live `/daily`
+                  logic.
+                </p>
+              </div>
+
+              <div className="mt-7 border-t border-line pt-5">
+                <p className="text-sm font-medium">Work rewards</p>
+                <div className="mt-3 grid gap-5 sm:grid-cols-3">
+                  <NumberField
+                    label="Minimum"
+                    value={draft.economy.work_min}
+                    min={0}
+                    max={100000}
+                    suffix="coins"
+                    error={fieldErrors["economy.work_min"]}
+                    onChange={(value) => setEconomy({ work_min: value })}
+                  />
+                  <NumberField
+                    label="Maximum"
+                    value={draft.economy.work_max}
+                    min={0}
+                    max={100000}
+                    suffix="coins"
+                    error={fieldErrors["economy.work_max"]}
+                    onChange={(value) => setEconomy({ work_max: value })}
+                  />
+                  <NumberField
+                    label="Cooldown"
+                    value={draft.economy.work_cooldown_minutes}
+                    min={1}
+                    max={1440}
+                    suffix="min"
+                    error={fieldErrors["economy.work_cooldown_minutes"]}
+                    onChange={(value) => setEconomy({ work_cooldown_minutes: value })}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-7 border-t border-line pt-2">
+                <Toggle
+                  label="Allow member-to-member transfers"
+                  checked={draft.economy.transfers_enabled}
+                  onChange={(value) => setEconomy({ transfers_enabled: value })}
+                />
+                <Toggle
+                  label="Enable gamble and slots"
+                  checked={draft.economy.games_enabled}
+                  onChange={(value) => setEconomy({ games_enabled: value })}
+                />
+                <Toggle
+                  label="Enable shop purchases and crates"
+                  checked={draft.economy.shop_enabled}
+                  onChange={(value) => setEconomy({ shop_enabled: value })}
+                />
+              </div>
+
+              <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                <NumberField
+                  label="Maximum /gamble bet"
+                  value={draft.economy.gamble_max_bet}
+                  min={10}
+                  max={1000000}
+                  suffix="coins"
+                  error={fieldErrors["economy.gamble_max_bet"]}
+                  onChange={(value) => setEconomy({ gamble_max_bet: value })}
+                />
+                <NumberField
+                  label="Maximum /slots bet"
+                  value={draft.economy.slots_max_bet}
+                  min={10}
+                  max={100000}
+                  suffix="coins"
+                  error={fieldErrors["economy.slots_max_bet"]}
+                  onChange={(value) => setEconomy({ slots_max_bet: value })}
+                />
+              </div>
+
+              <div className="mt-8 grid gap-7 border-t border-line pt-6 lg:grid-cols-2">
+                <div>
+                  <p className="text-sm font-medium">Richest members</p>
+                  {config.data.economy_status.leaderboard.length > 0 ? (
+                    <ol className="mt-3 divide-y divide-line border-y border-line">
+                      {config.data.economy_status.leaderboard.slice(0, 5).map((member) => (
+                        <li key={member.user_id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                          <span className="min-w-0 truncate">
+                            <span className="mr-2 text-ink-faint">#{member.position}</span>
+                            {member.display_name}
+                          </span>
+                          <span className="shrink-0 text-ink-muted">
+                            🪙 {member.coins.toLocaleString("en")}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-3 text-sm text-ink-muted">No funded wallets yet.</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Shop catalogue</p>
+                  <ul className="mt-3 divide-y divide-line border-y border-line">
+                    {config.data.economy_status.shop.map((item) => (
+                      <li key={item.key} className="flex items-center justify-between gap-3 py-3 text-sm">
+                        <span className="min-w-0 truncate">
+                          {item.icon} {item.label}
+                        </span>
+                        <span className="shrink-0 text-ink-muted">
+                          🪙 {item.price.toLocaleString("en")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs leading-5 text-ink-muted">
+                    Shop prices are global product rules; this page controls access without silently
+                    changing the value of items members already bought.
+                  </p>
+                </div>
+              </div>
             </Section>
           )}
 

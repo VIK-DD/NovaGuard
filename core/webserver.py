@@ -45,6 +45,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
+from . import shop
 from .ai_settings import resolve_ai, validate_ai
 from .automod_settings import resolve_automod, validate_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
@@ -55,10 +56,12 @@ from .database import (
     get_role_panel_record,
     list_ticket_records,
     list_role_panel_records,
+    load_economy_data,
     load_levels_data,
     load_voice_store,
     save_role_panel_record,
 )
+from .economy_settings import resolve_economy, validate_economy
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
 from .levels_settings import resolve_levels, validate_levels
 from .maintenance import (
@@ -1156,6 +1159,7 @@ class WebServer:
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         automod = resolve_automod(settings)
         ai_settings = resolve_ai(settings)
+        economy_settings = resolve_economy(settings)
         open_tickets, open_ticket_count, role_panels, all_giveaways = await asyncio.gather(
             asyncio.to_thread(list_ticket_records, guild.id, open_only=True, limit=20),
             asyncio.to_thread(count_open_tickets, guild.id),
@@ -1226,6 +1230,45 @@ class WebServer:
                 "daily_cap": 500,
             }
         )
+        economy_cog = get_cog("Economy") if callable(get_cog) else None
+        if economy_cog is not None:
+            economy_status = economy_cog.status_payload(guild)
+        else:
+            economy_data = await asyncio.to_thread(load_economy_data)
+            wallets = economy_data.get(str(guild.id), {})
+            ordered_wallets = sorted(
+                wallets.items(),
+                key=lambda item: int(item[1].get("coins", 0) or 0),
+                reverse=True,
+            )
+            economy_status = {
+                "tracked_wallets": len(wallets),
+                "total_coins": sum(
+                    max(0, int(wallet.get("coins", 0) or 0))
+                    for wallet in wallets.values()
+                ),
+                "leaderboard": [
+                    {
+                        "position": position,
+                        "user_id": str(user_id),
+                        "display_name": f"Member {user_id}",
+                        "coins": max(0, int(wallet.get("coins", 0) or 0)),
+                        "daily_streak": max(0, int(wallet.get("daily_streak", 0) or 0)),
+                    }
+                    for position, (user_id, wallet) in enumerate(ordered_wallets[:10], 1)
+                ],
+                "shop": [
+                    {
+                        "key": item["key"],
+                        "label": item["label"],
+                        "icon": item.get("icon") or "🪙",
+                        "price": int(item["price"]),
+                        "kind": item["kind"],
+                        "description": item.get("description"),
+                    }
+                    for item in shop.catalog()
+                ],
+            }
 
         return {
             "guild": {
@@ -1252,8 +1295,10 @@ class WebServer:
                 "automod": automod,
                 "levels": resolve_levels(settings),
                 "ai": ai_settings,
+                "economy": economy_settings,
             },
             "ai_status": ai_status,
+            "economy_status": economy_status,
             "tickets": {
                 "panel_channel_id": str(settings.get("ticket_panel_channel"))
                 if settings.get("ticket_panel_channel")
@@ -1438,6 +1483,7 @@ class WebServer:
             {"key": "roles", "label": "Role panels", "enabled": bool(settings.get("role_panel_channel"))},
             {"key": "giveaways", "label": "Giveaways", "enabled": bool(settings.get("giveaway_channel"))},
             {"key": "ai", "label": "AI assistant", "enabled": bool(resolve_ai(settings)["enabled"])},
+            {"key": "economy", "label": "Economy", "enabled": bool(resolve_economy(settings)["enabled"])},
             {
                 "key": "updates",
                 "label": "Updates",
@@ -2150,6 +2196,16 @@ class WebServer:
                 errors.extend(ai_errors)
             else:
                 changes["ai"] = ai
+
+        if "economy" in body:
+            current = await asyncio.to_thread(get_guild_settings, guild.id)
+            economy, economy_errors = validate_economy(
+                body["economy"], resolve_economy(current)
+            )
+            if economy_errors:
+                errors.extend(economy_errors)
+            else:
+                changes["economy"] = economy
 
         if errors:
             raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)

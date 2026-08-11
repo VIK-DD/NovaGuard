@@ -71,6 +71,21 @@ export const AiSettingsSchema = z.object({
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;
 
+export const EconomySettingsSchema = z.object({
+  enabled: z.boolean(),
+  daily_base: z.number(),
+  daily_streak_bonus: z.number(),
+  work_min: z.number(),
+  work_max: z.number(),
+  work_cooldown_minutes: z.number(),
+  transfers_enabled: z.boolean(),
+  games_enabled: z.boolean(),
+  shop_enabled: z.boolean(),
+  gamble_max_bet: z.number(),
+  slots_max_bet: z.number(),
+});
+export type EconomySettings = z.infer<typeof EconomySettingsSchema>;
+
 export const GuildSettingsSchema = z.object({
   welcome_channel: z.string().nullable(),
   goodbye_channel: z.string().nullable(),
@@ -87,6 +102,7 @@ export const GuildSettingsSchema = z.object({
   automod: AutomodSchema,
   levels: LevelsSchema,
   ai: AiSettingsSchema,
+  economy: EconomySettingsSchema,
 });
 export type GuildSettings = z.infer<typeof GuildSettingsSchema>;
 
@@ -109,6 +125,29 @@ export const GuildConfigSchema = z.object({
     minute_cap: z.number(),
     daily_calls: z.number(),
     daily_cap: z.number(),
+  }),
+  economy_status: z.object({
+    tracked_wallets: z.number(),
+    total_coins: z.number(),
+    leaderboard: z.array(
+      z.object({
+        position: z.number(),
+        user_id: z.string(),
+        display_name: z.string(),
+        coins: z.number(),
+        daily_streak: z.number(),
+      }),
+    ),
+    shop: z.array(
+      z.object({
+        key: z.string(),
+        label: z.string(),
+        icon: z.string(),
+        price: z.number(),
+        kind: z.string(),
+        description: z.string().nullable().optional(),
+      }),
+    ),
   }),
   tickets: z.object({
     panel_channel_id: z.string().nullable(),
@@ -330,4 +369,5 @@ export type SettingsPatch = Partial<{
   automod: Partial<z.infer<typeof AutomodSchema>>;
   levels: Partial<Levels>;
   ai: Partial<AiSettings>;
+  economy: Partial<EconomySettings>;
 }>;

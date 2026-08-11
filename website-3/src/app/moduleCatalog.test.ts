@@ -46,6 +46,19 @@ const emptySettings: GuildSettings = {
     channel_id: null,
     max_question_chars: 2000,
   },
+  economy: {
+    enabled: false,
+    daily_base: 200,
+    daily_streak_bonus: 50,
+    work_min: 50,
+    work_max: 150,
+    work_cooldown_minutes: 60,
+    transfers_enabled: true,
+    games_enabled: true,
+    shop_enabled: true,
+    gamble_max_bet: 1_000_000,
+    slots_max_bet: 100_000,
+  },
 };
 
 describe("configuration module catalog", () => {
@@ -56,6 +69,7 @@ describe("configuration module catalog", () => {
         "automod",
         "autorole",
         "ai",
+        "economy",
         "error_log_channel",
         "github_event_channel",
         "giveaway_channel",
@@ -85,6 +99,7 @@ describe("configuration module catalog", () => {
       "roles",
       "giveaways",
       "ai",
+      "economy",
       "updates",
     ]);
   });
@@ -109,9 +124,11 @@ describe("configuration module catalog", () => {
     configured.role_panel_channel = "456";
     configured.giveaway_channel = "456";
     configured.ai.enabled = true;
+    configured.economy.enabled = true;
     configured.github_event_channel = "101";
 
     expect(CONFIG_MODULES.map((module) => isModuleActive(configured, module.key))).toEqual([
+      true,
       true,
       true,
       true,

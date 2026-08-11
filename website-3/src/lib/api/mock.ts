@@ -102,6 +102,19 @@ type Settings = {
     channel_id: string | null;
     max_question_chars: number;
   };
+  economy: {
+    enabled: boolean;
+    daily_base: number;
+    daily_streak_bonus: number;
+    work_min: number;
+    work_max: number;
+    work_cooldown_minutes: number;
+    transfers_enabled: boolean;
+    games_enabled: boolean;
+    shop_enabled: boolean;
+    gamble_max_bet: number;
+    slots_max_bet: number;
+  };
 };
 
 /** Mirrors LEVELS_DEFAULTS in core/levels_settings.py. */
@@ -134,6 +147,20 @@ const aiDefaults = (): Settings["ai"] => ({
   max_question_chars: 2000,
 });
 
+const economyDefaults = (): Settings["economy"] => ({
+  enabled: true,
+  daily_base: 200,
+  daily_streak_bonus: 50,
+  work_min: 50,
+  work_max: 150,
+  work_cooldown_minutes: 60,
+  transfers_enabled: true,
+  games_enabled: true,
+  shop_enabled: true,
+  gamble_max_bet: 1_000_000,
+  slots_max_bet: 100_000,
+});
+
 const settingsByGuild: Record<string, Settings> = {
   "1001": {
     welcome_channel: "c1",
@@ -164,6 +191,7 @@ const settingsByGuild: Record<string, Settings> = {
       ignored_roles: ["r6"],
     },
     ai: { ...aiDefaults(), channel_id: "c4", max_question_chars: 1200 },
+    economy: economyDefaults(),
   },
   "1002": {
     welcome_channel: "c4",
@@ -181,6 +209,7 @@ const settingsByGuild: Record<string, Settings> = {
     automod: { ...automodDefaults(), invites: false },
     levels: levelsDefaults(),
     ai: { ...aiDefaults(), answer_mode: "private" },
+    economy: { ...economyDefaults(), games_enabled: false },
   },
   "1003": {
     welcome_channel: null,
@@ -198,6 +227,7 @@ const settingsByGuild: Record<string, Settings> = {
     automod: { ...automodDefaults(), spam: false, badwords: ["spoiler"] },
     levels: { ...levelsDefaults(), enabled: false, announce: "off" },
     ai: { ...aiDefaults(), enabled: false },
+    economy: { ...economyDefaults(), enabled: false },
   },
 };
 
@@ -336,6 +366,20 @@ function configPayload(id: string): Json | null {
       daily_calls: 83,
       daily_cap: 500,
     },
+    economy_status: {
+      tracked_wallets: 3,
+      total_coins: 18_450,
+      leaderboard: [
+        { position: 1, user_id: "1", display_name: "Razban", coins: 9_400, daily_streak: 11 },
+        { position: 2, user_id: "2", display_name: "Sorin", coins: 5_800, daily_streak: 4 },
+        { position: 3, user_id: "3", display_name: "Victor", coins: 3_250, daily_streak: 7 },
+      ],
+      shop: [
+        { key: "star", label: "Star", icon: "⭐", price: 1000, kind: "trophy", description: null },
+        { key: "xp_boost", label: "XP Boost", icon: "⚡", price: 1200, kind: "booster", description: "1.5x XP for 6 hours." },
+        { key: "crate", label: "Mystery Crate", icon: "📦", price: 500, kind: "crate", description: "Coins or perks." },
+      ],
+    },
     tickets: {
       panel_channel_id: settings.ticket_panel_channel,
       panel_message_id: ticketPanelMessageByGuild[id] ?? null,
@@ -419,6 +463,7 @@ function dashboardPayload(id: string): Json | null {
       { key: "roles", label: "Role panels", enabled: Boolean(settings.role_panel_channel) },
       { key: "giveaways", label: "Giveaways", enabled: Boolean(settings.giveaway_channel) },
       { key: "ai", label: "AI assistant", enabled: settings.ai.enabled },
+      { key: "economy", label: "Economy", enabled: settings.economy.enabled },
       {
         key: "updates",
         label: "Updates",
@@ -504,21 +549,24 @@ function applyPatch(
     automod?: Partial<Settings["automod"]>;
     levels?: Partial<Settings["levels"]>;
     ai?: Partial<Settings["ai"]>;
+    economy?: Partial<Settings["economy"]>;
   },
 ) {
   const s = settingsByGuild[id];
   if (!s) return;
-  const { automod, levels, ai, ...rest } = patch;
+  const { automod, levels, ai, economy, ...rest } = patch;
   Object.assign(s, rest);
   if (automod) s.automod = { ...s.automod, ...automod };
   if (levels) s.levels = { ...s.levels, ...levels };
   if (ai) s.ai = { ...s.ai, ...ai };
+  if (economy) s.economy = { ...s.economy, ...economy };
 
   const flat: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rest)) flat[k] = v;
   if (automod) for (const [k, v] of Object.entries(automod)) flat[`automod.${k}`] = v;
   if (levels) for (const [k, v] of Object.entries(levels)) flat[`levels.${k}`] = v;
   if (ai) for (const [k, v] of Object.entries(ai)) flat[`ai.${k}`] = v;
+  if (economy) for (const [k, v] of Object.entries(economy)) flat[`economy.${k}`] = v;
 
   (auditByGuild[id] ??= []).unshift({
     id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,

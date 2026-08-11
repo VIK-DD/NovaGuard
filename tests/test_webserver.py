@@ -434,6 +434,8 @@ async def main():
                 and "automod" in data["settings"]
                 and "voice_report_channel" in data["settings"]
                 and data.get("settings", {}).get("ai", {}).get("answer_mode") == "public"
+                and data.get("settings", {}).get("economy", {}).get("daily_base") == 200
+                and data.get("economy_status", {}).get("tracked_wallets") == 0
                 and data.get("ai_status", {}).get("available") is False
                 and data.get("tickets", {}).get("open_count") == 0
                 and data.get("role_panels") == [],
@@ -506,6 +508,12 @@ async def main():
                 "channel_id": "112",
                 "max_question_chars": 800,
             },
+            "economy": {
+                "daily_base": 300,
+                "work_min": 75,
+                "work_max": 175,
+                "games_enabled": False,
+            },
         }
         async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config", json=good, cookies=cookies) as r:
             data = await r.json()
@@ -523,7 +531,11 @@ async def main():
                 and saved.get("automod", {}).get("spam_messages") == 8
                 and saved.get("ai", {}).get("answer_mode") == "private"
                 and saved.get("ai", {}).get("channel_id") == "112"
-                and saved.get("ai", {}).get("max_question_chars") == 800,
+                and saved.get("ai", {}).get("max_question_chars") == 800
+                and saved.get("economy", {}).get("daily_base") == 300
+                and saved.get("economy", {}).get("work_min") == 75
+                and saved.get("economy", {}).get("work_max") == 175
+                and saved.get("economy", {}).get("games_enabled") is False,
             )
 
         async with http.post(

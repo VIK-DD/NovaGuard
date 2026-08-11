@@ -37,6 +37,19 @@ const AUTOMOD_SCALAR_KEYS = [
 
 const AUTOMOD_LIST_KEYS = ["badwords", "ignored_channels", "ignored_roles"] as const;
 const AI_KEYS = ["enabled", "answer_mode", "channel_id", "max_question_chars"] as const;
+const ECONOMY_KEYS = [
+  "enabled",
+  "daily_base",
+  "daily_streak_bonus",
+  "work_min",
+  "work_max",
+  "work_cooldown_minutes",
+  "transfers_enabled",
+  "games_enabled",
+  "shop_enabled",
+  "gamble_max_bet",
+  "slots_max_bet",
+] as const;
 
 /** Mirrors the server's badwords rules: lowercase, trim, dedupe, truncate to 40 chars, ≤100 words. */
 export function normalizeBadwords(raw: string[]): string[] {
@@ -53,7 +66,7 @@ export function normalizeBadwords(raw: string[]): string[] {
 /** Client-side mirror of the cross-field Levels rules enforced by the API. */
 export function validateSettings(draft: GuildSettings): Record<string, string> {
   const errors: Record<string, string> = {};
-  const { ai, automod, levels } = draft;
+  const { ai, automod, economy, levels } = draft;
 
   const wholeNumber = (value: number, min: number, max: number) =>
     Number.isInteger(value) && value >= min && value <= max;
@@ -100,6 +113,24 @@ export function validateSettings(draft: GuildSettings): Record<string, string> {
   }
   if (!wholeNumber(ai.max_question_chars, 100, 2000)) {
     errors["ai.max_question_chars"] = "Enter a whole number between 100 and 2000.";
+  }
+  const economyRanges = {
+    daily_base: [0, 100_000],
+    daily_streak_bonus: [0, 10_000],
+    work_min: [0, 100_000],
+    work_max: [0, 100_000],
+    work_cooldown_minutes: [1, 1440],
+    gamble_max_bet: [10, 1_000_000],
+    slots_max_bet: [10, 100_000],
+  } as const;
+  for (const [key, [minimum, maximum]] of Object.entries(economyRanges)) {
+    const value = economy[key as keyof typeof economyRanges];
+    if (!wholeNumber(value, minimum, maximum)) {
+      errors[`economy.${key}`] = `Enter a whole number between ${minimum} and ${maximum}.`;
+    }
+  }
+  if (!errors["economy.work_min"] && !errors["economy.work_max"] && economy.work_min > economy.work_max) {
+    errors["economy.work_min"] = "Work minimum cannot be greater than work maximum.";
   }
 
   return errors;
@@ -161,6 +192,20 @@ export function diffSettings(server: GuildSettings, draft: GuildSettings): Setti
   }
   if (Object.keys(ai).length > 0) patch.ai = ai;
 
+  const economy: NonNullable<SettingsPatch["economy"]> = {};
+  for (const key of ECONOMY_KEYS) {
+    if (server.economy[key] !== draft.economy[key]) {
+      (economy as Record<string, unknown>)[key] = draft.economy[key];
+    }
+  }
+  if (Object.keys(economy).length > 0) {
+    if ("work_min" in economy || "work_max" in economy) {
+      economy.work_min = draft.economy.work_min;
+      economy.work_max = draft.economy.work_max;
+    }
+    patch.economy = economy;
+  }
+
   return patch;
 }
 
@@ -183,11 +228,13 @@ export function mapValidationDetails(details: string[] | undefined): Record<stri
       .map((k) => `levels.${k}`)
       .sort((a, b) => b.length - a.length),
     ...AI_KEYS.map((k) => `ai.${k}`).sort((a, b) => b.length - a.length),
+    ...ECONOMY_KEYS.map((k) => `economy.${k}`).sort((a, b) => b.length - a.length),
     ...ID_KEYS,
     "badwords",
     "automod",
     "levels",
     "ai",
+    "economy",
   ];
   for (const message of details) {
     const key = known.find((k) => message.includes(k));
