@@ -64,6 +64,7 @@ from .database import (
 from .economy_settings import resolve_economy, validate_economy
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
 from .levels_settings import resolve_levels, validate_levels
+from .music_settings import resolve_music, validate_music
 from .maintenance import (
     DEFAULT_MAINTENANCE_MESSAGE,
     load_maintenance_state,
@@ -1160,6 +1161,7 @@ class WebServer:
         automod = resolve_automod(settings)
         ai_settings = resolve_ai(settings)
         economy_settings = resolve_economy(settings)
+        music_settings = resolve_music(settings)
         open_tickets, open_ticket_count, role_panels, all_giveaways = await asyncio.gather(
             asyncio.to_thread(list_ticket_records, guild.id, open_only=True, limit=20),
             asyncio.to_thread(count_open_tickets, guild.id),
@@ -1269,6 +1271,26 @@ class WebServer:
                     for item in shop.catalog()
                 ],
             }
+        music_cog = None
+        if callable(get_cog):
+            music_cog = get_cog("LavalinkMusic") or get_cog("Music")
+        if music_cog is not None and hasattr(music_cog, "status_payload"):
+            music_status = music_cog.status_payload(guild)
+        else:
+            music_status = {
+                "backend": os.getenv("MUSIC_BACKEND", "yt-dlp").strip().lower() or "yt-dlp",
+                "available": False,
+                "active": False,
+                "paused": False,
+                "voice_channel_id": None,
+                "voice_channel_name": None,
+                "volume": music_settings["default_volume"],
+                "loop": "off",
+                "filter": None,
+                "current": None,
+                "queue_count": 0,
+                "queue": [],
+            }
 
         return {
             "guild": {
@@ -1296,9 +1318,11 @@ class WebServer:
                 "levels": resolve_levels(settings),
                 "ai": ai_settings,
                 "economy": economy_settings,
+                "music": music_settings,
             },
             "ai_status": ai_status,
             "economy_status": economy_status,
+            "music_status": music_status,
             "tickets": {
                 "panel_channel_id": str(settings.get("ticket_panel_channel"))
                 if settings.get("ticket_panel_channel")
@@ -1484,6 +1508,7 @@ class WebServer:
             {"key": "giveaways", "label": "Giveaways", "enabled": bool(settings.get("giveaway_channel"))},
             {"key": "ai", "label": "AI assistant", "enabled": bool(resolve_ai(settings)["enabled"])},
             {"key": "economy", "label": "Economy", "enabled": bool(resolve_economy(settings)["enabled"])},
+            {"key": "music", "label": "Music", "enabled": bool(resolve_music(settings)["enabled"])},
             {
                 "key": "updates",
                 "label": "Updates",
@@ -2005,6 +2030,52 @@ class WebServer:
             ),
         }
 
+    async def _handle_music_control_action(self, request, guild):
+        body = await self._giveaway_action_body(request)
+        control = str(body.get("control") or "").strip().lower()
+        labels = {
+            "toggle": "Playback toggled.",
+            "skip": "Current track skipped.",
+            "clear": "The upcoming queue was cleared.",
+            "stop": "Playback stopped and NovaGuard left voice.",
+        }
+        if control not in labels:
+            raise ApiError(
+                400,
+                "Music control must be toggle, skip, clear or stop.",
+                code="invalid_music_control",
+            )
+        get_cog = getattr(self.bot, "get_cog", None)
+        cog = (get_cog("LavalinkMusic") or get_cog("Music")) if callable(get_cog) else None
+        if cog is None or not hasattr(cog, "dashboard_control"):
+            raise ApiError(
+                503,
+                "The music player is not available on this bot instance.",
+                code="music_unavailable",
+            )
+        try:
+            status = await asyncio.wait_for(cog.dashboard_control(guild, control), timeout=10)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.warning("Dashboard music control failed for guild %s", guild.id, exc_info=True)
+            raise ApiError(
+                502,
+                "The active music session did not accept that control.",
+                code="music_control_failed",
+            ) from error
+        if status is None:
+            raise ApiError(
+                409,
+                "There is no active playback session to control.",
+                code="music_not_active",
+            )
+        return {
+            "ok": True,
+            "action": f"music_{control}",
+            "message": labels[control],
+        }
+
     async def handle_guild_action(self, request):
         self._rate_limit(request, "write")
         self._check_origin(request)
@@ -2027,10 +2098,17 @@ class WebServer:
             payload = await self._handle_giveaway_end_action(request, guild)
         elif action == "giveaway_reroll":
             payload = await self._handle_giveaway_reroll_action(request, guild)
+        elif action == "music_control":
+            payload = await self._handle_music_control_action(request, guild)
         else:
             raise ApiError(404, "Unknown dashboard action.", code="unknown_action")
 
-        await self._audit_dashboard_action(request, guild, entry, f"dashboard_{action}", {"ok": payload.get("ok")})
+        audit_changes = {"ok": payload.get("ok")}
+        if action == "music_control":
+            audit_changes["control"] = payload.get("action", "").removeprefix("music_")
+        await self._audit_dashboard_action(
+            request, guild, entry, f"dashboard_{action}", audit_changes
+        )
         return web.json_response(payload)
 
     async def handle_audit(self, request):
@@ -2206,6 +2284,14 @@ class WebServer:
                 errors.extend(economy_errors)
             else:
                 changes["economy"] = economy
+
+        if "music" in body:
+            current = await asyncio.to_thread(get_guild_settings, guild.id)
+            music, music_errors = validate_music(body["music"], resolve_music(current))
+            if music_errors:
+                errors.extend(music_errors)
+            else:
+                changes["music"] = music
 
         if errors:
             raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)

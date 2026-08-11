@@ -60,6 +60,14 @@ const base: GuildSettings = {
     gamble_max_bet: 1_000_000,
     slots_max_bet: 100_000,
   },
+  music: {
+    enabled: true,
+    default_volume: 80,
+    max_volume: 100,
+    max_queue_tracks: 100,
+    allow_playlists: true,
+    allow_filters: true,
+  },
 };
 
 const clone = (): GuildSettings => structuredClone(base);
@@ -182,6 +190,14 @@ describe("diffSettings", () => {
       economy: { work_min: 75, work_max: 150 },
     });
   });
+
+  it("sends both volume bounds when either music limit changes", () => {
+    const draft = clone();
+    draft.music.max_volume = 85;
+    expect(diffSettings(base, draft)).toEqual({
+      music: { default_volume: 80, max_volume: 85 },
+    });
+  });
 });
 
 describe("isDirty", () => {
@@ -268,6 +284,16 @@ describe("validateSettings", () => {
     const errors = validateSettings(draft);
     expect(errors).toHaveProperty("economy.work_min");
     expect(errors).toHaveProperty("economy.work_cooldown_minutes");
+  });
+
+  it("validates music volume order and queue bounds", () => {
+    const draft = clone();
+    draft.music.default_volume = 90;
+    draft.music.max_volume = 80;
+    draft.music.max_queue_tracks = 0;
+    const errors = validateSettings(draft);
+    expect(errors).toHaveProperty("music.default_volume");
+    expect(errors).toHaveProperty("music.max_queue_tracks");
   });
 });
 

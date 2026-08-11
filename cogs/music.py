@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 from core.database import cache_prefix_search
 from core.music_card import card_fields
 from core.music_queue import LoopMode
+from core.music_settings import queue_room, resolve_music
 from core.music_session import IDLE_DISCONNECT_SECONDS, SessionRegistry
 from core.music_sources import (
     classify_input,
@@ -23,6 +24,7 @@ from core.music_sources import (
     youtube_bot_check_recent,
 )
 from core.theme import Palette, brand_footer, make_embed
+from core.storage import get_guild_settings
 from core.utils import defer_interaction, respond
 
 IDLE_CHECK_SECONDS = 30
@@ -178,7 +180,8 @@ class MusicControls(discord.ui.View):
         session = await self._session_or_refusal(interaction)
         if session is None:
             return
-        session.volume = min(100, session.volume + 10)
+        maximum = self.cog._settings(interaction.guild_id)["max_volume"]
+        session.volume = min(maximum, session.volume + 10)
         session.touch()
         await self.cog.refresh_card(session, interaction)
 
@@ -198,6 +201,78 @@ class Music(commands.Cog):
         # them mid-flight. See _schedule_from_audio_thread.
         self._after_tasks: set = set()
         self._early_end_retries = {}
+
+    @staticmethod
+    def _settings(guild_id):
+        return resolve_music(get_guild_settings(guild_id))
+
+    def status_payload(self, guild):
+        """A serialisable, secret-free snapshot for the web dashboard."""
+        settings = self._settings(guild.id)
+        session = self.sessions.get(guild.id)
+        client = session.voice_client if session else None
+        connected = bool(client and client.is_connected())
+        current = session.queue.current if session else None
+        channel = getattr(client, "channel", None) if connected else None
+        return {
+            "backend": "yt-dlp",
+            "available": True,
+            "active": connected,
+            "paused": bool(connected and client.is_paused()),
+            "voice_channel_id": str(channel.id) if channel else None,
+            "voice_channel_name": channel.name if channel else None,
+            "volume": session.volume if session else settings["default_volume"],
+            "loop": session.queue.loop if session else LoopMode.OFF,
+            "filter": None,
+            "current": (
+                {
+                    "title": current.title,
+                    "url": current.url,
+                    "duration": int(current.duration or 0),
+                    "source": current.source,
+                }
+                if current is not None
+                else None
+            ),
+            "queue_count": len(session.queue.upcoming) if session else 0,
+            "queue": [
+                {
+                    "title": track.title,
+                    "url": track.url,
+                    "duration": int(track.duration or 0),
+                    "source": track.source,
+                }
+                for track in (session.queue.upcoming[:10] if session else [])
+            ],
+        }
+
+    async def dashboard_control(self, guild, action):
+        """Control an existing player; starting playback still requires voice context."""
+        session = self.sessions.get(guild.id)
+        client = session.voice_client if session else None
+        if session is None or client is None or not client.is_connected():
+            return None
+        if action == "toggle":
+            if client.is_paused():
+                client.resume()
+            elif client.is_playing():
+                client.pause()
+            else:
+                return None
+        elif action == "skip":
+            if not (client.is_playing() or client.is_paused()):
+                return None
+            client.stop()
+        elif action == "clear":
+            session.queue.clear()
+        elif action == "stop":
+            await self._teardown(session)
+            return self.status_payload(guild)
+        else:
+            raise ValueError("unknown music control")
+        session.touch()
+        await self.refresh_card(session)
+        return self.status_payload(guild)
 
     # Reconnect flags matter on a small host: without them a brief network
     # hiccup can end a track silently instead of resuming it. 403/404 are
@@ -301,6 +376,16 @@ class Music(commands.Cog):
 
         Returns ``(session, error_embed)``; exactly one is None.
         """
+        settings = self._settings(interaction.guild_id)
+        if not settings["enabled"]:
+            embed = make_embed(
+                "Music is disabled",
+                "A server administrator disabled music in the NovaGuard dashboard.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Music")
+            return None, embed
+
         voice = getattr(interaction.user, "voice", None)
         if voice is None or voice.channel is None:
             embed = make_embed(
@@ -332,6 +417,8 @@ class Music(commands.Cog):
             return None, not_in_voice_embed()
 
         session = self.sessions.create(interaction.guild_id)
+        if existing is None:
+            session.volume = settings["default_volume"]
         session.text_channel_id = interaction.channel_id
         session.touch()
 
@@ -660,6 +747,7 @@ class Music(commands.Cog):
         if error is not None:
             return await respond(interaction, error, ephemeral=True)
 
+        settings = self._settings(interaction.guild_id)
         tracks = await extract(query, interaction.user.id)
         if not tracks:
             embed = make_embed(
@@ -670,7 +758,17 @@ class Music(commands.Cog):
             brand_footer(embed, "Music")
             return await respond(interaction, embed, ephemeral=True)
 
-        accepted = session.queue.add_many(tracks)
+        if len(tracks) > 1 and not settings["allow_playlists"]:
+            embed = make_embed(
+                "Playlists are disabled",
+                "This server accepts one track at a time. An administrator can change that in the dashboard.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Music")
+            return await respond(interaction, embed, ephemeral=True)
+
+        room = queue_room(settings, len(session.queue.upcoming))
+        accepted = session.queue.add_many(tracks[:room])
         if accepted == 0:
             embed = make_embed(
                 "Queue is full",
@@ -813,6 +911,16 @@ class Music(commands.Cog):
             )
         if not in_voice_with_bot(interaction, session):
             return await respond(interaction, not_in_voice_embed(), ephemeral=True)
+
+        maximum = self._settings(interaction.guild_id)["max_volume"]
+        if int(level) > maximum:
+            embed = make_embed(
+                "Volume limit",
+                f"This server limits music to `{maximum}%`.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Music")
+            return await respond(interaction, embed, ephemeral=True)
 
         session.volume = int(level)
         session.touch()

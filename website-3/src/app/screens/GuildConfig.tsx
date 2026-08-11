@@ -188,6 +188,13 @@ function Section(props: {
   );
 }
 
+function trackDuration(seconds: number) {
+  if (!seconds) return "LIVE";
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.floor(seconds % 60);
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
 function ModuleNav({ guildId, settings }: { guildId: string; settings: GuildSettings }) {
   return (
     <nav aria-label="Configuration modules" className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -245,6 +252,8 @@ export default function GuildConfig() {
   const [giveawayWinners, setGiveawayWinners] = useState(1);
   const [giveawayNotice, setGiveawayNotice] = useState<string | null>(null);
   const [confirmGiveawayEndId, setConfirmGiveawayEndId] = useState<string | null>(null);
+  const [musicNotice, setMusicNotice] = useState<string | null>(null);
+  const [confirmMusicControl, setConfirmMusicControl] = useState<"clear" | "stop" | null>(null);
 
   // Reseed the draft whenever fresh server state arrives (fetch or save).
   useEffect(() => {
@@ -382,6 +391,25 @@ export default function GuildConfig() {
     },
   });
 
+  const controlMusic = useMutation({
+    mutationFn: (control: "toggle" | "skip" | "clear" | "stop") =>
+      apiFetch(`/guilds/${guildId}/actions/music_control`, DashboardActionSchema, {
+        method: "POST",
+        body: JSON.stringify({ control }),
+      }),
+    onSuccess: (data) => {
+      setMusicNotice(data.message);
+      setConfirmMusicControl(null);
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "config"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "audit"] });
+    },
+    onError: (error) => {
+      setMusicNotice(
+        error instanceof ApiError ? error.message : "The active music session did not accept that control.",
+      );
+    },
+  });
+
   const resetSave = save.reset;
   const clearErrors = useCallback(
     (keys: string[]) => {
@@ -444,6 +472,13 @@ export default function GuildConfig() {
     (patch: Partial<GuildSettings["economy"]>) => {
       clearErrors(["economy", ...Object.keys(patch).map((key) => `economy.${key}`)]);
       setDraft((d) => (d ? { ...d, economy: { ...d.economy, ...patch } } : d));
+    },
+    [clearErrors],
+  );
+  const setMusic = useCallback(
+    (patch: Partial<GuildSettings["music"]>) => {
+      clearErrors(["music", ...Object.keys(patch).map((key) => `music.${key}`)]);
+      setDraft((d) => (d ? { ...d, music: { ...d.music, ...patch } } : d));
     },
     [clearErrors],
   );
@@ -1728,6 +1763,212 @@ export default function GuildConfig() {
                   </p>
                 </div>
               </div>
+            </Section>
+          )}
+
+          {selectedModule?.key === "music" && (
+            <Section
+              id="music"
+              icon="arrows-clockwise"
+              kicker="Music"
+              description="Configure playback rules and control the voice session that is active right now."
+              active={isModuleActive(draft, "music")}
+            >
+              <div className="border-t border-line py-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {config.data.music_status.available
+                        ? `${config.data.music_status.backend} backend ready`
+                        : `${config.data.music_status.backend} backend unavailable`}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-ink-muted">
+                      {config.data.music_status.active
+                        ? `Connected to ${config.data.music_status.voice_channel_name ?? "a voice channel"} · ${config.data.music_status.paused ? "paused" : "playing"} · ${config.data.music_status.volume}% volume`
+                        : "No active voice session. A member starts one from Discord with /play."}
+                    </p>
+                  </div>
+                  <span
+                    className={`w-fit rounded-full border px-3 py-1 text-xs ${
+                      config.data.music_status.active
+                        ? "border-good/40 text-good"
+                        : config.data.music_status.available
+                          ? "border-line text-ink-muted"
+                          : "border-primary/40 text-primary"
+                    }`}
+                  >
+                    {config.data.music_status.active
+                      ? config.data.music_status.paused
+                        ? "Paused"
+                        : "Live"
+                      : config.data.music_status.available
+                        ? "Idle"
+                        : "Host setup needed"}
+                  </span>
+                </div>
+              </div>
+
+              {config.data.music_status.current && (
+                <div className="rounded-[var(--radius-card)] border border-line bg-bg-subtle p-4">
+                  <p className="text-xs tracking-[0.15em] text-ink-muted uppercase">Now playing</p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{config.data.music_status.current.title}</p>
+                      <p className="mt-1 text-xs text-ink-muted">
+                        {config.data.music_status.current.source} · {trackDuration(config.data.music_status.current.duration)} · loop {config.data.music_status.loop}
+                        {config.data.music_status.filter && config.data.music_status.filter !== "off"
+                          ? ` · ${config.data.music_status.filter} effect`
+                          : ""}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-ink-faint">
+                      {config.data.music_status.queue_count} queued
+                    </span>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={controlMusic.isPending}
+                      onClick={() => controlMusic.mutate("toggle")}
+                      className="ng-touch-target rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-line-strong disabled:opacity-50"
+                    >
+                      {config.data.music_status.paused ? "Resume" : "Pause"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={controlMusic.isPending}
+                      onClick={() => controlMusic.mutate("skip")}
+                      className="ng-touch-target rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-line-strong disabled:opacity-50"
+                    >
+                      Skip
+                    </button>
+                    <button
+                      type="button"
+                      disabled={controlMusic.isPending || config.data.music_status.queue_count === 0}
+                      onClick={() => setConfirmMusicControl("clear")}
+                      className="ng-touch-target rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-line-strong disabled:opacity-50"
+                    >
+                      Clear queue
+                    </button>
+                    <button
+                      type="button"
+                      disabled={controlMusic.isPending}
+                      onClick={() => setConfirmMusicControl("stop")}
+                      className="ng-touch-target rounded-full border border-primary/40 px-4 py-2 text-sm text-primary transition-colors hover:border-primary disabled:opacity-50"
+                    >
+                      Stop and leave
+                    </button>
+                  </div>
+
+                  {confirmMusicControl && (
+                    <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-ink-muted">
+                        {confirmMusicControl === "stop"
+                          ? "Stop playback, clear the queue and leave the voice channel?"
+                          : `Remove all ${config.data.music_status.queue_count} upcoming tracks?`}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmMusicControl(null)}
+                          className="ng-touch-target rounded-full border border-line px-4 py-2 text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={controlMusic.isPending}
+                          onClick={() => controlMusic.mutate(confirmMusicControl)}
+                          className="ng-touch-target rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-ink disabled:opacity-50"
+                        >
+                          Confirm
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {musicNotice && (
+                <p role="status" className="mt-3 text-sm text-ink-muted">
+                  {musicNotice}
+                </p>
+              )}
+
+              {config.data.music_status.queue.length > 0 && (
+                <div className="mt-6">
+                  <p className="text-sm font-medium">Up next</p>
+                  <ol className="mt-2 divide-y divide-line border-y border-line">
+                    {config.data.music_status.queue.map((track, index) => (
+                      <li key={`${track.url}-${index}`} className="flex items-center justify-between gap-3 py-3 text-sm">
+                        <span className="min-w-0 truncate">
+                          <span className="mr-2 text-ink-faint">{index + 1}.</span>
+                          {track.title}
+                        </span>
+                        <span className="shrink-0 text-xs text-ink-muted">
+                          {trackDuration(track.duration)}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  {config.data.music_status.queue_count > config.data.music_status.queue.length && (
+                    <p className="mt-2 text-xs text-ink-faint">
+                      Showing the first {config.data.music_status.queue.length} of {config.data.music_status.queue_count} queued tracks.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-7 border-t border-line pt-2">
+                <Toggle
+                  label="Enable music on this server"
+                  checked={draft.music.enabled}
+                  onChange={(value) => setMusic({ enabled: value })}
+                />
+                <Toggle
+                  label="Allow playlists"
+                  checked={draft.music.allow_playlists}
+                  onChange={(value) => setMusic({ allow_playlists: value })}
+                />
+                <Toggle
+                  label="Allow Lavalink audio effects"
+                  checked={draft.music.allow_filters}
+                  onChange={(value) => setMusic({ allow_filters: value })}
+                />
+              </div>
+              <div className="mt-6 grid gap-5 sm:grid-cols-3">
+                <NumberField
+                  label="Default volume"
+                  value={draft.music.default_volume}
+                  min={0}
+                  max={100}
+                  suffix="%"
+                  error={fieldErrors["music.default_volume"]}
+                  onChange={(value) => setMusic({ default_volume: value })}
+                />
+                <NumberField
+                  label="Maximum volume"
+                  value={draft.music.max_volume}
+                  min={10}
+                  max={100}
+                  suffix="%"
+                  error={fieldErrors["music.max_volume"]}
+                  onChange={(value) => setMusic({ max_volume: value })}
+                />
+                <NumberField
+                  label="Queue limit"
+                  value={draft.music.max_queue_tracks}
+                  min={1}
+                  max={500}
+                  suffix="tracks"
+                  error={fieldErrors["music.max_queue_tracks"]}
+                  onChange={(value) => setMusic({ max_queue_tracks: value })}
+                />
+              </div>
+              <p className="mt-4 text-xs leading-5 text-ink-muted">
+                New sessions use the default volume. The maximum is enforced by both Discord controls and slash commands. Disabling music blocks new /play requests; stop an existing session above if it should end immediately.
+              </p>
             </Section>
           )}
 

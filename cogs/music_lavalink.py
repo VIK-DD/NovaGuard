@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 from core.lavalink_config import lavalink_password, lavalink_uri, lavalink_wavelink_search
 from core.music_filters import FILTER_PRESETS, is_reset, preset_label, resolve_preset
 from core.music_card import progress_bar
+from core.music_settings import queue_room, resolve_music
 from core.music_sources import (
     classify_input,
     format_duration,
@@ -17,6 +18,7 @@ from core.music_sources import (
     spotify_credentials_configured,
 )
 from core.music_session import IDLE_DISCONNECT_SECONDS
+from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
 
@@ -417,7 +419,8 @@ class LavalinkControls(discord.ui.View):
         session = await self._session_or_refusal(interaction)
         if session is None:
             return
-        session.volume = min(100, max(0, session.volume + delta))
+        maximum = self.cog._settings(interaction.guild_id)["max_volume"]
+        session.volume = min(maximum, max(0, session.volume + delta))
         await session.player.set_volume(session.volume)
         session.touch()
         await self.cog.refresh_card(session, interaction)
@@ -443,6 +446,71 @@ class LavalinkMusic(commands.Cog):
         self.sessions = {}
         self._node_error = None
         self._node_task = None
+
+    @staticmethod
+    def _settings(guild_id):
+        return resolve_music(get_guild_settings(guild_id))
+
+    def status_payload(self, guild):
+        """A serialisable, secret-free snapshot for the web dashboard."""
+        settings = self._settings(guild.id)
+        session = self.sessions.get(str(guild.id))
+        player = session.player if session else None
+        connected = bool(player and getattr(player, "connected", False))
+        channel = getattr(player, "channel", None) if connected else None
+        current = session.queue.current if session else None
+        try:
+            node_ready = _node_is_connected(wavelink.Pool.get_node()) if wavelink else False
+        except Exception:
+            node_ready = False
+
+        def track_payload(track):
+            return {
+                "title": _track_title(track),
+                "url": _track_url(track),
+                "duration": _track_length_seconds(track),
+                "source": _track_source_label(track),
+            }
+
+        return {
+            "backend": "lavalink",
+            "available": node_ready,
+            "active": connected,
+            "paused": bool(connected and getattr(player, "paused", False)),
+            "voice_channel_id": str(channel.id) if channel else None,
+            "voice_channel_name": channel.name if channel else None,
+            "volume": session.volume if session else settings["default_volume"],
+            "loop": session.queue.loop if session else "off",
+            "filter": session.filter_preset if session else "off",
+            "current": track_payload(current) if current is not None else None,
+            "queue_count": len(session.queue.upcoming) if session else 0,
+            "queue": [track_payload(track) for track in (session.queue.upcoming[:10] if session else [])],
+        }
+
+    async def dashboard_control(self, guild, action):
+        """Control an existing player; starting playback still requires voice context."""
+        session = self.sessions.get(str(guild.id))
+        player = session.player if session else None
+        if session is None or player is None or not getattr(player, "connected", False):
+            return None
+        if action == "toggle":
+            if not (getattr(player, "playing", False) or getattr(player, "paused", False)):
+                return None
+            await player.pause(not bool(getattr(player, "paused", False)))
+        elif action == "skip":
+            if not (getattr(player, "playing", False) or getattr(player, "paused", False)):
+                return None
+            await player.skip(force=True)
+        elif action == "clear":
+            session.queue.clear()
+        elif action == "stop":
+            await self._teardown(session)
+            return self.status_payload(guild)
+        else:
+            raise ValueError("unknown music control")
+        session.touch()
+        await self.refresh_card(session)
+        return self.status_payload(guild)
 
     async def cog_load(self):
         self.bot.add_view(LavalinkControls(self))
@@ -518,6 +586,7 @@ class LavalinkMusic(commands.Cog):
         key = str(guild_id)
         if key not in self.sessions:
             self.sessions[key] = LavalinkSession(key)
+            self.sessions[key].volume = self._settings(guild_id)["default_volume"]
         return self.sessions[key]
 
     def _requester_mention(self, session, track):
@@ -535,6 +604,15 @@ class LavalinkMusic(commands.Cog):
         return bool(channel and channel.id == voice.channel.id)
 
     async def _connect(self, interaction):
+        settings = self._settings(interaction.guild_id)
+        if not settings["enabled"]:
+            embed = make_embed(
+                _music_title("Music is disabled"),
+                "A server administrator disabled music in the NovaGuard dashboard.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return None, embed
         if not await self._ensure_node():
             embed = make_embed(
                 _music_title("Lavalink is not ready"),
@@ -893,13 +971,24 @@ class LavalinkMusic(commands.Cog):
         if error is not None:
             return await respond(interaction, error, ephemeral=True)
 
+        settings = self._settings(interaction.guild_id)
         tracks = await self._load_tracks(query)
         if not tracks:
             embed = make_embed(_music_title("Nothing found"), _nothing_found_description(query), color=Palette.WARNING)
             _music_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        accepted = session.queue.add_many(tracks)
+        if len(tracks) > 1 and not settings["allow_playlists"]:
+            embed = make_embed(
+                _music_title("Playlists are disabled"),
+                "This server accepts one track at a time. An administrator can change that in the dashboard.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        room = queue_room(settings, len(session.queue.upcoming))
+        accepted = session.queue.add_many(tracks[:room])
         if accepted == 0:
             embed = make_embed(_music_title("Queue is full"), "The music queue is full right now.", color=Palette.WARNING)
             _music_footer(embed)
@@ -1023,6 +1112,15 @@ class LavalinkMusic(commands.Cog):
             embed = make_embed(
                 _music_title("Join my voice channel"),
                 "You have to be with me to control playback.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+        maximum = self._settings(interaction.guild_id)["max_volume"]
+        if int(level) > maximum:
+            embed = make_embed(
+                _music_title("Volume limit"),
+                f"This server limits music to `{maximum}%`.",
                 color=Palette.WARNING,
             )
             _music_footer(embed)
@@ -1233,6 +1331,14 @@ class LavalinkMusic(commands.Cog):
     @app_commands.guild_only()
     async def filter_command(self, interaction: discord.Interaction, preset: str):
         await defer_interaction(interaction, ephemeral=True)
+        if not self._settings(interaction.guild_id)["allow_filters"]:
+            embed = make_embed(
+                _music_title("Effects are disabled"),
+                "An administrator disabled audio effects for this server in the dashboard.",
+                color=Palette.WARNING,
+            )
+            _music_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
         session = self.sessions.get(str(interaction.guild_id))
         if session is None or session.player is None:
             embed = make_embed(

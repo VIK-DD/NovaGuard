@@ -86,6 +86,23 @@ export const EconomySettingsSchema = z.object({
 });
 export type EconomySettings = z.infer<typeof EconomySettingsSchema>;
 
+export const MusicSettingsSchema = z.object({
+  enabled: z.boolean(),
+  default_volume: z.number(),
+  max_volume: z.number(),
+  max_queue_tracks: z.number(),
+  allow_playlists: z.boolean(),
+  allow_filters: z.boolean(),
+});
+export type MusicSettings = z.infer<typeof MusicSettingsSchema>;
+
+const MusicTrackSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  duration: z.number(),
+  source: z.string(),
+});
+
 export const GuildSettingsSchema = z.object({
   welcome_channel: z.string().nullable(),
   goodbye_channel: z.string().nullable(),
@@ -103,6 +120,7 @@ export const GuildSettingsSchema = z.object({
   levels: LevelsSchema,
   ai: AiSettingsSchema,
   economy: EconomySettingsSchema,
+  music: MusicSettingsSchema,
 });
 export type GuildSettings = z.infer<typeof GuildSettingsSchema>;
 
@@ -148,6 +166,20 @@ export const GuildConfigSchema = z.object({
         description: z.string().nullable().optional(),
       }),
     ),
+  }),
+  music_status: z.object({
+    backend: z.string(),
+    available: z.boolean(),
+    active: z.boolean(),
+    paused: z.boolean(),
+    voice_channel_id: z.string().nullable(),
+    voice_channel_name: z.string().nullable(),
+    volume: z.number(),
+    loop: z.string(),
+    filter: z.string().nullable(),
+    current: MusicTrackSchema.nullable(),
+    queue_count: z.number(),
+    queue: z.array(MusicTrackSchema),
   }),
   tickets: z.object({
     panel_channel_id: z.string().nullable(),
@@ -370,4 +402,5 @@ export type SettingsPatch = Partial<{
   levels: Partial<Levels>;
   ai: Partial<AiSettings>;
   economy: Partial<EconomySettings>;
+  music: Partial<MusicSettings>;
 }>;

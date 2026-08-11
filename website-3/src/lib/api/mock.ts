@@ -115,6 +115,14 @@ type Settings = {
     gamble_max_bet: number;
     slots_max_bet: number;
   };
+  music: {
+    enabled: boolean;
+    default_volume: number;
+    max_volume: number;
+    max_queue_tracks: number;
+    allow_playlists: boolean;
+    allow_filters: boolean;
+  };
 };
 
 /** Mirrors LEVELS_DEFAULTS in core/levels_settings.py. */
@@ -161,6 +169,15 @@ const economyDefaults = (): Settings["economy"] => ({
   slots_max_bet: 100_000,
 });
 
+const musicDefaults = (): Settings["music"] => ({
+  enabled: true,
+  default_volume: 80,
+  max_volume: 100,
+  max_queue_tracks: 100,
+  allow_playlists: true,
+  allow_filters: true,
+});
+
 const settingsByGuild: Record<string, Settings> = {
   "1001": {
     welcome_channel: "c1",
@@ -192,6 +209,7 @@ const settingsByGuild: Record<string, Settings> = {
     },
     ai: { ...aiDefaults(), channel_id: "c4", max_question_chars: 1200 },
     economy: economyDefaults(),
+    music: musicDefaults(),
   },
   "1002": {
     welcome_channel: "c4",
@@ -210,6 +228,7 @@ const settingsByGuild: Record<string, Settings> = {
     levels: levelsDefaults(),
     ai: { ...aiDefaults(), answer_mode: "private" },
     economy: { ...economyDefaults(), games_enabled: false },
+    music: { ...musicDefaults(), max_volume: 85 },
   },
   "1003": {
     welcome_channel: null,
@@ -228,6 +247,43 @@ const settingsByGuild: Record<string, Settings> = {
     levels: { ...levelsDefaults(), enabled: false, announce: "off" },
     ai: { ...aiDefaults(), enabled: false },
     economy: { ...economyDefaults(), enabled: false },
+    music: { ...musicDefaults(), enabled: false },
+  },
+};
+
+type MockMusicTrack = { title: string; url: string; duration: number; source: string };
+const musicSessionByGuild: Record<
+  string,
+  {
+    active: boolean;
+    paused: boolean;
+    voice_channel_id: string | null;
+    voice_channel_name: string | null;
+    volume: number;
+    loop: string;
+    filter: string | null;
+    current: MockMusicTrack | null;
+    queue: MockMusicTrack[];
+  }
+> = {
+  "1001": {
+    active: true,
+    paused: false,
+    voice_channel_id: "voice-1",
+    voice_channel_name: "Lounge",
+    volume: 80,
+    loop: "off",
+    filter: "off",
+    current: {
+      title: "Nova Nights",
+      url: "https://example.com/nova-nights",
+      duration: 218,
+      source: "YouTube Music",
+    },
+    queue: [
+      { title: "Afterglow", url: "https://example.com/afterglow", duration: 194, source: "YouTube Music" },
+      { title: "Orbit", url: "https://example.com/orbit", duration: 241, source: "SoundCloud" },
+    ],
   },
 };
 
@@ -380,6 +436,20 @@ function configPayload(id: string): Json | null {
         { key: "crate", label: "Mystery Crate", icon: "📦", price: 500, kind: "crate", description: "Coins or perks." },
       ],
     },
+    music_status: {
+      backend: "lavalink",
+      available: true,
+      active: musicSessionByGuild[id]?.active ?? false,
+      paused: musicSessionByGuild[id]?.paused ?? false,
+      voice_channel_id: musicSessionByGuild[id]?.voice_channel_id ?? null,
+      voice_channel_name: musicSessionByGuild[id]?.voice_channel_name ?? null,
+      volume: musicSessionByGuild[id]?.volume ?? settings.music.default_volume,
+      loop: musicSessionByGuild[id]?.loop ?? "off",
+      filter: musicSessionByGuild[id]?.filter ?? "off",
+      current: musicSessionByGuild[id]?.current ?? null,
+      queue_count: musicSessionByGuild[id]?.queue.length ?? 0,
+      queue: musicSessionByGuild[id]?.queue ?? [],
+    },
     tickets: {
       panel_channel_id: settings.ticket_panel_channel,
       panel_message_id: ticketPanelMessageByGuild[id] ?? null,
@@ -464,6 +534,7 @@ function dashboardPayload(id: string): Json | null {
       { key: "giveaways", label: "Giveaways", enabled: Boolean(settings.giveaway_channel) },
       { key: "ai", label: "AI assistant", enabled: settings.ai.enabled },
       { key: "economy", label: "Economy", enabled: settings.economy.enabled },
+      { key: "music", label: "Music", enabled: settings.music.enabled },
       {
         key: "updates",
         label: "Updates",
@@ -550,16 +621,18 @@ function applyPatch(
     levels?: Partial<Settings["levels"]>;
     ai?: Partial<Settings["ai"]>;
     economy?: Partial<Settings["economy"]>;
+    music?: Partial<Settings["music"]>;
   },
 ) {
   const s = settingsByGuild[id];
   if (!s) return;
-  const { automod, levels, ai, economy, ...rest } = patch;
+  const { automod, levels, ai, economy, music, ...rest } = patch;
   Object.assign(s, rest);
   if (automod) s.automod = { ...s.automod, ...automod };
   if (levels) s.levels = { ...s.levels, ...levels };
   if (ai) s.ai = { ...s.ai, ...ai };
   if (economy) s.economy = { ...s.economy, ...economy };
+  if (music) s.music = { ...s.music, ...music };
 
   const flat: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rest)) flat[k] = v;
@@ -567,6 +640,7 @@ function applyPatch(
   if (levels) for (const [k, v] of Object.entries(levels)) flat[`levels.${k}`] = v;
   if (ai) for (const [k, v] of Object.entries(ai)) flat[`ai.${k}`] = v;
   if (economy) for (const [k, v] of Object.entries(economy)) flat[`economy.${k}`] = v;
+  if (music) for (const [k, v] of Object.entries(music)) flat[`music.${k}`] = v;
 
   (auditByGuild[id] ??= []).unshift({
     id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,
@@ -655,6 +729,42 @@ function route(pathname: string, method: string, body: Json | null): { status: n
           error: "Choose and save a giveaway channel first.",
           code: "giveaway_channel_missing",
         },
+      };
+    }
+    if (actionName === "music_control") {
+      const session = musicSessionByGuild[id];
+      const control = typeof body?.control === "string" ? body.control : "";
+      if (!session?.active || !session.current) {
+        return {
+          status: 409,
+          data: { error: "There is no active playback session to control.", code: "music_not_active" },
+        };
+      }
+      if (control === "toggle") session.paused = !session.paused;
+      else if (control === "skip") session.current = session.queue.shift() ?? null;
+      else if (control === "clear") session.queue = [];
+      else if (control === "stop") {
+        session.active = false;
+        session.paused = false;
+        session.current = null;
+        session.queue = [];
+        session.voice_channel_id = null;
+        session.voice_channel_name = null;
+      } else {
+        return {
+          status: 400,
+          data: { error: "Music control must be toggle, skip, clear or stop.", code: "invalid_music_control" },
+        };
+      }
+      const labels: Record<string, string> = {
+        toggle: "Playback toggled.",
+        skip: "Current track skipped.",
+        clear: "The upcoming queue was cleared.",
+        stop: "Playback stopped and NovaGuard left voice.",
+      };
+      return {
+        status: 200,
+        data: { ok: true, action: `music_${control}`, message: labels[control] },
       };
     }
     const messages: Record<string, string> = {
