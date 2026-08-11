@@ -1163,7 +1163,12 @@ class System(commands.Cog):
                 embed.add_field(
                     name="Preview code",
                     value=(
-                        f"||`{preview_code}`||\n"
+                        # A fenced block, not inline code in a spoiler: Discord
+                        # puts a Copy button on fenced blocks, and this string is
+                        # long enough that selecting it by hand is a chore. The
+                        # reply is ephemeral, so the spoiler was only ever
+                        # guarding against a screenshot.
+                        f"```\n{preview_code}\n```\n"
                         "Use it at `novaguard.fun/preview/` to walk the closed site. "
                         "Shown once — it will not be repeated."
                     ),
