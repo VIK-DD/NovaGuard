@@ -463,12 +463,30 @@ describe("maintenance sync", () => {
     const { cookie } = await previewCookie(apiEnv);
     expect(cookie).toContain("ng_preview=");
 
+    // Asserted as 200, not merely "not 503": the code has to stand in for the
+    // soft-launch password too, or the holder lands on a login form and the
+    // only way to share a preview is to share the site password.
     const page = await worker.fetch(
       new Request("https://novaguard.fun/home/", { headers: { cookie } }),
       apiEnv,
     );
+    expect(page.status).toBe(200);
+    await expect(page.text()).resolves.toBe("/home/");
 
-    expect(page.status).not.toBe(503);
+    const dashboard = await worker.fetch(
+      new Request("https://novaguard.fun/dashboard/g/1", { headers: { cookie } }),
+      apiEnv,
+    );
+    expect(dashboard.status).toBe(200);
+    await expect(dashboard.text()).resolves.toBe("/dashboard/");
+  });
+
+  it("still sends someone with no preview cookie to the maintenance page", async () => {
+    vi.stubGlobal("fetch", previewStub());
+
+    const page = await worker.fetch(new Request("https://novaguard.fun/home/"), apiEnv);
+
+    expect(page.status).toBe(503);
   });
 
   it("refuses a wrong code without setting a cookie", async () => {

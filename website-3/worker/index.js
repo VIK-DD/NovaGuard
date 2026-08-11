@@ -562,13 +562,14 @@ export default {
     // visitor with no session sees the notice rather than a login form for a
     // site that is closed anyway.
     const maintenance = await readMaintenance(request, env, ctx);
+    let previewHolder = false;
     if (maintenance.enabled && !maintenance.unreachable) {
-      const holder = await isValidPreview(
+      previewHolder = await isValidPreview(
         readCookie(request, PREVIEW_COOKIE),
         env.AUTH_PASSWORD,
         maintenance.since,
       );
-      if (!holder) return serveMaintenancePage(request, env, maintenance);
+      if (!previewHolder) return serveMaintenancePage(request, env, maintenance);
     }
     if (isMaintenanceEnabled(env)) {
       return serveMaintenancePage(request, env, { message: "" });
@@ -577,7 +578,13 @@ export default {
     if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
     if (isPublicPath(url.pathname)) return serveAsset(request, env);
 
-    const authenticated = await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD);
+    // A preview code stands in for the soft-launch password. The alternative
+    // pushes the operator to hand out that password to show someone an update,
+    // and it is fixed and never expires; a preview code is 24 random bytes,
+    // rotates every maintenance window, and dies in twelve hours.
+    const authenticated =
+      previewHolder ||
+      (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
     if (!authenticated) return Response.redirect(loginUrl(request), 302);
 
     if (url.pathname === "/maintenance") {
@@ -588,7 +595,10 @@ export default {
       // An unreachable API closes only this: the dashboard genuinely cannot
       // work without it, while the marketing pages never needed the bot at all.
       // Deliberate maintenance closed everything above; an outage should not.
-      if (maintenance.enabled) return serveMaintenancePage(request, env, maintenance);
+      // A preview holder already passed that check, so they are let through.
+      if (maintenance.enabled && !previewHolder) {
+        return serveMaintenancePage(request, env, maintenance);
+      }
 
       // The dashboard owns its nested routes client-side. Serve its static
       // shell on direct visits so refreshes at /dashboard/g/:id keep working.
