@@ -14,6 +14,12 @@ from discord.ext import commands, tasks
 from cogs.admin import require_admin
 from core.backups import create_backup
 from core.database import load_levels_data, save_levels_data, upsert_level_records
+from core.level_curve import (
+    BASE_LEVEL_XP,
+    MAX_LEVEL,
+    level_from_xp,
+    xp_needed,
+)
 from core.levels_settings import resolve_levels
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -24,10 +30,9 @@ from core.utils import defer_interaction, humanize_number, respond
 # AUTOMOD_DEFAULTS ended up declared twice, so there is deliberately none.
 XP_FLUSH_SECONDS = 30
 MIN_XP_MESSAGE_CHARS = 4
-MAX_LEVEL = 169
-# 118 × 169 = 19,942 XP. This keeps the 20k historical import cap aligned
-# with the intended maximum while giving active members roughly one level/day.
-XP_PER_LEVEL = 118
+# Compatibility name for integrations that imported the old constant. It now
+# means the first-level requirement; later levels use core.level_curve.
+XP_PER_LEVEL = BASE_LEVEL_XP
 BACKFILL_DEFAULT_DAYS = 700
 BACKFILL_MAX_DAYS = 700
 BACKFILL_DEFAULT_XP_PER_MESSAGE = 2
@@ -46,18 +51,6 @@ def parse_saved_datetime(value):
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
-
-
-def xp_needed(level):
-    return XP_PER_LEVEL if level < MAX_LEVEL else 0
-
-
-def level_from_xp(total_xp):
-    total_xp = max(int(total_xp or 0), 0)
-    level = min(total_xp // XP_PER_LEVEL, MAX_LEVEL)
-    if level >= MAX_LEVEL:
-        return MAX_LEVEL, 0
-    return level, total_xp - level * XP_PER_LEVEL
 
 
 def meaningful_message(message: discord.Message):

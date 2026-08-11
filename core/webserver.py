@@ -63,6 +63,7 @@ from .database import (
 )
 from .economy_settings import resolve_economy, validate_economy
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
+from .level_curve import level_from_xp
 from .levels_settings import resolve_levels, validate_levels
 from .music_settings import resolve_music, validate_music
 from .maintenance import (
@@ -185,8 +186,6 @@ NATIVE_MANAGER_CHANNEL_KEYS = (
 )
 CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
-DASHBOARD_XP_PER_LEVEL = 118
-DASHBOARD_MAX_LEVEL = 169
 DASHBOARD_VOICE_HISTORY_LIMIT = 5
 DASHBOARD_LEADERBOARD_LIMIT = 5
 
@@ -1370,8 +1369,7 @@ class WebServer:
 
     @staticmethod
     def _dashboard_level_from_xp(total_xp):
-        total_xp = max(int(total_xp or 0), 0)
-        return min(total_xp // DASHBOARD_XP_PER_LEVEL, DASHBOARD_MAX_LEVEL)
+        return level_from_xp(total_xp)[0]
 
     @staticmethod
     def _dashboard_seconds_between(started_at, ended_at):

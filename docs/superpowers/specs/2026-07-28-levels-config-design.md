@@ -22,9 +22,11 @@ dashboard without adding settings would produce cards with nothing in them.
 
 ## What is deliberately not configurable
 
-`XP_PER_LEVEL` and `MAX_LEVEL` stay module constants.
+The XP curve and `MAX_LEVEL` stay application constants rather than guild
+settings. The current progressive curve lives in `core/level_curve.py`, so the
+Discord cog and dashboard cannot calculate different levels.
 
-A member's level is not stored — `level_from_xp` (`cogs/levels.py:53`) derives
+A member's level is not stored — `level_from_xp` (`core/level_curve.py`) derives
 it from total XP on every read. Exposing the curve would mean that the moment
 an owner changed it, every member in the server would jump or drop a level at
 once, with no warning and no undo. Making that safe needs a migration path and

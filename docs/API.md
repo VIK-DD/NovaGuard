@@ -234,7 +234,9 @@ only the keys present are changed. Returns the same payload as GET on success.
   - `ignored_channels`/`ignored_roles`: at most 50 ids each, all existing in that
     guild, duplicates dropped. Messages there earn no XP and are not counted.
   - The XP curve and level cap are **not** configurable: a member's level is
-    derived from total XP, so changing them would move everyone at once.
+    derived from total XP. Level 0→1 needs 118 XP, then each next level needs
+    12 XP more than the previous one (130, 142, 154, …), up to level 169.
+    Discord rank cards and the dashboard import this same curve.
 - `ai` is validated by `core/ai_settings.validate_ai`, the same settings read
   by `/ask`: `enabled` is boolean, `answer_mode` is `public` or `private`,
   `channel_id` is null or a text channel in this guild, and

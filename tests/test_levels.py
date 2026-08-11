@@ -13,6 +13,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.levels_settings import LEVELS_DEFAULTS  # noqa: E402
+from core.level_curve import LEVEL_XP_GROWTH, total_xp_for_level  # noqa: E402
 from cogs.levels import (  # noqa: E402
     BACKFILL_DEFAULT_DAYS,
     BACKFILL_MAX_DAYS,
@@ -38,15 +39,26 @@ class LevelsHelperTests(unittest.TestCase):
         self.assertLessEqual(LEVELS_DEFAULTS["xp_max"], 10)
         self.assertGreaterEqual(LEVELS_DEFAULTS["xp_min"], 5)
 
-    def test_level_math_uses_a_fixed_169_level_curve(self):
+    def test_level_math_uses_a_progressive_169_level_curve(self):
         first_level_xp = xp_needed(0)
         level, into_level = level_from_xp(first_level_xp)
 
         self.assertEqual(first_level_xp, XP_PER_LEVEL)
+        self.assertEqual(xp_needed(1), XP_PER_LEVEL + LEVEL_XP_GROWTH)
+        self.assertEqual(xp_needed(2), XP_PER_LEVEL + 2 * LEVEL_XP_GROWTH)
         self.assertEqual(level, 1)
         self.assertEqual(into_level, 0)
         self.assertEqual(xp_needed(MAX_LEVEL), 0)
-        self.assertEqual(level_from_xp(MAX_LEVEL * XP_PER_LEVEL + 500), (MAX_LEVEL, 0))
+        self.assertEqual(
+            level_from_xp(total_xp_for_level(MAX_LEVEL) + 500), (MAX_LEVEL, 0)
+        )
+
+    def test_level_boundaries_keep_progress_inside_the_current_level(self):
+        level_two_start = total_xp_for_level(2)
+
+        self.assertEqual(level_from_xp(level_two_start - 1), (1, xp_needed(1) - 1))
+        self.assertEqual(level_from_xp(level_two_start), (2, 0))
+        self.assertEqual(level_from_xp(level_two_start + 17), (2, 17))
 
     def test_meaningful_message_ignores_short_xp_farming(self):
         short = SimpleNamespace(content="ok", attachments=[], stickers=[])
@@ -122,7 +134,7 @@ class LevelsHelperTests(unittest.TestCase):
         self.assertIn("NovaGuard", embed.description)
         self.assertIn("No channel spam", embed.description)
         self.assertEqual(embed.fields[0].name, "Next level")
-        self.assertIn(f"/ {XP_PER_LEVEL} XP", embed.fields[0].value)
+        self.assertIn(f"/ {xp_needed(1)} XP", embed.fields[0].value)
         self.assertEqual(embed.fields[2].value, "`+7 XP`")
 
 

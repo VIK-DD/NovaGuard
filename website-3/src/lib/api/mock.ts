@@ -551,11 +551,11 @@ function dashboardPayload(id: string): Json | null {
       tracked_members: 139,
       total_xp: 20_420,
       leaderboard: [
-        { position: 1, user_id: "1", display_name: "Razban", xp: 4400, messages: 2200, level: 37 },
-        { position: 2, user_id: "2", display_name: "Sorin", xp: 4240, messages: 2120, level: 35 },
-        { position: 3, user_id: "3", display_name: "KingPtVoi", xp: 4000, messages: 2000, level: 33 },
-        { position: 4, user_id: "4", display_name: "Denwer", xp: 3820, messages: 1910, level: 32 },
-        { position: 5, user_id: "5", display_name: "Victor", xp: 3210, messages: 1605, level: 27 },
+        { position: 1, user_id: "1", display_name: "Razban", xp: 4400, messages: 2200, level: 19 },
+        { position: 2, user_id: "2", display_name: "Sorin", xp: 4240, messages: 2120, level: 18 },
+        { position: 3, user_id: "3", display_name: "KingPtVoi", xp: 4000, messages: 2000, level: 18 },
+        { position: 4, user_id: "4", display_name: "Denwer", xp: 3820, messages: 1910, level: 17 },
+        { position: 5, user_id: "5", display_name: "Victor", xp: 3210, messages: 1605, level: 15 },
       ],
     },
     voice: {
