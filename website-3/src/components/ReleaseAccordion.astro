@@ -217,7 +217,7 @@ function span(group: ReleaseGroup): string {
   // only once the collapse has finished - otherwise the browser tears the
   // content out before it has a chance to shrink.
   function enhance(root: HTMLElement) {
-    const items = Array.from(root.querySelectorAll<HTMLDetailsElement>("details"));
+    const wiredItems = new WeakSet<HTMLDetailsElement>();
 
     for (const row of root.querySelectorAll<HTMLElement>(".release-update")) {
       // The stagger restarts inside each panel rather than running across the
@@ -232,10 +232,13 @@ function span(group: ReleaseGroup): string {
       if (panel && inner) panel.style.setProperty("--panel-height", `${inner.offsetHeight}px`);
     };
 
-    for (const item of items) {
+    const wire = (item: HTMLDetailsElement) => {
+      if (wiredItems.has(item)) return;
       const panel = item.querySelector<HTMLElement>(".release-panel");
       const summary = item.querySelector<HTMLElement>("summary");
-      if (!panel || !summary) continue;
+      if (!panel || !summary) return;
+
+      wiredItems.add(item);
 
       measure(item);
 
@@ -285,13 +288,20 @@ function span(group: ReleaseGroup): string {
           item.setAttribute("data-open", "");
         }
       });
+    };
+
+    for (const item of root.querySelectorAll<HTMLDetailsElement>("details")) {
+      wire(item);
     }
 
     // Content reflows on resize, and a stale measurement clips the panel.
     let resizeTimer = 0;
     window.addEventListener("resize", () => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => items.forEach(measure), 150);
+      resizeTimer = window.setTimeout(
+        () => root.querySelectorAll<HTMLDetailsElement>("details").forEach(measure),
+        150,
+      );
     });
 
     // The live tail appends rows after this has run, and a panel measured
@@ -300,6 +310,10 @@ function span(group: ReleaseGroup): string {
     // both sides.
     (root as HTMLElement & { ngRemeasure?: () => void }).ngRemeasure = () => {
       for (const item of root.querySelectorAll<HTMLDetailsElement>("details")) {
+        // Live releases did not exist during the first enhancement pass. Wire
+        // them now so their chevron, panel and keyboard-native summary behave
+        // exactly like the server-rendered cards.
+        wire(item);
         item
           .querySelectorAll<HTMLElement>(".release-update")
           .forEach((row, index) => row.style.setProperty("--row", String(index)));

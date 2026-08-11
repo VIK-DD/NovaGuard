@@ -41,6 +41,26 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   return node;
 }
 
+function releaseChevron(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute(
+    "class",
+    "chevron size-5 shrink-0 text-ink-faint transition-transform duration-300",
+  );
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M5 7.5 10 12.5 15 7.5");
+  svg.append(path);
+  return svg;
+}
+
 /** One update, matching the markup ReleaseAccordion renders on the server. */
 function updateRow(update: StampedRelease): HTMLLIElement {
   const row = document.createElement("li");
@@ -85,7 +105,11 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
   card.className =
     "group release-item rounded-[var(--radius)] border border-line bg-card transition-colors duration-300 hover:border-line-strong";
   card.dataset.releaseVersion = group.version;
-  if (group.current) card.dataset.currentRelease = "";
+  if (group.current) {
+    card.dataset.currentRelease = "";
+    card.dataset.open = "";
+    card.open = true;
+  }
 
   const summary = document.createElement("summary");
   summary.className =
@@ -95,9 +119,11 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
   const phaseBadge = el(
     "span",
     "shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase",
-    group.phaseLabel,
   );
   phaseBadge.dataset.releasePhaseBadge = "";
+  const phase = el("span", "", group.phaseLabel);
+  phase.dataset.releasePhase = "";
+  phaseBadge.append(phase);
   left.append(
     el(
       "span",
@@ -117,15 +143,17 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
   }
 
   const meta = el("span", "hidden text-right text-xs leading-relaxed text-ink-faint md:block");
-  meta.append(
-    el(
-      "span",
-      "block text-ink-muted",
-      `${group.updateCount} ${group.updateCount === 1 ? "update" : "updates"}`,
-    ),
+  const count = el(
+    "span",
+    "block text-ink-muted",
+    `${group.updateCount} ${group.updateCount === 1 ? "update" : "updates"}`,
   );
+  count.dataset.releaseCount = "";
+  const span = el("span", "block", spanLabel(group));
+  span.dataset.releaseSpan = "";
+  meta.append(count, span);
 
-  summary.append(left, meta);
+  summary.append(left, meta, releaseChevron());
 
   const panel = el("div", "release-panel");
   const inner = el("div", "release-panel-inner border-t border-line px-5 pt-1 pb-5 sm:px-6");
@@ -162,13 +190,33 @@ function setStat(selector: string, value: number) {
 }
 
 export function syncCurrentVersion(root: HTMLElement, version: string | undefined) {
+  let foundCurrent = false;
   for (const card of root.querySelectorAll<HTMLElement>("[data-release-version]")) {
     const current = Boolean(version) && card.dataset.releaseVersion === version;
-    if (current) card.dataset.currentRelease = "";
-    else delete card.dataset.currentRelease;
+    if (current) {
+      foundCurrent = true;
+      card.dataset.currentRelease = "";
+      if (card instanceof HTMLDetailsElement) card.open = true;
+      card.dataset.open = "";
+    } else {
+      delete card.dataset.currentRelease;
+      // The static page starts with exactly one card open. Preserve that same
+      // state after a live version is prepended instead of leaving the baked
+      // former-current release expanded underneath it.
+      if (card instanceof HTMLDetailsElement) card.open = false;
+      delete card.dataset.open;
+    }
 
     const marker = card.querySelector<HTMLElement>("[data-current-release-marker]");
     if (marker) marker.hidden = !current;
+  }
+
+  if (foundCurrent) {
+    const note = document.querySelector<HTMLElement>("[data-release-sync-note]");
+    if (note) {
+      note.hidden = true;
+      note.textContent = "";
+    }
   }
 }
 
