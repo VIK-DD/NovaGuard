@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, inviteUrl } from "../../lib/api/client";
 import type { Dashboard } from "../../lib/api/schemas";
 import Icon from "../components/Icon";
-import type { ConfigModuleKey } from "../moduleCatalog";
+import { dashboardModuleKey } from "../moduleCatalog";
 import { runGuildAction, useGuildDashboard } from "../queries/guilds";
 
 const timeFmt = new Intl.DateTimeFormat("en-US", {
@@ -78,17 +78,6 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-const moduleSection: Record<string, ConfigModuleKey> = {
-  welcome: "welcome",
-  logs: "moderation",
-  automod: "moderation",
-  moderation: "moderation",
-  levels: "levels",
-  voice: "voice",
-  tickets: "tickets",
-  updates: "updates",
-};
-
 function ModuleRow({
   guildId,
   module,
@@ -96,7 +85,7 @@ function ModuleRow({
   guildId: string;
   module: Dashboard["modules"][number];
 }) {
-  const section = moduleSection[module.key] ?? "moderation";
+  const section = dashboardModuleKey(module.key);
   return (
     <Link
       to="/g/$guildId/settings/$moduleId"

@@ -93,6 +93,14 @@ export function getConfigModule(key: string | undefined) {
   return CONFIG_MODULES.find((module) => module.key === key);
 }
 
+/** Resolve compact dashboard module keys to their focused settings page. */
+export function dashboardModuleKey(key: string): ConfigModuleKey {
+  const direct = getConfigModule(key);
+  if (direct) return direct.key;
+  if (key === "logs" || key === "automod") return "moderation";
+  return "moderation";
+}
+
 export function configModulePath(guildId: string, key: ConfigModuleKey) {
   return `/dashboard/g/${encodeURIComponent(guildId)}/settings/${key}`;
 }

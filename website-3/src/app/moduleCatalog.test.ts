@@ -3,6 +3,7 @@ import type { GuildSettings } from "../lib/api/schemas";
 import {
   CONFIG_MODULES,
   configModulePath,
+  dashboardModuleKey,
   getConfigModule,
   isModuleActive,
 } from "./moduleCatalog";
@@ -120,6 +121,15 @@ describe("configuration module catalog", () => {
     expect(configModulePath("123/unsafe", "levels")).toBe(
       "/dashboard/g/123%2Funsafe/settings/levels",
     );
+  });
+
+  it("routes every dashboard module to its own settings page", () => {
+    for (const module of CONFIG_MODULES) {
+      expect(dashboardModuleKey(module.key)).toBe(module.key);
+    }
+    expect(dashboardModuleKey("logs")).toBe("moderation");
+    expect(dashboardModuleKey("automod")).toBe("moderation");
+    expect(dashboardModuleKey("future-unknown")).toBe("moderation");
   });
 
   it("derives module state from the settings that actually power it", () => {
