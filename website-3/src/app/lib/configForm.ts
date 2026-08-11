@@ -24,6 +24,16 @@ const LEVELS_SCALAR_KEYS = [
 
 const LEVELS_LIST_KEYS = ["ignored_channels", "ignored_roles"] as const;
 
+const AUTOMOD_SCALAR_KEYS = [
+  "invites",
+  "spam",
+  "spam_messages",
+  "spam_window_seconds",
+  "spam_timeout_seconds",
+] as const;
+
+const AUTOMOD_LIST_KEYS = ["badwords", "ignored_channels", "ignored_roles"] as const;
+
 /** Mirrors the server's badwords rules: lowercase, trim, dedupe, truncate to 40 chars, ≤100 words. */
 export function normalizeBadwords(raw: string[]): string[] {
   const out: string[] = [];
@@ -39,7 +49,7 @@ export function normalizeBadwords(raw: string[]): string[] {
 /** Client-side mirror of the cross-field Levels rules enforced by the API. */
 export function validateSettings(draft: GuildSettings): Record<string, string> {
   const errors: Record<string, string> = {};
-  const { levels } = draft;
+  const { automod, levels } = draft;
 
   const wholeNumber = (value: number, min: number, max: number) =>
     Number.isInteger(value) && value >= min && value <= max;
@@ -69,6 +79,21 @@ export function validateSettings(draft: GuildSettings): Record<string, string> {
   if (levels.ignored_roles.length > 50) {
     errors["levels.ignored_roles"] = "You can ignore at most 50 roles.";
   }
+  if (!wholeNumber(automod.spam_messages, 3, 20)) {
+    errors["automod.spam_messages"] = "Enter a whole number between 3 and 20.";
+  }
+  if (!wholeNumber(automod.spam_window_seconds, 2, 60)) {
+    errors["automod.spam_window_seconds"] = "Enter a whole number between 2 and 60.";
+  }
+  if (!wholeNumber(automod.spam_timeout_seconds, 10, 86400)) {
+    errors["automod.spam_timeout_seconds"] = "Enter a whole number between 10 and 86400.";
+  }
+  if (automod.ignored_channels.length > 50) {
+    errors["automod.ignored_channels"] = "You can exempt at most 50 channels.";
+  }
+  if (automod.ignored_roles.length > 50) {
+    errors["automod.ignored_roles"] = "You can exempt at most 50 roles.";
+  }
 
   return errors;
 }
@@ -87,10 +112,15 @@ export function diffSettings(server: GuildSettings, draft: GuildSettings): Setti
   }
 
   const automod: NonNullable<SettingsPatch["automod"]> = {};
-  if (server.automod.invites !== draft.automod.invites) automod.invites = draft.automod.invites;
-  if (server.automod.spam !== draft.automod.spam) automod.spam = draft.automod.spam;
-  if (!sameSet(server.automod.badwords, draft.automod.badwords)) {
-    automod.badwords = draft.automod.badwords;
+  for (const key of AUTOMOD_SCALAR_KEYS) {
+    if (server.automod[key] !== draft.automod[key]) {
+      (automod as Record<string, unknown>)[key] = draft.automod[key];
+    }
+  }
+  for (const key of AUTOMOD_LIST_KEYS) {
+    if (!sameSet(server.automod[key], draft.automod[key])) {
+      automod[key] = draft.automod[key];
+    }
   }
   if (Object.keys(automod).length > 0) patch.automod = automod;
 
@@ -131,6 +161,9 @@ export function mapValidationDetails(details: string[] | undefined): Record<stri
   // `includes` would otherwise pair "levels.announce_channel: …" with the
   // shorter "levels.announce" and light up the wrong field.
   const known: string[] = [
+    ...[...AUTOMOD_SCALAR_KEYS, ...AUTOMOD_LIST_KEYS]
+      .map((k) => `automod.${k}`)
+      .sort((a, b) => b.length - a.length),
     ...[...LEVELS_SCALAR_KEYS, ...LEVELS_LIST_KEYS]
       .map((k) => `levels.${k}`)
       .sort((a, b) => b.length - a.length),

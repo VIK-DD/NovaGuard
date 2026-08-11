@@ -45,7 +45,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
-from .automod_settings import resolve_automod
+from .automod_settings import resolve_automod, validate_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import connect, load_levels_data, load_voice_store
@@ -165,8 +165,6 @@ CHANNEL_KEYS = (
     "error_log_channel",
 )
 ROLE_KEYS = ("autorole", "ticket_staff_role")
-MAX_BADWORDS = 100
-MAX_BADWORD_LENGTH = 40
 DASHBOARD_XP_PER_LEVEL = 118
 DASHBOARD_MAX_LEVEL = 169
 DASHBOARD_VOICE_HISTORY_LIMIT = 5
@@ -1647,25 +1645,14 @@ class WebServer:
                 changes[key] = role.id
 
         if "automod" in body:
-            raw = body["automod"]
-            if not isinstance(raw, dict):
-                errors.append("automod: must be an object")
+            current = await asyncio.to_thread(get_guild_settings, guild.id)
+            role_ids = {str(role.id) for role in guild.roles}
+            automod, automod_errors = validate_automod(
+                body["automod"], resolve_automod(current), text_channel_ids, role_ids
+            )
+            if automod_errors:
+                errors.extend(automod_errors)
             else:
-                current = await asyncio.to_thread(get_guild_settings, guild.id)
-                automod = resolve_automod(current)
-                for flag in ("invites", "spam"):
-                    if flag in raw:
-                        automod[flag] = bool(raw[flag])
-                if "badwords" in raw:
-                    if not isinstance(raw["badwords"], list):
-                        errors.append("automod.badwords: must be a list of words")
-                    else:
-                        words = []
-                        for word in raw["badwords"][:MAX_BADWORDS]:
-                            word = str(word).strip().lower()[:MAX_BADWORD_LENGTH]
-                            if word and word not in words:
-                                words.append(word)
-                        automod["badwords"] = words
                 changes["automod"] = automod
 
         if "levels" in body:

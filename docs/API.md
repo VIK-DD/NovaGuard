@@ -137,7 +137,11 @@ same value on every guild this bot serves, derived from the bot's
     "log_channel": "…|null", "voice_report_channel": "…|null", "update_channel": "…|null",
     "github_event_channel": "…|null", "error_log_channel": "…|null",
     "autorole": "…|null", "ticket_staff_role": "…|null",
-    "automod": { "invites": true, "spam": true, "badwords": ["…"] },
+    "automod": {
+      "invites": true, "spam": true, "badwords": ["…"],
+      "ignored_channels": ["…"], "ignored_roles": ["…"],
+      "spam_messages": 6, "spam_window_seconds": 6, "spam_timeout_seconds": 60
+    },
     "levels": {
       "enabled": true, "announce": "dm|channel|off", "announce_channel": "…|null",
       "xp_min": 5, "xp_max": 10, "cooldown": 120,
@@ -155,7 +159,14 @@ only the keys present are changed. Returns the same payload as GET on success.
 
 - Channel keys must be a text channel **in that guild** (or `null`/`""`/`0` to clear).
 - `autorole` must be **below the bot's top role** and not managed.
-- `automod.badwords`: list, each lowercased + trimmed, capped at 100 × 40 chars, deduped.
+- `automod` is validated by `core/automod_settings.validate_automod`, the same
+  rules used by live message enforcement:
+  - `invites` and `spam` must be JSON booleans; strings are not coerced.
+  - `badwords`: at most 100 entries, lowercased, trimmed, capped at 40 chars and deduped.
+  - `ignored_channels`/`ignored_roles`: at most 50 ids each and every id must
+    exist in this guild. A matching parent channel also exempts its threads.
+  - `spam_messages`: 3–20; `spam_window_seconds`: 2–60;
+    `spam_timeout_seconds`: 10–86400. All three must be whole numbers.
 - `levels` is validated by `core/levels_settings.validate_levels`, the same rules
   the bot itself reads, so the two cannot disagree:
   - `xp_min`/`xp_max` are whole numbers 1–100 and `xp_min <= xp_max`. The pair is
@@ -172,7 +183,8 @@ only the keys present are changed. Returns the same payload as GET on success.
 
 ```json
 { "welcome_channel": "123", "autorole": "456",
-  "automod": { "invites": false, "badwords": ["spoiler"] },
+  "automod": { "invites": false, "badwords": ["spoiler"],
+    "ignored_channels": ["789"], "spam_messages": 8 },
   "levels": { "xp_min": 3, "xp_max": 30, "announce": "channel", "announce_channel": "789" } }
 ```
 

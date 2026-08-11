@@ -9,15 +9,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core.automod_settings import resolve_automod
+from core.automod_settings import is_automod_exempt, resolve_automod
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
 
 INVITE_PATTERN = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
-SPAM_MESSAGES = 6
-SPAM_WINDOW_SECONDS = 6
-SPAM_TIMEOUT_SECONDS = 60
 SPAM_BUCKET_TTL_SECONDS = 300
 
 
@@ -73,15 +70,17 @@ class AutoMod(commands.Cog):
     async def before_cleanup_spam_buckets(self):
         await self.bot.wait_until_ready()
 
-    async def punish(self, message, title, reason, timeout_member=False):
+    async def punish(self, message, title, reason, timeout_seconds=0):
         try:
             await message.delete()
         except discord.HTTPException:
             pass
 
-        if timeout_member and isinstance(message.author, discord.Member):
+        if timeout_seconds and isinstance(message.author, discord.Member):
             try:
-                await message.author.timeout(timedelta(seconds=SPAM_TIMEOUT_SECONDS), reason=f"AutoMod: {reason}")
+                await message.author.timeout(
+                    timedelta(seconds=timeout_seconds), reason=f"AutoMod: {reason}"
+                )
             except discord.HTTPException:
                 pass
 
@@ -114,6 +113,17 @@ class AutoMod(commands.Cog):
                 return
 
         config = get_automod_config(message.guild.id)
+        channel_ids = {str(message.channel.id)}
+        parent_id = getattr(message.channel, "parent_id", None)
+        if parent_id:
+            channel_ids.add(str(parent_id))
+        role_ids = (
+            (role.id for role in message.author.roles)
+            if isinstance(message.author, discord.Member)
+            else ()
+        )
+        if is_automod_exempt(config, channel_ids, role_ids):
+            return
 
         if config["invites"] and INVITE_PATTERN.search(message.content):
             return await self.punish(message, "Invite link blocked", "posting invite links is not allowed here.")
@@ -125,15 +135,22 @@ class AutoMod(commands.Cog):
 
         if config["spam"]:
             key = (message.guild.id, message.author.id)
-            bucket = self.spam_buckets.setdefault(key, deque(maxlen=SPAM_MESSAGES))
+            message_limit = config["spam_messages"]
+            bucket = self.spam_buckets.get(key)
+            if bucket is None or bucket.maxlen != message_limit:
+                bucket = deque(tuple(bucket or ())[-message_limit:], maxlen=message_limit)
+                self.spam_buckets[key] = bucket
             bucket.append(time.monotonic())
-            if len(bucket) >= SPAM_MESSAGES and bucket[-1] - bucket[0] <= SPAM_WINDOW_SECONDS:
+            if (
+                len(bucket) >= message_limit
+                and bucket[-1] - bucket[0] <= config["spam_window_seconds"]
+            ):
                 bucket.clear()
                 await self.punish(
                     message,
                     "Spam detected",
-                    f"slow down! Muted for `{SPAM_TIMEOUT_SECONDS}s`.",
-                    timeout_member=True,
+                    f"slow down! Muted for `{config['spam_timeout_seconds']}s`.",
+                    timeout_seconds=config["spam_timeout_seconds"],
                 )
 
     @automod.command(name="status", description="See the current AutoMod configuration")
@@ -143,6 +160,22 @@ class AutoMod(commands.Cog):
         embed.add_field(name="🔗 Invite filter", value="`On`" if config["invites"] else "`Off`", inline=True)
         embed.add_field(name="⚡ Anti-spam", value="`On`" if config["spam"] else "`Off`", inline=True)
         embed.add_field(name="🚫 Blocked words", value=f"`{len(config['badwords'])}`", inline=True)
+        embed.add_field(
+            name="⚙️ Anti-spam threshold",
+            value=(
+                f"`{config['spam_messages']}` messages / `{config['spam_window_seconds']}s`"
+                f" → `{config['spam_timeout_seconds']}s` timeout"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="🕊️ Exemptions",
+            value=(
+                f"`{len(config['ignored_channels'])}` channels • "
+                f"`{len(config['ignored_roles'])}` roles"
+            ),
+            inline=True,
+        )
         embed.add_field(
             name="Notes",
             value="Members with **Manage Messages** or **Administrator** are exempt.",
@@ -173,7 +206,7 @@ class AutoMod(commands.Cog):
         save_automod_config(interaction.guild_id, config)
         embed = make_embed(
             "⚡ Anti-spam " + ("enabled" if enabled else "disabled"),
-            f"More than `{SPAM_MESSAGES}` messages in `{SPAM_WINDOW_SECONDS}s` earns a `{SPAM_TIMEOUT_SECONDS}s` timeout."
+            f"`{config['spam_messages']}` messages in `{config['spam_window_seconds']}s` earns a `{config['spam_timeout_seconds']}s` timeout."
             if enabled
             else "Spam detection is off.",
             color=Palette.SUCCESS if enabled else Palette.WARNING,

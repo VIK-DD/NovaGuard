@@ -477,8 +477,18 @@ async def main():
                 r.status == 400 and data.get("code") == "validation_failed" and data.get("details"),
             )
 
-        good = {"welcome_channel": "111", "log_channel": "112",
-                "automod": {"invites": False, "badwords": ["Spoiler", "spoiler", "  x  "]}}
+        good = {
+            "welcome_channel": "111",
+            "log_channel": "112",
+            "automod": {
+                "invites": False,
+                "badwords": ["Spoiler", "spoiler", "  x  "],
+                "ignored_channels": ["111"],
+                "spam_messages": 8,
+                "spam_window_seconds": 12,
+                "spam_timeout_seconds": 300,
+            },
+        }
         async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config", json=good, cookies=cookies) as r:
             data = await r.json()
             saved = data.get("settings", {})
@@ -487,7 +497,22 @@ async def main():
                 r.status == 200
                 and saved.get("welcome_channel") == "111"
                 and saved.get("automod", {}).get("invites") is False
-                and saved.get("automod", {}).get("badwords") == ["spoiler", "x"],
+                and saved.get("automod", {}).get("badwords") == ["spoiler", "x"]
+                and saved.get("automod", {}).get("ignored_channels") == ["111"]
+                and saved.get("automod", {}).get("spam_messages") == 8,
+            )
+
+        async with http.put(
+            f"{V1}/guilds/{TEST_GUILD_ID}/config",
+            json={"automod": {"invites": "false", "ignored_channels": ["999"]}},
+            cookies=cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "automod rejects coercion and foreign exemptions",
+                r.status == 400
+                and data.get("code") == "validation_failed"
+                and len(data.get("details", [])) == 2,
             )
 
         stored = get_guild_settings(TEST_GUILD_ID)

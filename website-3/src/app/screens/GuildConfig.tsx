@@ -335,6 +335,26 @@ export default function GuildConfig() {
     (v: string[]) => setAutomod({ badwords: v }),
     [setAutomod],
   );
+  const onAutomodIgnoredChannelsChange = useCallback(
+    (v: string[]) => setAutomod({ ignored_channels: v }),
+    [setAutomod],
+  );
+  const onAutomodIgnoredRolesChange = useCallback(
+    (v: string[]) => setAutomod({ ignored_roles: v }),
+    [setAutomod],
+  );
+  const onSpamMessagesChange = useCallback(
+    (v: number) => setAutomod({ spam_messages: v }),
+    [setAutomod],
+  );
+  const onSpamWindowChange = useCallback(
+    (v: number) => setAutomod({ spam_window_seconds: v }),
+    [setAutomod],
+  );
+  const onSpamTimeoutChange = useCallback(
+    (v: number) => setAutomod({ spam_timeout_seconds: v }),
+    [setAutomod],
+  );
   const onLevelsEnabledChange = useCallback((v: boolean) => setLevels({ enabled: v }), [setLevels]);
   const onAnnounceChannelChange = useCallback(
     (v: string | null) => setLevels({ announce_channel: v }),
@@ -559,8 +579,57 @@ export default function GuildConfig() {
               <div className="border-t border-line pt-4">
                 <BadwordsEditor
                   value={draft.automod.badwords}
-                  error={fieldErrors.badwords ?? fieldErrors.automod}
+                  error={
+                    fieldErrors["automod.badwords"] ?? fieldErrors.badwords ?? fieldErrors.automod
+                  }
                   onChange={onBadwordsChange}
+                />
+              </div>
+              <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-3">
+                <NumberField
+                  label="Messages"
+                  suffix="to trigger"
+                  value={draft.automod.spam_messages}
+                  min={3}
+                  max={20}
+                  error={fieldErrors["automod.spam_messages"]}
+                  onChange={onSpamMessagesChange}
+                />
+                <NumberField
+                  label="Detection window"
+                  suffix="seconds"
+                  value={draft.automod.spam_window_seconds}
+                  min={2}
+                  max={60}
+                  error={fieldErrors["automod.spam_window_seconds"]}
+                  onChange={onSpamWindowChange}
+                />
+                <NumberField
+                  label="Timeout"
+                  suffix="seconds"
+                  value={draft.automod.spam_timeout_seconds}
+                  min={10}
+                  max={86400}
+                  error={fieldErrors["automod.spam_timeout_seconds"]}
+                  onChange={onSpamTimeoutChange}
+                />
+              </div>
+              <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+                <IgnoreListEditor
+                  label="Channels exempt from AutoMod"
+                  prefix="#"
+                  value={draft.automod.ignored_channels}
+                  options={channels}
+                  error={fieldErrors["automod.ignored_channels"]}
+                  onChange={onAutomodIgnoredChannelsChange}
+                />
+                <IgnoreListEditor
+                  label="Roles exempt from AutoMod"
+                  prefix="@"
+                  value={draft.automod.ignored_roles}
+                  options={roles}
+                  error={fieldErrors["automod.ignored_roles"]}
+                  onChange={onAutomodIgnoredRolesChange}
                 />
               </div>
             </div>

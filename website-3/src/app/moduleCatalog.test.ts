@@ -17,7 +17,16 @@ const emptySettings: GuildSettings = {
   error_log_channel: null,
   autorole: null,
   ticket_staff_role: null,
-  automod: { invites: false, spam: false, badwords: [] },
+  automod: {
+    invites: false,
+    spam: false,
+    badwords: [],
+    ignored_channels: [],
+    ignored_roles: [],
+    spam_messages: 6,
+    spam_window_seconds: 6,
+    spam_timeout_seconds: 60,
+  },
   levels: {
     enabled: false,
     announce: "dm",

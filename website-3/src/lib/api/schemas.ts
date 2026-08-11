@@ -42,6 +42,11 @@ export const AutomodSchema = z.object({
   invites: z.boolean(),
   spam: z.boolean(),
   badwords: z.array(z.string()),
+  ignored_channels: z.array(z.string()),
+  ignored_roles: z.array(z.string()),
+  spam_messages: z.number(),
+  spam_window_seconds: z.number(),
+  spam_timeout_seconds: z.number(),
 });
 
 /** Ids stay strings: Discord snowflakes exceed 2^53 and would lose digits as numbers. */
@@ -251,6 +256,6 @@ export type SettingsPatch = Partial<{
   error_log_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
-  automod: Partial<{ invites: boolean; spam: boolean; badwords: string[] }>;
+  automod: Partial<z.infer<typeof AutomodSchema>>;
   levels: Partial<Levels>;
 }>;

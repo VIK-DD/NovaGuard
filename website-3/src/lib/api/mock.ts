@@ -73,7 +73,16 @@ type Settings = {
   error_log_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
-  automod: { invites: boolean; spam: boolean; badwords: string[] };
+  automod: {
+    invites: boolean;
+    spam: boolean;
+    badwords: string[];
+    ignored_channels: string[];
+    ignored_roles: string[];
+    spam_messages: number;
+    spam_window_seconds: number;
+    spam_timeout_seconds: number;
+  };
   levels: {
     enabled: boolean;
     announce: "dm" | "channel" | "off";
@@ -98,6 +107,17 @@ const levelsDefaults = (): Settings["levels"] => ({
   ignored_roles: [],
 });
 
+const automodDefaults = (): Settings["automod"] => ({
+  invites: true,
+  spam: true,
+  badwords: [],
+  ignored_channels: [],
+  ignored_roles: [],
+  spam_messages: 6,
+  spam_window_seconds: 6,
+  spam_timeout_seconds: 60,
+});
+
 const settingsByGuild: Record<string, Settings> = {
   "1001": {
     welcome_channel: "c1",
@@ -109,7 +129,12 @@ const settingsByGuild: Record<string, Settings> = {
     error_log_channel: "c10",
     autorole: "r1",
     ticket_staff_role: "r6",
-    automod: { invites: true, spam: true, badwords: ["scam", "freenitro", "raid"] },
+    automod: {
+      ...automodDefaults(),
+      badwords: ["scam", "freenitro", "raid"],
+      ignored_channels: ["c2"],
+      ignored_roles: ["r4"],
+    },
     levels: {
       ...levelsDefaults(),
       announce: "channel",
@@ -130,7 +155,7 @@ const settingsByGuild: Record<string, Settings> = {
     error_log_channel: null,
     autorole: null,
     ticket_staff_role: null,
-    automod: { invites: false, spam: true, badwords: [] },
+    automod: { ...automodDefaults(), invites: false },
     levels: levelsDefaults(),
   },
   "1003": {
@@ -143,7 +168,7 @@ const settingsByGuild: Record<string, Settings> = {
     error_log_channel: null,
     autorole: "r1",
     ticket_staff_role: null,
-    automod: { invites: true, spam: false, badwords: ["spoiler"] },
+    automod: { ...automodDefaults(), spam: false, badwords: ["spoiler"] },
     levels: { ...levelsDefaults(), enabled: false, announce: "off" },
   },
 };

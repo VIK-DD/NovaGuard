@@ -18,7 +18,16 @@ const base: GuildSettings = {
   error_log_channel: null,
   autorole: "300",
   ticket_staff_role: null,
-  automod: { invites: true, spam: false, badwords: ["alpha", "beta"] },
+  automod: {
+    invites: true,
+    spam: false,
+    badwords: ["alpha", "beta"],
+    ignored_channels: ["401"],
+    ignored_roles: [],
+    spam_messages: 6,
+    spam_window_seconds: 6,
+    spam_timeout_seconds: 60,
+  },
   levels: {
     enabled: true,
     announce: "dm",
@@ -128,6 +137,15 @@ describe("diffSettings", () => {
       automod: { badwords: ["alpha", "gamma"] },
     });
   });
+
+  it("sends advanced AutoMod fields without unrelated settings", () => {
+    const draft = clone();
+    draft.automod.spam_messages = 8;
+    draft.automod.ignored_roles = ["900"];
+    expect(diffSettings(base, draft)).toEqual({
+      automod: { spam_messages: 8, ignored_roles: ["900"] },
+    });
+  });
 });
 
 describe("isDirty", () => {
@@ -185,6 +203,19 @@ describe("validateSettings", () => {
     expect(errors).toHaveProperty("levels.xp_max");
     expect(errors).toHaveProperty("levels.cooldown");
     expect(errors).toHaveProperty("levels.ignored_channels");
+  });
+
+  it("validates AutoMod thresholds and exemption limits", () => {
+    const draft = clone();
+    draft.automod.spam_messages = 2;
+    draft.automod.spam_window_seconds = 61;
+    draft.automod.spam_timeout_seconds = 0;
+    draft.automod.ignored_roles = Array.from({ length: 51 }, (_, i) => String(i));
+    const errors = validateSettings(draft);
+    expect(errors).toHaveProperty("automod.spam_messages");
+    expect(errors).toHaveProperty("automod.spam_window_seconds");
+    expect(errors).toHaveProperty("automod.spam_timeout_seconds");
+    expect(errors).toHaveProperty("automod.ignored_roles");
   });
 });
 
