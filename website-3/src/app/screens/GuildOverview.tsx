@@ -99,9 +99,8 @@ function ModuleRow({
   const section = moduleSection[module.key] ?? "moderation";
   return (
     <Link
-      to="/g/$guildId/settings"
-      params={{ guildId }}
-      hash={section}
+      to="/g/$guildId/settings/$moduleId"
+      params={{ guildId, moduleId: section }}
       className="ng-pressable flex min-h-11 items-center justify-between border-t border-line py-3 text-sm first:border-t-0 hover:text-primary"
     >
       <span>{module.label}</span>

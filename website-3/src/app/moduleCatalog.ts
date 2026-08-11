@@ -54,6 +54,14 @@ export const CONFIG_MODULES = [
 
 export type ConfigModuleKey = (typeof CONFIG_MODULES)[number]["key"];
 
+export function getConfigModule(key: string | undefined) {
+  return CONFIG_MODULES.find((module) => module.key === key);
+}
+
+export function configModulePath(guildId: string, key: ConfigModuleKey) {
+  return `/dashboard/g/${encodeURIComponent(guildId)}/settings/${key}`;
+}
+
 export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): boolean {
   switch (key) {
     case "welcome":

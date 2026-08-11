@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { GuildSettings } from "../lib/api/schemas";
-import { CONFIG_MODULES, isModuleActive } from "./moduleCatalog";
+import {
+  CONFIG_MODULES,
+  configModulePath,
+  getConfigModule,
+  isModuleActive,
+} from "./moduleCatalog";
 
 const emptySettings: GuildSettings = {
   welcome_channel: null,
@@ -50,6 +55,14 @@ describe("configuration module catalog", () => {
     const keys = CONFIG_MODULES.map((module) => module.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toEqual(["welcome", "moderation", "levels", "voice", "tickets", "updates"]);
+  });
+
+  it("resolves direct module routes without accepting unknown keys", () => {
+    expect(getConfigModule("levels")?.label).toBe("Levels");
+    expect(getConfigModule("unknown")).toBeUndefined();
+    expect(configModulePath("123/unsafe", "levels")).toBe(
+      "/dashboard/g/123%2Funsafe/settings/levels",
+    );
   });
 
   it("derives module state from the settings that actually power it", () => {

@@ -35,14 +35,8 @@ function GuildLayout() {
   };
   return (
     <>
-      <nav className="border-b border-line">
-        <div className="mx-auto flex max-w-3xl gap-5 overflow-x-auto px-4 pt-4 pb-px [scrollbar-width:none] sm:gap-6 sm:px-6">
-          <Link
-            to="/"
-            className={`${tab} shrink-0 border-transparent text-ink-muted hover:text-ink`}
-          >
-            ← Servers
-          </Link>
+      <nav className="border-b border-line" aria-label="Server dashboard">
+        <div className="mx-auto flex max-w-3xl gap-5 overflow-x-auto px-4 pt-4 pb-px [scrollbar-width:none] sm:justify-center sm:gap-8 sm:px-6">
           <Link
             to="/g/$guildId"
             params={{ guildId }}
@@ -136,6 +130,12 @@ const guildSettingsRoute = createRoute({
   component: GuildConfig,
 });
 
+const guildModuleRoute = createRoute({
+  getParentRoute: () => guildRoute,
+  path: "/settings/$moduleId",
+  component: GuildConfig,
+});
+
 const guildAuditRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "/audit",
@@ -144,7 +144,12 @@ const guildAuditRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  guildRoute.addChildren([guildConfigRoute, guildSettingsRoute, guildAuditRoute]),
+  guildRoute.addChildren([
+    guildConfigRoute,
+    guildSettingsRoute,
+    guildModuleRoute,
+    guildAuditRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree, basepath: "/dashboard" });

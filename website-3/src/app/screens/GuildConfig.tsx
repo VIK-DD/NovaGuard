@@ -15,7 +15,12 @@ import IgnoreListEditor from "../components/IgnoreListEditor";
 import RoleSelect from "../components/RoleSelect";
 import SaveBar from "../components/SaveBar";
 import { diffSettings, isDirty, mapValidationDetails, validateSettings } from "../lib/configForm";
-import { CONFIG_MODULES, isModuleActive, type ConfigModuleKey } from "../moduleCatalog";
+import {
+  CONFIG_MODULES,
+  getConfigModule,
+  isModuleActive,
+  type ConfigModuleKey,
+} from "../moduleCatalog";
 import { useGuildConfig } from "../queries/guilds";
 import { useUnsavedChanges } from "../unsavedChanges";
 
@@ -176,15 +181,16 @@ function Section(props: {
   );
 }
 
-function ModuleNav({ settings }: { settings: GuildSettings }) {
+function ModuleNav({ guildId, settings }: { guildId: string; settings: GuildSettings }) {
   return (
     <nav aria-label="Configuration modules" className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
       {CONFIG_MODULES.map((module) => {
         const active = isModuleActive(settings, module.key);
         return (
-          <a
+          <Link
             key={module.key}
-            href={`#${module.key}`}
+            to="/g/$guildId/settings/$moduleId"
+            params={{ guildId, moduleId: module.key }}
             className="ng-pressable group flex min-h-[5.5rem] items-start gap-3 rounded-[var(--radius-card)] border border-line bg-card p-4 transition-colors hover:border-line-strong"
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-line bg-bg-subtle text-ink">
@@ -202,7 +208,7 @@ function ModuleNav({ settings }: { settings: GuildSettings }) {
                 {module.description}
               </span>
             </span>
-          </a>
+          </Link>
         );
       })}
     </nav>
@@ -210,7 +216,11 @@ function ModuleNav({ settings }: { settings: GuildSettings }) {
 }
 
 export default function GuildConfig() {
-  const { guildId } = useParams({ strict: false }) as { guildId: string };
+  const { guildId, moduleId } = useParams({ strict: false }) as {
+    guildId: string;
+    moduleId?: string;
+  };
+  const selectedModule = getConfigModule(moduleId);
   const config = useGuildConfig(guildId);
   const qc = useQueryClient();
   const { registerUnsavedChanges } = useUnsavedChanges();
@@ -439,19 +449,50 @@ export default function GuildConfig() {
   return (
     <>
       <main className="mx-auto max-w-5xl px-4 pt-8 pb-36 sm:px-6 sm:pt-10 sm:pb-32">
+        {selectedModule && (
+          <Link
+            to="/g/$guildId/settings"
+            params={{ guildId }}
+            className="ng-touch-target -ml-2 mb-5 inline-flex items-center gap-2 rounded-md px-2 text-sm text-ink-muted transition-colors hover:text-ink"
+          >
+            <span aria-hidden="true">←</span>
+            All modules
+          </Link>
+        )}
         <p className="text-xs tracking-[0.25em] text-ink-muted uppercase">
           {guild.member_count.toLocaleString("en")} members
         </p>
-        <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">Manage {guild.name}</h1>
+        <h1 className="font-display mt-2 break-words text-3xl sm:text-4xl">
+          {selectedModule ? `${selectedModule.label} · ${guild.name}` : `Modules for ${guild.name}`}
+        </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-muted">
-          Configure NovaGuard by feature. Changes stay local until you save them, and every saved
-          update is recorded in the audit log.
+          {selectedModule
+            ? `${selectedModule.description} Changes stay local until you save them.`
+            : "Choose one feature to configure. Each module has its own focused page, and every saved update is recorded in the audit log."}
         </p>
 
-        <ModuleNav settings={draft} />
+        {!moduleId && <ModuleNav guildId={guildId} settings={draft} />}
+
+        {moduleId && !selectedModule && (
+          <section className="mt-8 rounded-[var(--radius-card)] border border-line bg-card p-6">
+            <p className="text-xs tracking-[0.2em] text-primary uppercase">Unknown module</p>
+            <h2 className="font-display mt-2 text-2xl">This configuration module does not exist.</h2>
+            <p className="mt-2 text-sm text-ink-muted">
+              The link may be outdated. Return to the module list to choose an available feature.
+            </p>
+            <Link
+              to="/g/$guildId/settings"
+              params={{ guildId }}
+              className="ng-touch-target mt-5 inline-flex items-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink"
+            >
+              View all modules
+            </Link>
+          </section>
+        )}
 
         <div className="mt-8 grid gap-5">
-          <Section
+          {selectedModule?.key === "welcome" && (
+            <Section
             id="welcome"
             icon="users-three"
             kicker="Welcome"
@@ -481,9 +522,11 @@ export default function GuildConfig() {
                 onChange={onAutoroleChange}
               />
             </div>
-          </Section>
+            </Section>
+          )}
 
-          <Section
+          {selectedModule?.key === "moderation" && (
+            <Section
             id="moderation"
             icon="shield-check"
             kicker="Moderation"
@@ -521,9 +564,11 @@ export default function GuildConfig() {
                 />
               </div>
             </div>
-          </Section>
+            </Section>
+          )}
 
-          <Section
+          {selectedModule?.key === "levels" && (
+            <Section
             id="levels"
             icon="trophy"
             kicker="Levels"
@@ -611,9 +656,11 @@ export default function GuildConfig() {
                 onChange={onIgnoredRolesChange}
               />
             </div>
-          </Section>
+            </Section>
+          )}
 
-          <Section
+          {selectedModule?.key === "voice" && (
+            <Section
             id="voice"
             icon="users-three"
             kicker="Voice reports"
@@ -629,9 +676,11 @@ export default function GuildConfig() {
                 onChange={channelFieldHandlers.voice_report_channel}
               />
             </div>
-          </Section>
+            </Section>
+          )}
 
-          <Section
+          {selectedModule?.key === "tickets" && (
+            <Section
             id="tickets"
             icon="clipboard-text"
             kicker="Tickets"
@@ -647,9 +696,11 @@ export default function GuildConfig() {
                 onChange={onTicketRoleChange}
               />
             </div>
-          </Section>
+            </Section>
+          )}
 
-          <Section
+          {selectedModule?.key === "updates" && (
+            <Section
             id="updates"
             icon="arrows-clockwise"
             kicker="Updates"
@@ -672,7 +723,8 @@ export default function GuildConfig() {
                 onChange={channelFieldHandlers.github_event_channel}
               />
             </div>
-          </Section>
+            </Section>
+          )}
         </div>
 
         <SaveBar
