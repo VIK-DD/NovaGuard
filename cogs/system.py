@@ -1158,6 +1158,17 @@ class System(commands.Cog):
                 color=Palette.WARNING,
             )
             embed.add_field(name="Presence", value=f"`{state['message']}`", inline=False)
+            preview_code = state.get("preview_code")
+            if preview_code:
+                embed.add_field(
+                    name="Preview code",
+                    value=(
+                        f"||`{preview_code}`||\n"
+                        "Use it at `novaguard.fun/preview/` to walk the closed site. "
+                        "Shown once — it will not be repeated."
+                    ),
+                    inline=False,
+                )
             embed.add_field(name="Command Access", value="Only the bot owner can continue using commands.", inline=False)
             brand_footer(embed, "Maintenance control")
             await respond(interaction, embed, ephemeral=True)

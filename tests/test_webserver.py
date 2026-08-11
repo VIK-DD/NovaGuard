@@ -8,6 +8,7 @@ Run standalone:  python tests/test_webserver.py
 """
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -28,7 +29,12 @@ import aiohttp  # noqa: E402
 
 from core.database import connect  # noqa: E402
 from core.levels_settings import resolve_levels  # noqa: E402
-from core.maintenance import load_maintenance_state, save_maintenance_state  # noqa: E402
+from core.maintenance import (  # noqa: E402
+    MAINTENANCE_STATE_FILE,
+    load_maintenance_state,
+    save_maintenance_state,
+    verify_preview_code,
+)
 from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
 from core.webserver import (  # noqa: E402
     _CIPHER,
@@ -213,6 +219,38 @@ async def main():
                     data["maintenance"]["enabled"] is False
                     and "message" not in data["maintenance"],
                 )
+            # ── preview code lifecycle ────────────────────────────────
+            first = save_maintenance_state(True, "Preview test", updated_by="test-suite")
+            code = first.get("preview_code")
+            await check(
+                "enabling from off mints a code", bool(code) and code.startswith("ng_preview_")
+            )
+
+            raw_file = json.loads(MAINTENANCE_STATE_FILE.read_text(encoding="utf-8"))
+            await check(
+                "the code itself is never written to disk",
+                "preview_code" not in raw_file
+                and code not in raw_file.values()
+                and bool(raw_file.get("preview_hash")),
+            )
+
+            again = save_maintenance_state(True, "Corrected wording", updated_by="test-suite")
+            await check(
+                "re-enabling while on keeps the code and the activation time",
+                again.get("preview_code") is None
+                and again["preview_hash"] == first["preview_hash"]
+                and again["updated_at"] == first["updated_at"],
+            )
+
+            await check("the right code verifies", verify_preview_code(code) == first["updated_at"])
+            await check("a wrong code does not", verify_preview_code("ng_preview_nope") is None)
+
+            save_maintenance_state(False, updated_by="test-suite")
+            await check(
+                "disabling clears the code",
+                verify_preview_code(code) is None
+                and load_maintenance_state().get("preview_hash") is None,
+            )
         finally:
             save_maintenance_state(
                 original_maintenance["enabled"],
