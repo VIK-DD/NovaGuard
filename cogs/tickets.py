@@ -45,7 +45,10 @@ async def publish_ticket_panel(channel, previous_message_id=None):
             message = await channel.fetch_message(int(previous_message_id))
             await message.edit(embed=embed, view=view)
             return message, False
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException, ValueError, TypeError):
+        # Only a genuinely deleted message justifies creating a replacement.
+        # Permission errors and temporary Discord failures must bubble up;
+        # treating them as "not found" creates duplicate live panels.
+        except (discord.NotFound, ValueError, TypeError):
             pass
     return await channel.send(embed=embed, view=view), True
 

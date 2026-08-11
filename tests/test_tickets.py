@@ -3,6 +3,9 @@
 import os
 import sys
 import unittest
+from types import SimpleNamespace
+
+import discord
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -47,6 +50,12 @@ class FakeChannel:
         return self.messages[message_id]
 
 
+class ForbiddenFetchChannel(FakeChannel):
+    async def fetch_message(self, message_id):
+        response = SimpleNamespace(status=403, reason="Forbidden", headers={})
+        raise discord.Forbidden(response, "missing permission")
+
+
 class TicketPanelTests(unittest.IsolatedAsyncioTestCase):
     def test_staff_role_needs_channel_visibility_and_thread_management(self):
         role = object()
@@ -77,6 +86,14 @@ class TicketPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(message.edits), 1)
         self.assertIn("embed", message.edits[0])
         self.assertIn("view", message.edits[0])
+
+    async def test_permission_error_never_creates_a_duplicate_panel(self):
+        channel = ForbiddenFetchChannel()
+
+        with self.assertRaises(discord.Forbidden):
+            await publish_ticket_panel(channel, previous_message_id=55)
+
+        self.assertEqual(channel.sent, [])
 
 
 if __name__ == "__main__":
