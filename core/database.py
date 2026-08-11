@@ -257,6 +257,16 @@ def export_guild_data(guild_id):
     """
     init_database()
     key = str(guild_id)
+    try:
+        raw_giveaways = json.loads((DATA_DIR / "giveaways.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw_giveaways = []
+    giveaways = [
+        entry
+        for entry in raw_giveaways
+        if isinstance(entry, dict) and str(entry.get("guild_id")) == key
+    ] if isinstance(raw_giveaways, list) else []
+
     with connect() as connection:
         settings = {
             row["key"]: decode_value(row["value"])
@@ -314,6 +324,7 @@ def export_guild_data(guild_id):
         "voice": voice,
         "tickets": tickets,
         "role_panels": role_panels,
+        "giveaways": giveaways,
         "counts": {
             "settings": len(settings),
             "levels": len(levels),
@@ -321,6 +332,7 @@ def export_guild_data(guild_id):
             "voice": len(voice),
             "tickets": len(tickets),
             "role_panels": len(role_panels),
+            "giveaways": len(giveaways),
         },
     }
 

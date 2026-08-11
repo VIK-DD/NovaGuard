@@ -45,6 +45,13 @@ export const CONFIG_MODULES = [
     fields: ["role_panel_channel"],
   },
   {
+    key: "giveaways",
+    label: "Giveaways",
+    description: "Create, monitor, end and reroll giveaways without slash commands.",
+    icon: "trophy",
+    fields: ["giveaway_channel"],
+  },
+  {
     key: "updates",
     label: "Updates",
     description: "Send NovaGuard releases and GitHub activity to Discord.",
@@ -89,6 +96,8 @@ export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): b
       return Boolean(settings.ticket_panel_channel || settings.ticket_staff_role);
     case "roles":
       return Boolean(settings.role_panel_channel);
+    case "giveaways":
+      return Boolean(settings.giveaway_channel);
     case "updates":
       return Boolean(settings.update_channel || settings.github_event_channel);
   }

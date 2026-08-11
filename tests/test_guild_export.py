@@ -1,6 +1,7 @@
 """Tests for the per-guild export a server owner can take of their own data."""
 
 import os
+import json
 import sys
 import tempfile
 import unittest
@@ -36,6 +37,15 @@ class GuildExportTests(unittest.TestCase):
 
         database.init_database()
         self._seed()
+        (database.DATA_DIR / "giveaways.json").write_text(
+            json.dumps(
+                [
+                    {"guild_id": 111, "message_id": 500, "entrants": ["a"]},
+                    {"guild_id": 222, "message_id": 600, "entrants": ["c"]},
+                ]
+            ),
+            encoding="utf-8",
+        )
 
     def _seed(self):
         with self.database.connect() as connection:
@@ -90,6 +100,7 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual({row["user_id"] for row in payload["economy"]}, {"a"})
         self.assertEqual([row["thread_id"] for row in payload["tickets"]], ["t-1"])
         self.assertEqual([row["message_id"] for row in payload["role_panels"]], ["p-1"])
+        self.assertEqual([row["message_id"] for row in payload["giveaways"]], [500])
 
     def test_no_other_guild_leaks_into_the_export(self):
         blob = repr(self.database.export_guild_data("111"))
@@ -110,6 +121,7 @@ class GuildExportTests(unittest.TestCase):
                 "voice": 0,
                 "tickets": 1,
                 "role_panels": 1,
+                "giveaways": 1,
             },
         )
 
@@ -122,6 +134,7 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual(payload["voice"], [])
         self.assertEqual(payload["tickets"], [])
         self.assertEqual(payload["role_panels"], [])
+        self.assertEqual(payload["giveaways"], [])
 
     def test_ids_are_accepted_as_numbers_too(self):
         self.assertEqual(

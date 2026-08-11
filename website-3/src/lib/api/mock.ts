@@ -73,6 +73,7 @@ type Settings = {
   error_log_channel: string | null;
   ticket_panel_channel: string | null;
   role_panel_channel: string | null;
+  giveaway_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: {
@@ -131,6 +132,7 @@ const settingsByGuild: Record<string, Settings> = {
     error_log_channel: "c10",
     ticket_panel_channel: "c8",
     role_panel_channel: "c4",
+    giveaway_channel: "c3",
     autorole: "r1",
     ticket_staff_role: "r6",
     automod: {
@@ -159,6 +161,7 @@ const settingsByGuild: Record<string, Settings> = {
     error_log_channel: null,
     ticket_panel_channel: null,
     role_panel_channel: null,
+    giveaway_channel: "c4",
     autorole: null,
     ticket_staff_role: null,
     automod: { ...automodDefaults(), invites: false },
@@ -174,6 +177,7 @@ const settingsByGuild: Record<string, Settings> = {
     error_log_channel: null,
     ticket_panel_channel: null,
     role_panel_channel: "c4",
+    giveaway_channel: null,
     autorole: "r1",
     ticket_staff_role: null,
     automod: { ...automodDefaults(), spam: false, badwords: ["spoiler"] },
@@ -220,6 +224,43 @@ const rolePanelsByGuild: Record<
       description: "Pick the updates and community groups you want to follow.",
       role_ids: ["r2", "r3"],
       updated_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+    },
+  ],
+};
+type MockGiveaway = {
+  message_id: string;
+  channel_id: string;
+  prize: string;
+  winners: number;
+  host_name: string;
+  ends_at: string;
+  entrant_count: number;
+  ended: boolean;
+  winner_ids: string[];
+};
+const giveawaysByGuild: Record<string, MockGiveaway[]> = {
+  "1001": [
+    {
+      message_id: "9100001",
+      channel_id: "c3",
+      prize: "One month of Nitro",
+      winners: 1,
+      host_name: "Victor",
+      ends_at: new Date(Date.now() + 1000 * 60 * 60 * 6).toISOString(),
+      entrant_count: 48,
+      ended: false,
+      winner_ids: [],
+    },
+    {
+      message_id: "9100000",
+      channel_id: "c3",
+      prize: "Founder's badge",
+      winners: 2,
+      host_name: "Victor",
+      ends_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+      entrant_count: 83,
+      ended: true,
+      winner_ids: ["member-1", "member-2"],
     },
   ],
 };
@@ -284,6 +325,7 @@ function configPayload(id: string): Json | null {
       open: openTicketsByGuild[id] ?? [],
     },
     role_panels: rolePanelsByGuild[id] ?? [],
+    giveaways: giveawaysByGuild[id] ?? [],
     channels,
     roles,
   };
@@ -351,6 +393,7 @@ function dashboardPayload(id: string): Json | null {
       { key: "voice", label: "Voice reports", enabled: Boolean(settings.voice_report_channel) },
       { key: "tickets", label: "Tickets", enabled: Boolean(settings.ticket_staff_role) },
       { key: "roles", label: "Role panels", enabled: Boolean(settings.role_panel_channel) },
+      { key: "giveaways", label: "Giveaways", enabled: Boolean(settings.giveaway_channel) },
       {
         key: "updates",
         label: "Updates",
@@ -529,12 +572,24 @@ function route(pathname: string, method: string, body: Json | null): { status: n
         },
       };
     }
+    if (actionName === "giveaway_start" && !settings.giveaway_channel) {
+      return {
+        status: 400,
+        data: {
+          error: "Choose and save a giveaway channel first.",
+          code: "giveaway_channel_missing",
+        },
+      };
+    }
     const messages: Record<string, string> = {
       backup_check: "Latest backup passed the restore check.",
       voice_test: "Voice report preview sent to #voice-reports.",
       update_preview: "Latest update was sent to the configured update channel.",
       ticket_panel_publish: "Ticket panel updated in #mod-alerts.",
       role_panel_publish: "Role panel published in #general.",
+      giveaway_start: "Giveaway started in #announcements.",
+      giveaway_end: "Giveaway ended and the draw was saved.",
+      giveaway_reroll: "New winner announced in the original channel.",
     };
     if (!messages[actionName]) return { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
     if (actionName === "ticket_panel_publish") ticketPanelMessageByGuild[id] = `panel-${id}`;
@@ -557,6 +612,42 @@ function route(pathname: string, method: string, body: Json | null): { status: n
         panel,
         ...(rolePanelsByGuild[id] ?? []).filter((item) => item.message_id !== previousId),
       ];
+    }
+    if (actionName.startsWith("giveaway_")) {
+      const payload = (body ?? {}) as Record<string, unknown>;
+      if (actionName === "giveaway_start") {
+        const giveaway: MockGiveaway = {
+          message_id: String(Date.now() + 1),
+          channel_id: settings.giveaway_channel!,
+          prize: typeof payload.prize === "string" ? payload.prize : "Prize",
+          winners: typeof payload.winners === "number" ? payload.winners : 1,
+          host_name: me.user.username,
+          ends_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+          entrant_count: 0,
+          ended: false,
+          winner_ids: [],
+        };
+        giveawaysByGuild[id] = [giveaway, ...(giveawaysByGuild[id] ?? [])];
+      } else {
+        const giveaway = (giveawaysByGuild[id] ?? []).find(
+          (item) => item.message_id === String(payload.message_id ?? ""),
+        );
+        if (!giveaway) {
+          return {
+            status: 404,
+            data: { error: "Giveaway not found.", code: "giveaway_not_found" },
+          };
+        }
+        if (actionName === "giveaway_end") {
+          giveaway.ended = true;
+          giveaway.winner_ids = giveaway.entrant_count > 0 ? ["member-1"] : [];
+        } else if (actionName === "giveaway_reroll" && giveaway.entrant_count === 0) {
+          return {
+            status: 409,
+            data: { error: "That giveaway has no entries to reroll.", code: "giveaway_no_entries" },
+          };
+        }
+      }
     }
     (auditByGuild[id] ??= []).unshift({
       id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,

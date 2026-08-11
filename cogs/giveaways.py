@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import re
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -34,6 +35,26 @@ async def save_giveaways_async(entries):
 # concurrent button clicks (or a click racing the watcher) both read the same
 # list and the second save silently drops the first one's change.
 _STORE_LOCK = asyncio.Lock()
+
+
+def validate_giveaway_input(duration, prize, winners):
+    """Normalize dashboard/slash input before a Discord message is created."""
+    errors = []
+    duration_text = str(duration or "").strip().lower()
+    if not re.fullmatch(r"(?:\d+\s*[smhdw]\s*)+", duration_text):
+        delta = None
+    else:
+        delta = parse_duration(duration_text)
+    if not delta or delta < timedelta(minutes=1) or delta > timedelta(days=30):
+        errors.append("duration must be between 1 minute and 30 days, for example 30m, 1h or 2d")
+
+    clean_prize = " ".join(str(prize or "").split())
+    if not clean_prize or len(clean_prize) > 200:
+        errors.append("prize must contain 1–200 characters")
+
+    if isinstance(winners, bool) or not isinstance(winners, int) or not 1 <= winners <= 10:
+        errors.append("winners must be a whole number between 1 and 10")
+    return delta, clean_prize, winners, errors
 
 
 def build_giveaway_embed(entry, ended=False, winner_ids=None):
@@ -136,6 +157,69 @@ class Giveaways(commands.Cog):
     async def cog_unload(self):
         self.giveaway_watcher.cancel()
 
+    def _entry_channel(self, entry):
+        channel = self.bot.get_channel(entry["channel_id"])
+        return channel
+
+    async def _fetch_entry_channel(self, entry):
+        channel = self._entry_channel(entry)
+        if channel is not None:
+            return channel
+        try:
+            return await self.bot.fetch_channel(entry["channel_id"])
+        except discord.HTTPException:
+            return None
+
+    async def start_giveaway(
+        self,
+        channel,
+        *,
+        guild_id,
+        host_id,
+        host_name,
+        duration,
+        prize,
+        winners,
+    ):
+        ends_at = datetime.now(UTC) + duration
+        entry = {
+            "message_id": 0,
+            "channel_id": channel.id,
+            "guild_id": guild_id,
+            "prize": prize,
+            "winners": winners,
+            "host_id": host_id,
+            "host_name": host_name,
+            "ends_at": ends_at.isoformat(),
+            "entrants": [],
+            "ended": False,
+        }
+        message = await channel.send(embed=build_giveaway_embed(entry))
+        entry["message_id"] = message.id
+        view = discord.ui.View(timeout=None)
+        view.add_item(GiveawayButton(message.id))
+        try:
+            await message.edit(view=view)
+        except discord.HTTPException:
+            try:
+                await message.delete()
+            except discord.HTTPException:
+                pass
+            raise
+
+        async with _STORE_LOCK:
+            try:
+                entries = await load_giveaways_async()
+                entries.append(entry)
+                await save_giveaways_async(entries)
+            except (OSError, TypeError, ValueError):
+                try:
+                    await message.delete()
+                except discord.HTTPException:
+                    pass
+                raise
+        return entry
+
     async def finish_giveaway(self, message_id):
         """End a giveaway by message id. Draws and saves under the store lock
         (re-reading the file so a racing button click is never lost), then does
@@ -153,12 +237,9 @@ class Giveaways(commands.Cog):
             entry["winner_ids"] = winner_ids
             await save_giveaways_async(entries)
 
-        channel = self.bot.get_channel(entry["channel_id"])
+        channel = await self._fetch_entry_channel(entry)
         if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(entry["channel_id"])
-            except discord.HTTPException:
-                return entry
+            return entry
 
         try:
             message = await channel.fetch_message(entry["message_id"])
@@ -181,6 +262,38 @@ class Giveaways(commands.Cog):
         except discord.HTTPException:
             pass
         return entry
+
+    async def reroll_giveaway(self, message_id):
+        """Draw and persist replacement winners, then announce in the original channel."""
+        async with _STORE_LOCK:
+            entries = await load_giveaways_async()
+            entry = next((g for g in entries if str(g["message_id"]) == str(message_id)), None)
+            if entry is None or not entry.get("ended"):
+                return None, None, False
+            entrants = entry.get("entrants", [])
+            if not entrants:
+                return entry, [], False
+            count = min(entry["winners"], len(entrants))
+            winner_ids = random.sample(entrants, count)
+            entry["winner_ids"] = winner_ids
+            await save_giveaways_async(entries)
+
+        channel = await self._fetch_entry_channel(entry)
+        announced = False
+        if channel is not None:
+            mentions = ", ".join(f"<@{uid}>" for uid in winner_ids)
+            embed = make_embed(
+                "🎲 Giveaway rerolled",
+                f"New winner{'s' if len(winner_ids) > 1 else ''} for **{entry['prize']}**: {mentions} 🎊",
+                color=Palette.GOLD,
+            )
+            brand_footer(embed, "Giveaway reroll")
+            try:
+                await channel.send(embed=embed)
+                announced = True
+            except discord.HTTPException:
+                pass
+        return entry, winner_ids, announced
 
     @tasks.loop(seconds=30)
     async def giveaway_watcher(self):
@@ -216,43 +329,51 @@ class Giveaways(commands.Cog):
         prize: str,
         winners: app_commands.Range[int, 1, 10] = 1,
     ):
-        delta = parse_duration(duration)
-        if not delta or delta < timedelta(minutes=1) or delta > timedelta(days=30):
+        delta, prize, winners, errors = validate_giveaway_input(duration, prize, winners)
+        if errors:
             embed = make_embed(
                 "🤔 Invalid duration",
-                "Use formats like `30m`, `1h`, `2d` — between 1 minute and 30 days.",
+                "\n".join(f"• {error}" for error in errors),
                 color=Palette.WARNING,
             )
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        ends_at = datetime.now(UTC) + delta
-        entry = {
-            "message_id": 0,
-            "channel_id": interaction.channel_id,
-            "guild_id": interaction.guild_id,
-            "prize": prize,
-            "winners": winners,
-            "host_id": interaction.user.id,
-            "host_name": interaction.user.display_name,
-            "ends_at": ends_at.isoformat(),
-            "entrants": [],
-            "ended": False,
-        }
+        await defer_interaction(interaction, ephemeral=True)
+        try:
+            entry = await self.start_giveaway(
+                interaction.channel,
+                guild_id=interaction.guild_id,
+                host_id=interaction.user.id,
+                host_name=interaction.user.display_name,
+                duration=delta,
+                prize=prize,
+                winners=winners,
+            )
+        except discord.HTTPException:
+            embed = make_embed(
+                "⚠️ Giveaway not published",
+                "Discord did not accept the giveaway message. Nothing was saved.",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+        except (OSError, TypeError, ValueError):
+            embed = make_embed(
+                "⚠️ Giveaway not saved",
+                "The giveaway store is unavailable, so no active giveaway was left behind.",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
 
-        message = await respond(interaction, build_giveaway_embed(entry))
-        if message is None:
-            message = await interaction.original_response()
-        entry["message_id"] = message.id
-
-        view = discord.ui.View(timeout=None)
-        view.add_item(GiveawayButton(message.id))
-        await message.edit(view=view)
-
-        async with _STORE_LOCK:
-            entries = await load_giveaways_async()
-            entries.append(entry)
-            await save_giveaways_async(entries)
+        embed = make_embed(
+            "✅ Giveaway started",
+            f"**{entry['prize']}** is now live in {interaction.channel.mention}.",
+            color=Palette.SUCCESS,
+        )
+        brand_footer(embed)
+        await respond(interaction, embed, ephemeral=True)
 
     async def _giveaway_choices(self, interaction, current, ended):
         entries = await load_giveaways_async()
@@ -297,36 +418,30 @@ class Giveaways(commands.Cog):
     @app_commands.describe(message_id="Pick the ended giveaway")
     @app_commands.autocomplete(message_id=ended_giveaway_autocomplete)
     async def giveaway_reroll(self, interaction: discord.Interaction, message_id: str):
-        async with _STORE_LOCK:
-            entries = await load_giveaways_async()
-            entry = next((g for g in entries if str(g["message_id"]) == message_id.strip()), None)
-            if entry is None or not entry.get("ended"):
-                entry = None
-                entrants = []
-            else:
-                entrants = entry.get("entrants", [])
-                if entrants:
-                    count = min(entry["winners"], len(entrants))
-                    winner_ids = random.sample(entrants, count)
-                    entry["winner_ids"] = winner_ids
-                    await save_giveaways_async(entries)
+        await defer_interaction(interaction, ephemeral=True)
+        entry, winner_ids, announced = await self.reroll_giveaway(message_id.strip())
 
         if entry is None:
             embed = make_embed("🔍 Not found", "No **ended** giveaway with that message ID.", color=Palette.WARNING)
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        if not entrants:
+        if not winner_ids:
             embed = make_embed("😢 No entries", "Nobody entered that giveaway — nothing to reroll.", color=Palette.WARNING)
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        count = len(winner_ids)
-
-        mentions = ", ".join(f"<@{uid}>" for uid in winner_ids)
-        embed = make_embed("🎲 Reroll!", f"New winner{'s' if count > 1 else ''} for **{entry['prize']}**: {mentions} 🎊", color=Palette.GOLD)
+        embed = make_embed(
+            "🎲 Giveaway rerolled",
+            (
+                f"New winner{'s were' if len(winner_ids) > 1 else ' was'} announced in the original channel."
+                if announced
+                else "The new winner draw was saved, but Discord did not accept the announcement."
+            ),
+            color=Palette.SUCCESS if announced else Palette.WARNING,
+        )
         brand_footer(embed, "Giveaway reroll")
-        await respond(interaction, embed)
+        await respond(interaction, embed, ephemeral=True)
 
 
 async def setup(bot):

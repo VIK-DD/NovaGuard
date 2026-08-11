@@ -73,6 +73,7 @@ export const GuildSettingsSchema = z.object({
   error_log_channel: z.string().nullable(),
   ticket_panel_channel: z.string().nullable(),
   role_panel_channel: z.string().nullable(),
+  giveaway_channel: z.string().nullable(),
   autorole: z.string().nullable(),
   ticket_staff_role: z.string().nullable(),
   automod: AutomodSchema,
@@ -114,6 +115,19 @@ export const GuildConfigSchema = z.object({
       description: z.string(),
       role_ids: z.array(z.string()),
       updated_at: z.string(),
+    }),
+  ),
+  giveaways: z.array(
+    z.object({
+      message_id: z.string(),
+      channel_id: z.string(),
+      prize: z.string(),
+      winners: z.number(),
+      host_name: z.string(),
+      ends_at: z.string(),
+      entrant_count: z.number(),
+      ended: z.boolean(),
+      winner_ids: z.array(z.string()),
     }),
   ),
   channels: z.array(
@@ -293,6 +307,7 @@ export type SettingsPatch = Partial<{
   error_log_channel: string | null;
   ticket_panel_channel: string | null;
   role_panel_channel: string | null;
+  giveaway_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: Partial<z.infer<typeof AutomodSchema>>;

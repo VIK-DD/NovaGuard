@@ -17,6 +17,7 @@ const emptySettings: GuildSettings = {
   error_log_channel: null,
   ticket_panel_channel: null,
   role_panel_channel: null,
+  giveaway_channel: null,
   autorole: null,
   ticket_staff_role: null,
   automod: {
@@ -50,6 +51,7 @@ describe("configuration module catalog", () => {
         "autorole",
         "error_log_channel",
         "github_event_channel",
+        "giveaway_channel",
         "goodbye_channel",
         "levels",
         "log_channel",
@@ -74,6 +76,7 @@ describe("configuration module catalog", () => {
       "voice",
       "tickets",
       "roles",
+      "giveaways",
       "updates",
     ]);
   });
@@ -96,9 +99,11 @@ describe("configuration module catalog", () => {
     configured.voice_report_channel = "456";
     configured.ticket_staff_role = "789";
     configured.role_panel_channel = "456";
+    configured.giveaway_channel = "456";
     configured.github_event_channel = "101";
 
     expect(CONFIG_MODULES.map((module) => isModuleActive(configured, module.key))).toEqual([
+      true,
       true,
       true,
       true,

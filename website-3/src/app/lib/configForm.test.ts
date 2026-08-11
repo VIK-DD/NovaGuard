@@ -18,6 +18,7 @@ const base: GuildSettings = {
   error_log_channel: null,
   ticket_panel_channel: null,
   role_panel_channel: null,
+  giveaway_channel: null,
   autorole: "300",
   ticket_staff_role: null,
   automod: {

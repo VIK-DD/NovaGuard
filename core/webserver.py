@@ -173,7 +173,11 @@ CHANNEL_KEYS = (
     "github_event_channel",
     "error_log_channel",
 )
-NATIVE_MANAGER_CHANNEL_KEYS = ("ticket_panel_channel", "role_panel_channel")
+NATIVE_MANAGER_CHANNEL_KEYS = (
+    "ticket_panel_channel",
+    "role_panel_channel",
+    "giveaway_channel",
+)
 CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
 DASHBOARD_XP_PER_LEVEL = 118
@@ -1146,13 +1150,50 @@ class WebServer:
     # ── guild config ─────────────────────────────────────────────────
 
     async def _config_payload(self, guild):
+        from cogs.giveaways import load_giveaways
+
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         automod = resolve_automod(settings)
-        open_tickets, open_ticket_count, role_panels = await asyncio.gather(
+        open_tickets, open_ticket_count, role_panels, all_giveaways = await asyncio.gather(
             asyncio.to_thread(list_ticket_records, guild.id, open_only=True, limit=20),
             asyncio.to_thread(count_open_tickets, guild.id),
             asyncio.to_thread(list_role_panel_records, guild.id, limit=20),
+            asyncio.to_thread(load_giveaways),
         )
+        giveaways = [
+            entry
+            for entry in reversed(all_giveaways)
+            if isinstance(entry, dict)
+            if str(entry.get("guild_id")) == str(guild.id)
+        ][:30]
+        giveaway_payload = []
+        for entry in giveaways:
+            ends_at = entry.get("ends_at")
+            if not entry.get("message_id") or not entry.get("channel_id") or not isinstance(ends_at, str):
+                continue
+            try:
+                winner_count = min(max(int(entry.get("winners") or 1), 1), 10)
+            except (TypeError, ValueError):
+                winner_count = 1
+            entrants = entry.get("entrants")
+            winner_ids = entry.get("winner_ids")
+            giveaway_payload.append(
+                {
+                    "message_id": str(entry["message_id"]),
+                    "channel_id": str(entry["channel_id"]),
+                    "prize": str(entry.get("prize") or "Untitled giveaway"),
+                    "winners": winner_count,
+                    "host_name": str(entry.get("host_name") or "staff"),
+                    "ends_at": ends_at,
+                    "entrant_count": len(entrants) if isinstance(entrants, list) else 0,
+                    "ended": bool(entry.get("ended")),
+                    "winner_ids": (
+                        [str(value) for value in winner_ids]
+                        if isinstance(winner_ids, list)
+                        else []
+                    ),
+                }
+            )
         ticket_channel = (
             guild.get_channel(int(settings["ticket_panel_channel"]))
             if settings.get("ticket_panel_channel")
@@ -1225,6 +1266,7 @@ class WebServer:
                 }
                 for panel in role_panels
             ],
+            "giveaways": giveaway_payload,
             "channels": [
                 {"id": str(channel.id), "name": channel.name,
                  "category": channel.category.name if channel.category else None}
@@ -1376,6 +1418,7 @@ class WebServer:
             {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
             {"key": "tickets", "label": "Tickets", "enabled": bool(settings.get("ticket_staff_role"))},
             {"key": "roles", "label": "Role panels", "enabled": bool(settings.get("role_panel_channel"))},
+            {"key": "giveaways", "label": "Giveaways", "enabled": bool(settings.get("giveaway_channel"))},
             {
                 "key": "updates",
                 "label": "Updates",
@@ -1745,6 +1788,158 @@ class WebServer:
             },
         }
 
+    @staticmethod
+    async def _giveaway_action_body(request):
+        try:
+            body = await request.json()
+        except Exception:
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+        if not isinstance(body, dict):
+            raise ApiError(400, "Body must be a JSON object.", code="bad_request")
+        return body
+
+    def _giveaway_cog(self):
+        cog = self.bot.get_cog("Giveaways")
+        if cog is None:
+            raise ApiError(
+                503,
+                "The giveaway manager is still starting. Try again shortly.",
+                code="giveaway_unavailable",
+            )
+        return cog
+
+    @staticmethod
+    async def _giveaway_for_guild(guild_id, message_id):
+        from cogs.giveaways import load_giveaways
+
+        entries = await asyncio.to_thread(load_giveaways)
+        return next(
+            (
+                entry
+                for entry in entries
+                if isinstance(entry, dict)
+                if str(entry.get("guild_id")) == str(guild_id)
+                and str(entry.get("message_id")) == str(message_id)
+            ),
+            None,
+        )
+
+    async def _handle_giveaway_start_action(self, request, guild, entry):
+        import discord
+
+        from cogs.giveaways import validate_giveaway_input
+
+        body = await self._giveaway_action_body(request)
+        duration, prize, winners, errors = validate_giveaway_input(
+            body.get("duration"), body.get("prize"), body.get("winners")
+        )
+        if errors:
+            raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)
+
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        channel_id = settings.get("giveaway_channel")
+        channel = guild.get_channel(int(channel_id)) if channel_id else None
+        if channel is None:
+            raise ApiError(
+                400,
+                "Choose and save a giveaway channel first.",
+                code="giveaway_channel_missing",
+            )
+
+        cog = self._giveaway_cog()
+        try:
+            giveaway = await asyncio.wait_for(
+                cog.start_giveaway(
+                    channel,
+                    guild_id=guild.id,
+                    host_id=entry["user"]["id"],
+                    host_name=entry["user"]["username"],
+                    duration=duration,
+                    prize=prize,
+                    winners=winners,
+                ),
+                timeout=15,
+            )
+        except (
+            discord.Forbidden,
+            discord.HTTPException,
+            asyncio.TimeoutError,
+            OSError,
+            TypeError,
+            ValueError,
+        ) as error:
+            log.warning("Dashboard giveaway publish failed for #%s", channel.id, exc_info=True)
+            raise ApiError(
+                502,
+                "Discord did not accept the giveaway.",
+                code="giveaway_publish_failed",
+                details=[type(error).__name__],
+            ) from error
+        return {
+            "ok": True,
+            "action": "giveaway_start",
+            "message": f"Giveaway for {giveaway['prize']} started in #{channel.name}.",
+            "channel_id": str(channel.id),
+        }
+
+    async def _handle_giveaway_end_action(self, request, guild):
+        body = await self._giveaway_action_body(request)
+        message_id = str(body.get("message_id") or "")
+        if not message_id.isdigit():
+            raise ApiError(400, "Invalid giveaway id.", code="invalid_giveaway")
+        tracked = await self._giveaway_for_guild(guild.id, message_id)
+        if tracked is None or tracked.get("ended"):
+            raise ApiError(404, "No active giveaway with that id.", code="giveaway_not_found")
+        try:
+            result = await asyncio.wait_for(
+                self._giveaway_cog().finish_giveaway(message_id), timeout=15
+            )
+        except (asyncio.TimeoutError, OSError, TypeError, ValueError) as error:
+            raise ApiError(
+                504,
+                "The giveaway draw could not be completed. Refresh before trying again.",
+                code="giveaway_timeout",
+            ) from error
+        if result is None:
+            raise ApiError(409, "That giveaway already ended.", code="giveaway_already_ended")
+        return {
+            "ok": True,
+            "action": "giveaway_end",
+            "message": f"Giveaway for {result['prize']} ended and the draw was saved.",
+        }
+
+    async def _handle_giveaway_reroll_action(self, request, guild):
+        body = await self._giveaway_action_body(request)
+        message_id = str(body.get("message_id") or "")
+        if not message_id.isdigit():
+            raise ApiError(400, "Invalid giveaway id.", code="invalid_giveaway")
+        tracked = await self._giveaway_for_guild(guild.id, message_id)
+        if tracked is None or not tracked.get("ended"):
+            raise ApiError(404, "No ended giveaway with that id.", code="giveaway_not_found")
+        try:
+            result, winner_ids, announced = await asyncio.wait_for(
+                self._giveaway_cog().reroll_giveaway(message_id), timeout=15
+            )
+        except (asyncio.TimeoutError, OSError, TypeError, ValueError) as error:
+            raise ApiError(
+                504,
+                "The giveaway reroll could not be completed. Refresh before trying again.",
+                code="giveaway_timeout",
+            ) from error
+        if result is None:
+            raise ApiError(409, "That giveaway is not ready to reroll.", code="giveaway_not_ended")
+        if not winner_ids:
+            raise ApiError(409, "That giveaway has no entries to reroll.", code="giveaway_no_entries")
+        return {
+            "ok": True,
+            "action": "giveaway_reroll",
+            "message": (
+                f"New winner{'s' if len(winner_ids) > 1 else ''} announced in the original channel."
+                if announced
+                else "The new draw was saved, but Discord did not accept the announcement."
+            ),
+        }
+
     async def handle_guild_action(self, request):
         self._rate_limit(request, "write")
         self._check_origin(request)
@@ -1761,6 +1956,12 @@ class WebServer:
             payload = await self._handle_ticket_panel_publish_action(guild)
         elif action == "role_panel_publish":
             payload = await self._handle_role_panel_publish_action(request, guild, entry)
+        elif action == "giveaway_start":
+            payload = await self._handle_giveaway_start_action(request, guild, entry)
+        elif action == "giveaway_end":
+            payload = await self._handle_giveaway_end_action(request, guild)
+        elif action == "giveaway_reroll":
+            payload = await self._handle_giveaway_reroll_action(request, guild)
         else:
             raise ApiError(404, "Unknown dashboard action.", code="unknown_action")
 

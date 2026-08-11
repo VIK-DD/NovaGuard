@@ -138,6 +138,7 @@ same value on every guild this bot serves, derived from the bot's
     "github_event_channel": "…|null", "error_log_channel": "…|null",
     "ticket_panel_channel": "…|null",
     "role_panel_channel": "…|null",
+    "giveaway_channel": "…|null",
     "autorole": "…|null", "ticket_staff_role": "…|null",
     "automod": {
       "invites": true, "spam": true, "badwords": ["…"],
@@ -160,6 +161,11 @@ same value on every guild this bot serves, derived from the bot's
     "message_id": "…", "channel_id": "…", "title": "Community roles",
     "description": "Choose what you want to follow.", "role_ids": ["…"],
     "updated_at": "…"
+  } ],
+  "giveaways": [ {
+    "message_id": "…", "channel_id": "…", "prize": "Nitro",
+    "winners": 1, "host_name": "Vik", "ends_at": "…",
+    "entrant_count": 48, "ended": false, "winner_ids": []
   } ],
   "channels": [ { "id": "…", "name": "…", "category": "…|null" } ],
   "roles": [ { "id": "…", "name": "…", "color": "#RRGGBB",
@@ -253,6 +259,13 @@ actions:
   or updates a tracked panel in its original channel. JSON body: `title` (1–80
   chars), `description` (1–1000 chars), `role_ids` (1–5 unique assignable roles),
   and optional `panel_message_id` when editing.
+- `giveaway_start`: starts a giveaway in the saved giveaway channel. JSON body:
+  `duration` (1 minute–30 days, e.g. `1h 30m`), `prize` (1–200 chars) and
+  `winners` (integer 1–10).
+- `giveaway_end`: ends and draws an active giveaway owned by this guild. JSON
+  body: `message_id`.
+- `giveaway_reroll`: draws new winners for an ended giveaway owned by this
+  guild and announces them in its original channel. JSON body: `message_id`.
 
 ```json
 { "ok": true, "action": "backup_check",
