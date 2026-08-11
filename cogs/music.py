@@ -194,6 +194,9 @@ class Music(commands.Cog):
         self.bot = bot
         self.sessions = SessionRegistry()
         self._prefetch_tasks: set = set()
+        # Futures handed back from the audio thread, held so nothing collects
+        # them mid-flight. See _schedule_from_audio_thread.
+        self._after_tasks: set = set()
         self._early_end_retries = {}
 
     # Reconnect flags matter on a small host: without them a brief network
@@ -421,7 +424,7 @@ class Music(commands.Cog):
         def after_playing(error, session=session, track=track):
             if error:
                 print(f"Music playback error in guild {session.guild_id}: {error!r}")
-            self.bot.loop.create_task(self._on_track_finished(session, track))
+            self._schedule_from_audio_thread(self._on_track_finished(session, track))
 
         try:
             client.play(source, after=after_playing)
@@ -469,7 +472,7 @@ class Music(commands.Cog):
             def after_playing(error, session=session, track=track):
                 if error:
                     print(f"Music playback error in guild {session.guild_id}: {error!r}")
-                self.bot.loop.create_task(self._on_track_finished(session, track))
+                self._schedule_from_audio_thread(self._on_track_finished(session, track))
 
             try:
                 client.play(source, after=after_playing)
@@ -483,6 +486,21 @@ class Music(commands.Cog):
             return
 
         await self._notify(session, "Too many tracks in a row failed. Stopping here.")
+
+    def _schedule_from_audio_thread(self, coro):
+        """Hand a coroutine back to the event loop from the audio player thread.
+
+        discord.py calls `after=` from `AudioPlayer.run`, which is a plain
+        thread — `loop.create_task` there touches the loop from the wrong
+        thread and may never schedule the coroutine at all. The returned future
+        is also kept: asyncio holds only a weak reference to running work, and
+        the coroutine this schedules is the one that advances the queue, so
+        losing it stops the music with no error anywhere.
+        """
+        future = asyncio.run_coroutine_threadsafe(coro, self.bot.loop)
+        self._after_tasks.add(future)
+        future.add_done_callback(self._after_tasks.discard)
+        return future
 
     def _schedule_prefetch(self, session):
         """Resolve the next track's stream link while this one plays."""
@@ -759,7 +777,9 @@ class Music(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         def after_playing(playback_error, session=session):
-            self.bot.loop.create_task(self._on_soundcheck_finished(session, playback_error))
+            self._schedule_from_audio_thread(
+                self._on_soundcheck_finished(session, playback_error)
+            )
 
         try:
             client.play(self._soundcheck_source(), after=after_playing)
