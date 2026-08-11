@@ -133,6 +133,19 @@ function isPublicPath(pathname) {
   );
 }
 
+// The few paths that must answer even mid-maintenance, because the maintenance
+// page itself is built from them. Everything else — including `/` and the
+// Coming Soon face — closes.
+function isAlwaysOpenPath(pathname) {
+  return (
+    pathname.startsWith("/_astro/") ||
+    pathname.startsWith("/assets/") ||
+    pathname === "/favicon.png" ||
+    pathname === "/favicon.ico" ||
+    pathname === "/overrides.css"
+  );
+}
+
 function isMaintenanceEnabled(env) {
   return MAINTENANCE_VALUES.has(String(env.MAINTENANCE_MODE || "").trim().toLowerCase());
 }
@@ -445,6 +458,21 @@ export default {
     if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
     if (url.pathname === "/api/auth/login") return handleLogin(request, env);
     if (url.pathname === "/api/auth/logout") return handleLogout(request);
+    // Assets answer first: the maintenance page is built from them, so gating
+    // them would leave it unable to render itself.
+    if (isAlwaysOpenPath(url.pathname)) return serveAsset(request, env);
+
+    // `/maintenance` toggles the whole site, before the password gate, so a
+    // visitor with no session sees the notice rather than a login form for a
+    // site that is closed anyway.
+    const maintenance = await readMaintenance(request, env, ctx);
+    if (maintenance.enabled && !maintenance.unreachable) {
+      return serveMaintenancePage(request, env, maintenance);
+    }
+    if (isMaintenanceEnabled(env)) {
+      return serveMaintenancePage(request, env, { message: "" });
+    }
+
     if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
     if (isPublicPath(url.pathname)) return serveAsset(request, env);
 
@@ -455,15 +483,10 @@ export default {
       return Response.redirect(new URL("/maintenance/", request.url), 308);
     }
 
-    if (isMaintenanceEnabled(env)) {
-      return serveAsset(new Request(new URL("/maintenance/", request.url), request), env);
-    }
-
-    // The dashboard is the only surface /maintenance closes: the marketing
-    // pages stay up, because a two-minute bot restart should not take the whole
-    // site down. Public paths returned above, so they never pay for this call.
     if (url.pathname.startsWith("/dashboard/")) {
-      const maintenance = await readMaintenance(request, env, ctx);
+      // An unreachable API closes only this: the dashboard genuinely cannot
+      // work without it, while the marketing pages never needed the bot at all.
+      // Deliberate maintenance closed everything above; an outage should not.
       if (maintenance.enabled) return serveMaintenancePage(request, env, maintenance);
 
       // The dashboard owns its nested routes client-side. Serve its static

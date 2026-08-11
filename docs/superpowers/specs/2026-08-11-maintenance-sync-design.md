@@ -29,10 +29,22 @@ every 30 seconds to build `/api/status-snapshot`. That response carries `ok`,
 
 ## Decisions
 
-**Scope: the dashboard, not the whole site.** `/maintenance` closes
-`/dashboard/*`. The homepage, updates and terms stay up. A two-minute bot
-restart should not take the marketing site down, and the page's own copy —
-*"Protected pages are paused"* — already says exactly this.
+**Scope: the whole site.** `/maintenance` closes every page — `/`, `/home`,
+`/updates`, `/terms`, the dashboard. Only the assets the maintenance page is
+itself built from keep answering, or it could not render.
+
+*Revised 2026-08-11.* This first read "the dashboard only, so a restart cannot
+take the marketing site down". The operator wanted the stronger version: if
+NovaGuard is being worked on, the site says so, everywhere.
+
+**But an outage is not maintenance.** Deliberate maintenance closes everything.
+An unreachable `/health` closes only the dashboard, which genuinely cannot work
+without the API — the marketing pages never needed the bot, so a dead API is no
+reason to take them down too. The two cases are told apart by the `unreachable`
+flag on the state the worker computes.
+
+The gate runs **before** the soft-launch password check, so a visitor with no
+session sees the notice instead of a login form for a site that is shut anyway.
 
 **Two levers, kept separate.** `/maintenance` from Discord closes the dashboard
 automatically. `MAINTENANCE_MODE` in Cloudflare stays as the manual whole-site

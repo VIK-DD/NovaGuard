@@ -193,7 +193,9 @@ describe("password session", () => {
       { ...env, MAINTENANCE_MODE: "protected" },
     );
 
-    expect(response.status).toBe(200);
+    // 503, like the Discord-driven switch: both mean the same thing to a
+    // visitor and to a crawler, so both answer the same way.
+    expect(response.status).toBe(503);
     await expect(response.text()).resolves.toBe("/maintenance/");
   });
 
@@ -351,14 +353,43 @@ describe("maintenance sync", () => {
     expect(response.status).toBe(200);
   });
 
-  it("never asks the bot about a public page", async () => {
-    const upstream = healthStub({ maintenance: { enabled: true } });
-    vi.stubGlobal("fetch", upstream);
+  it("closes every page, not just the dashboard", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true, message: "Music Update" } }));
+
+    for (const path of ["/", "/home/", "/updates/", "/terms/"]) {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), apiEnv);
+      expect(response.status, `${path} should be closed`).toBe(503);
+    }
+  });
+
+  it("closes a page for a visitor with no session, without bouncing them to login", async () => {
+    // Sending someone to a login form for a site that is shut anyway is a
+    // worse answer than telling them it is shut.
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true } }));
+
+    const response = await worker.fetch(new Request("https://novaguard.fun/home/"), apiEnv);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Location")).toBeNull();
+  });
+
+  it("keeps serving the assets the maintenance page is built from", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true } }));
+
+    const asset = await worker.fetch(
+      new Request("https://novaguard.fun/_astro/app.123abc.js"),
+      apiEnv,
+    );
+
+    expect(asset.status).toBe(200);
+  });
+
+  it("leaves the site open when maintenance is off", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: false } }));
 
     const response = await worker.fetch(new Request("https://novaguard.fun/"), apiEnv);
 
     expect(response.status).toBe(200);
-    expect(upstream).not.toHaveBeenCalled();
   });
 
   it("rides out a restart on the last known answer", async () => {
@@ -392,6 +423,25 @@ describe("maintenance sync", () => {
 
     // The dashboard cannot work without the API, so saying so beats rendering
     // a page that will only fill with network errors.
+    expect((await dashboardRequest(apiEnv)).status).toBe(503);
+  });
+
+  it("keeps the marketing pages up when the API is gone", async () => {
+    // Deliberate maintenance closes the whole site; an outage must not. The
+    // marketing pages never needed the bot, so a dead API is no reason to
+    // take them down with it.
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: false } }));
+    expect((await worker.fetch(new Request("https://novaguard.fun/"), apiEnv)).status).toBe(200);
+
+    vi.setSystemTime(Date.now() + 180_000); // past the 120 s grace
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("host unreachable");
+      }),
+    );
+
+    expect((await worker.fetch(new Request("https://novaguard.fun/"), apiEnv)).status).toBe(200);
     expect((await dashboardRequest(apiEnv)).status).toBe(503);
   });
 
