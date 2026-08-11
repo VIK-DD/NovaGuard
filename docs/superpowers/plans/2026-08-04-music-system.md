@@ -1,5 +1,12 @@
 # Music System Implementation Plan
 
+> **SUPERSEDED — do not execute.** The music system was built, and built
+> differently: it ships an optional Lavalink backend (`cogs/music_lavalink.py`)
+> and audio filters (`core/music_filters.py`) that this plan never anticipated.
+> Read `cogs/music.py` and the `core/music_*.py` modules for what actually
+> exists. This file is kept as a record of the original design reasoning, not as
+> instructions.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give NovaGuard music playback — `/play` with a link or a search, a queue, and a button-driven player card — sourced from YouTube and SoundCloud, with Spotify links resolved to a searchable track.
