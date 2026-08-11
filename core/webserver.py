@@ -50,6 +50,7 @@ from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import connect, load_levels_data, load_voice_store
 from .levels_settings import resolve_levels, validate_levels
+from .maintenance import DEFAULT_MAINTENANCE_MESSAGE, load_maintenance_state
 from .release_versions import current_project_release
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
@@ -938,10 +939,21 @@ class WebServer:
 
     async def handle_health(self, request):
         db_ok = await asyncio.to_thread(db_ping)
+        # The website reads this to decide whether to close the dashboard, so
+        # it is a small file read — off the event loop, like db_ping above.
+        state = await asyncio.to_thread(load_maintenance_state)
+        maintenance = {"enabled": bool(state.get("enabled"))}
+        if maintenance["enabled"]:
+            maintenance["message"] = state.get("message") or DEFAULT_MAINTENANCE_MESSAGE
         payload = {
+            # Maintenance is deliberately absent from `ok`: this endpoint
+            # answers "is the API alive", not "is the site open". Folding them
+            # together would make the public status widget cry outage during a
+            # routine update.
             "ok": bool(db_ok and self.bot.is_ready()),
             "bot_ready": self.bot.is_ready(),
             "db_ok": db_ok,
+            "maintenance": maintenance,
         }
         return web.json_response(payload, status=200 if db_ok else 503)
 

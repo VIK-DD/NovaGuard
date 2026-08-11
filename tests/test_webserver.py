@@ -28,6 +28,7 @@ import aiohttp  # noqa: E402
 
 from core.database import connect  # noqa: E402
 from core.levels_settings import resolve_levels  # noqa: E402
+from core.maintenance import load_maintenance_state, save_maintenance_state  # noqa: E402
 from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
 from core.webserver import (  # noqa: E402
     _CIPHER,
@@ -188,6 +189,36 @@ async def main():
             await check("health 200 + db_ok", r.status == 200 and data["ok"] and data["db_ok"] is True)
             await check("security headers present", r.headers.get("X-Content-Type-Options") == "nosniff")
         await check("db_ping direct", db_ping() is True)
+
+        # ── maintenance state rides along on /health ──────────────────
+        # Saved and restored around the checks: this writes the real
+        # data/maintenance.json, and a test must not leave the bot shut down.
+        original_maintenance = load_maintenance_state()
+        try:
+            save_maintenance_state(True, "Testing the sync", updated_by="test-suite")
+            async with http.get(f"{V1}/health") as r:
+                data = await r.json()
+                await check(
+                    "health reports maintenance on, with the message",
+                    r.status == 200
+                    and data["maintenance"]["enabled"] is True
+                    and data["maintenance"]["message"] == "Testing the sync",
+                )
+
+            save_maintenance_state(False, updated_by="test-suite")
+            async with http.get(f"{V1}/health") as r:
+                data = await r.json()
+                await check(
+                    "health reports maintenance off, and leaks no stale message",
+                    data["maintenance"]["enabled"] is False
+                    and "message" not in data["maintenance"],
+                )
+        finally:
+            save_maintenance_state(
+                original_maintenance["enabled"],
+                original_maintenance["message"],
+                updated_by=original_maintenance.get("updated_by"),
+            )
 
         # ── legacy alias still works (fix #3) ─────────────────────────
         async with http.get(f"{LEGACY}/health") as r:
