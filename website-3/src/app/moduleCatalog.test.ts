@@ -15,6 +15,7 @@ const emptySettings: GuildSettings = {
   update_channel: null,
   github_event_channel: null,
   error_log_channel: null,
+  ticket_panel_channel: null,
   autorole: null,
   ticket_staff_role: null,
   automod: {
@@ -52,6 +53,7 @@ describe("configuration module catalog", () => {
         "levels",
         "log_channel",
         "ticket_staff_role",
+        "ticket_panel_channel",
         "update_channel",
         "voice_report_channel",
         "welcome_channel",

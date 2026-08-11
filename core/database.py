@@ -148,6 +148,28 @@ def init_database():
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_music_cache_expiry ON music_cache (expires_at)"
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ticket_records (
+                thread_id TEXT PRIMARY KEY,
+                guild_id TEXT NOT NULL,
+                parent_channel_id TEXT NOT NULL,
+                opener_id TEXT NOT NULL,
+                opener_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                closed_at TEXT,
+                closed_by TEXT
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ticket_records_guild_open"
+            " ON ticket_records (guild_id, closed_at, created_at DESC)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ticket_records_member_open"
+            " ON ticket_records (guild_id, opener_id, closed_at)"
+        )
         # Only the hash of the admin key is ever stored. A leaked database
         # must not hand anyone the key itself; the plaintext exists only in
         # the operator's password manager.
@@ -247,6 +269,15 @@ def export_guild_data(guild_id):
                 (key,),
             )
         ]
+        tickets = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT thread_id, parent_channel_id, opener_id, opener_name, created_at,"
+                " closed_at, closed_by FROM ticket_records"
+                " WHERE guild_id = ? ORDER BY created_at DESC",
+                (key,),
+            )
+        ]
 
     return {
         "guild_id": key,
@@ -255,13 +286,94 @@ def export_guild_data(guild_id):
         "levels": levels,
         "economy": wallets,
         "voice": voice,
+        "tickets": tickets,
         "counts": {
             "settings": len(settings),
             "levels": len(levels),
             "economy": len(wallets),
             "voice": len(voice),
+            "tickets": len(tickets),
         },
     }
+
+
+def create_ticket_record(guild_id, thread_id, parent_channel_id, opener_id, opener_name):
+    init_database()
+    created_at = utc_now()
+    with _LOCK, connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO ticket_records
+                (thread_id, guild_id, parent_channel_id, opener_id, opener_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(thread_id) DO UPDATE SET
+                guild_id = excluded.guild_id,
+                parent_channel_id = excluded.parent_channel_id,
+                opener_id = excluded.opener_id,
+                opener_name = excluded.opener_name,
+                created_at = excluded.created_at,
+                closed_at = NULL,
+                closed_by = NULL
+            """,
+            (
+                str(thread_id),
+                str(guild_id),
+                str(parent_channel_id),
+                str(opener_id),
+                str(opener_name)[:100],
+                created_at,
+            ),
+        )
+        connection.commit()
+    return created_at
+
+
+def close_ticket_record(thread_id, closed_by=None):
+    init_database()
+    with _LOCK, connect() as connection:
+        cursor = connection.execute(
+            "UPDATE ticket_records SET closed_at = ?, closed_by = ?"
+            " WHERE thread_id = ? AND closed_at IS NULL",
+            (utc_now(), str(closed_by) if closed_by is not None else None, str(thread_id)),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
+
+
+def open_ticket_for_member(guild_id, opener_id):
+    init_database()
+    with _LOCK, connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM ticket_records"
+            " WHERE guild_id = ? AND opener_id = ? AND closed_at IS NULL"
+            " ORDER BY created_at DESC LIMIT 1",
+            (str(guild_id), str(opener_id)),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_ticket_records(guild_id, *, open_only=False, limit=20):
+    init_database()
+    limit = min(max(int(limit), 1), 100)
+    where = "guild_id = ? AND closed_at IS NULL" if open_only else "guild_id = ?"
+    with _LOCK, connect() as connection:
+        rows = connection.execute(
+            f"SELECT * FROM ticket_records WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            (str(guild_id), limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def count_open_tickets(guild_id):
+    """Return the exact number of open tickets, independent of list pagination."""
+    init_database()
+    with _LOCK, connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS count FROM ticket_records"
+            " WHERE guild_id = ? AND closed_at IS NULL",
+            (str(guild_id),),
+        ).fetchone()
+    return int(row["count"])
 
 
 def encode_value(value):

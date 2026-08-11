@@ -35,7 +35,7 @@ export const CONFIG_MODULES = [
     label: "Tickets",
     description: "Choose the staff role that can handle support tickets.",
     icon: "clipboard-text",
-    fields: ["ticket_staff_role"],
+    fields: ["ticket_panel_channel", "ticket_staff_role"],
   },
   {
     key: "updates",
@@ -79,7 +79,7 @@ export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): b
     case "voice":
       return Boolean(settings.voice_report_channel);
     case "tickets":
-      return Boolean(settings.ticket_staff_role);
+      return Boolean(settings.ticket_panel_channel || settings.ticket_staff_role);
     case "updates":
       return Boolean(settings.update_channel || settings.github_event_channel);
   }

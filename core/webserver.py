@@ -48,7 +48,13 @@ from aiohttp import web
 from .automod_settings import resolve_automod, validate_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
-from .database import connect, load_levels_data, load_voice_store
+from .database import (
+    connect,
+    count_open_tickets,
+    list_ticket_records,
+    load_levels_data,
+    load_voice_store,
+)
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
 from .levels_settings import resolve_levels, validate_levels
 from .maintenance import (
@@ -164,6 +170,8 @@ CHANNEL_KEYS = (
     "github_event_channel",
     "error_log_channel",
 )
+TICKET_CHANNEL_KEYS = ("ticket_panel_channel",)
+CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + TICKET_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
 DASHBOARD_XP_PER_LEVEL = 118
 DASHBOARD_MAX_LEVEL = 169
@@ -1137,6 +1145,26 @@ class WebServer:
     async def _config_payload(self, guild):
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         automod = resolve_automod(settings)
+        open_tickets, open_ticket_count = await asyncio.gather(
+            asyncio.to_thread(list_ticket_records, guild.id, open_only=True, limit=20),
+            asyncio.to_thread(count_open_tickets, guild.id),
+        )
+        ticket_channel = (
+            guild.get_channel(int(settings["ticket_panel_channel"]))
+            if settings.get("ticket_panel_channel")
+            else None
+        )
+        ticket_role = (
+            guild.get_role(int(settings["ticket_staff_role"]))
+            if settings.get("ticket_staff_role")
+            else None
+        )
+        if ticket_channel is not None and ticket_role is not None:
+            from cogs.tickets import role_can_manage_tickets
+
+            ticket_ready = role_can_manage_tickets(ticket_channel, ticket_role)
+        else:
+            ticket_ready = False
 
         return {
             "guild": {
@@ -1155,10 +1183,32 @@ class WebServer:
                 github_config.watch_repos or github_config.primary_repo
             ),
             "settings": {
-                **{key: (str(settings[key]) if settings.get(key) else None) for key in CHANNEL_KEYS},
+                **{
+                    key: (str(settings[key]) if settings.get(key) else None)
+                    for key in CONFIG_CHANNEL_KEYS
+                },
                 **{key: (str(settings[key]) if settings.get(key) else None) for key in ROLE_KEYS},
                 "automod": automod,
                 "levels": resolve_levels(settings),
+            },
+            "tickets": {
+                "panel_channel_id": str(settings.get("ticket_panel_channel"))
+                if settings.get("ticket_panel_channel")
+                else None,
+                "panel_message_id": str(settings.get("ticket_panel_message"))
+                if settings.get("ticket_panel_message")
+                else None,
+                "ready": ticket_ready,
+                "open_count": open_ticket_count,
+                "open": [
+                    {
+                        "thread_id": row["thread_id"],
+                        "opener_id": row["opener_id"],
+                        "opener_name": row["opener_name"],
+                        "created_at": row["created_at"],
+                    }
+                    for row in open_tickets
+                ],
             },
             "channels": [
                 {"id": str(channel.id), "name": channel.name,
@@ -1167,7 +1217,8 @@ class WebServer:
             ],
             "roles": [
                 {"id": str(role.id), "name": role.name, "color": f"#{role.color.value:06X}",
-                 "assignable": role < guild.me.top_role and not role.managed}
+                 "assignable": role < guild.me.top_role and not role.managed,
+                 "manages_threads": role.permissions.manage_threads}
                 for role in sorted(guild.roles, key=lambda r: -r.position)
                 if not role.is_default()
             ],
@@ -1522,6 +1573,62 @@ class WebServer:
             "channel_id": str(channel.id),
         }
 
+    async def _handle_ticket_panel_publish_action(self, guild):
+        import discord
+
+        from cogs.tickets import publish_ticket_panel, role_can_manage_tickets
+
+        settings = await asyncio.to_thread(get_guild_settings, guild.id)
+        channel_id = settings.get("ticket_panel_channel")
+        staff_role_id = settings.get("ticket_staff_role")
+        if not channel_id or not staff_role_id:
+            raise ApiError(
+                400,
+                "Choose a ticket channel and staff role, then save before publishing.",
+                code="ticket_setup_incomplete",
+            )
+        channel = guild.get_channel(int(channel_id)) if channel_id else None
+        role = guild.get_role(int(staff_role_id)) if staff_role_id else None
+        if channel is None or role is None:
+            raise ApiError(
+                400,
+                "Choose a ticket channel and staff role, then save before publishing.",
+                code="ticket_setup_incomplete",
+            )
+        if not role_can_manage_tickets(channel, role):
+            raise ApiError(
+                400,
+                "The ticket staff role needs View Channel and Manage Threads in the panel channel.",
+                code="ticket_staff_no_access",
+            )
+
+        previous_message_id = settings.get("ticket_panel_message")
+        try:
+            message, created = await asyncio.wait_for(
+                publish_ticket_panel(channel, previous_message_id), timeout=10
+            )
+        except (discord.Forbidden, discord.HTTPException, asyncio.TimeoutError) as error:
+            log.warning("Dashboard ticket panel publish failed for #%s", channel.id, exc_info=True)
+            raise ApiError(
+                502,
+                "Discord did not accept the ticket panel.",
+                code="ticket_panel_failed",
+                details=[type(error).__name__],
+            ) from error
+
+        await asyncio.to_thread(
+            update_guild_settings,
+            guild.id,
+            ticket_panel_channel=channel.id,
+            ticket_panel_message=message.id,
+        )
+        return {
+            "ok": True,
+            "action": "ticket_panel_publish",
+            "message": f"Ticket panel {'published' if created else 'updated'} in #{channel.name}.",
+            "channel_id": str(channel.id),
+        }
+
     async def handle_guild_action(self, request):
         self._rate_limit(request, "write")
         self._check_origin(request)
@@ -1534,6 +1641,8 @@ class WebServer:
             payload = await self._handle_voice_test_action(guild, entry)
         elif action == "update_preview":
             payload = await self._handle_update_preview_action(guild)
+        elif action == "ticket_panel_publish":
+            payload = await self._handle_ticket_panel_publish_action(guild)
         else:
             raise ApiError(404, "Unknown dashboard action.", code="unknown_action")
 
@@ -1618,7 +1727,7 @@ class WebServer:
         changes = {}
         errors = []
 
-        for key in CHANNEL_KEYS:
+        for key in CONFIG_CHANNEL_KEYS:
             if key not in body:
                 continue
             value = body[key]
@@ -1628,6 +1737,11 @@ class WebServer:
                 changes[key] = int(value)
             else:
                 errors.append(f"{key}: not a text channel in this guild")
+
+        # The old message belongs to the old channel. Keeping its ID after a
+        # channel change makes the dashboard falsely report a live panel.
+        if "ticket_panel_channel" in changes:
+            changes["ticket_panel_message"] = None
 
         for key in ROLE_KEYS:
             if key not in body:
@@ -1643,6 +1757,28 @@ class WebServer:
                 errors.append(f"{key}: role must be below my top role and not managed")
             else:
                 changes[key] = role.id
+
+        if "ticket_panel_channel" in body or "ticket_staff_role" in body:
+            from cogs.tickets import role_can_manage_tickets
+
+            current = await asyncio.to_thread(get_guild_settings, guild.id)
+            ticket_channel_id = changes.get(
+                "ticket_panel_channel", current.get("ticket_panel_channel")
+            )
+            ticket_role_id = changes.get("ticket_staff_role", current.get("ticket_staff_role"))
+            ticket_channel = (
+                guild.get_channel(int(ticket_channel_id)) if ticket_channel_id else None
+            )
+            ticket_role = guild.get_role(int(ticket_role_id)) if ticket_role_id else None
+            if (
+                ticket_channel is not None
+                and ticket_role is not None
+                and not role_can_manage_tickets(ticket_channel, ticket_role)
+            ):
+                errors.append(
+                    "ticket_staff_role: role needs View Channel and Manage Threads "
+                    "in the ticket panel channel"
+                )
 
         if "automod" in body:
             current = await asyncio.to_thread(get_guild_settings, guild.id)

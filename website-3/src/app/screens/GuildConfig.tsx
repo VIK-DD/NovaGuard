@@ -4,6 +4,7 @@ import { Link, useBlocker, useParams } from "@tanstack/react-router";
 import { ApiError, apiFetch } from "../../lib/api/client";
 import {
   GuildConfigSchema,
+  DashboardActionSchema,
   type AnnounceMode,
   type GuildSettings,
   type SettingsPatch,
@@ -34,6 +35,7 @@ const CHANNEL_FIELDS: ReadonlyArray<
     | "update_channel"
     | "github_event_channel"
     | "error_log_channel"
+    | "ticket_panel_channel"
   >, string]
 > = [
   ["welcome_channel", "Welcome channel"],
@@ -43,6 +45,7 @@ const CHANNEL_FIELDS: ReadonlyArray<
   ["update_channel", "Update channel"],
   ["github_event_channel", "GitHub events"],
   ["error_log_channel", "Error log"],
+  ["ticket_panel_channel", "Ticket panel"],
 ];
 
 // Memoized like the field components in components/ — see the note in
@@ -227,6 +230,7 @@ export default function GuildConfig() {
   const [draft, setDraft] = useState<GuildSettings | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [justSaved, setJustSaved] = useState(false);
+  const [ticketPanelNotice, setTicketPanelNotice] = useState<string | null>(null);
 
   // Reseed the draft whenever fresh server state arrives (fetch or save).
   useEffect(() => {
@@ -260,6 +264,24 @@ export default function GuildConfig() {
       if (err instanceof ApiError && err.code === "validation_failed") {
         setFieldErrors(mapValidationDetails(err.details));
       }
+    },
+  });
+
+  const publishTicketPanel = useMutation({
+    mutationFn: () =>
+      apiFetch(`/guilds/${guildId}/actions/ticket_panel_publish`, DashboardActionSchema, {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      setTicketPanelNotice(data.message);
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "config"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["guild", guildId, "audit"] });
+    },
+    onError: (error) => {
+      setTicketPanelNotice(
+        error instanceof ApiError ? error.message : "The ticket panel could not be published.",
+      );
     },
   });
 
@@ -756,14 +778,106 @@ export default function GuildConfig() {
             description="Choose which role can claim and manage member support tickets."
             active={isModuleActive(draft, "tickets")}
           >
-            <div className="max-w-md border-t border-line pt-6">
+            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+              <ChannelSelect
+                label="Ticket panel channel"
+                value={draft.ticket_panel_channel}
+                channels={channels}
+                error={fieldErrors.ticket_panel_channel}
+                onChange={channelFieldHandlers.ticket_panel_channel}
+              />
               <RoleSelect
                 label="Ticket staff role"
                 value={draft.ticket_staff_role}
-                roles={roles}
+                roles={roles.filter(
+                  (role) => role.manages_threads || role.id === draft.ticket_staff_role,
+                )}
                 error={fieldErrors.ticket_staff_role}
                 onChange={onTicketRoleChange}
               />
+            </div>
+            <p className="mt-2 text-xs leading-5 text-ink-muted">
+              Only roles with <strong>Manage Threads</strong> are offered. The selected role also
+              needs <strong>View Channel</strong> in the panel channel.
+            </p>
+            <div className="mt-6 rounded-lg border border-line bg-bg-subtle p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">
+                    {config.data.tickets.panel_message_id ? "Panel is live" : "Panel not published"}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-ink-muted">
+                    {dirty
+                      ? "Save these settings before publishing the panel."
+                      : config.data.tickets.ready
+                        ? "Publishing again updates the existing message instead of creating a duplicate."
+                        : "Choose both fields above, save, then publish."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={
+                    dirty ||
+                    !draft.ticket_panel_channel ||
+                    !draft.ticket_staff_role ||
+                    publishTicketPanel.isPending
+                  }
+                  onClick={() => {
+                    setTicketPanelNotice(null);
+                    publishTicketPanel.mutate();
+                  }}
+                  className="ng-touch-target inline-flex shrink-0 items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {publishTicketPanel.isPending
+                    ? "Publishing…"
+                    : config.data.tickets.panel_message_id
+                      ? "Update panel"
+                      : "Publish panel"}
+                </button>
+              </div>
+              {ticketPanelNotice && (
+                <p
+                  role={publishTicketPanel.isError ? "alert" : "status"}
+                  className={`mt-3 border-t border-line pt-3 text-sm ${
+                    publishTicketPanel.isError ? "text-primary" : "text-good"
+                  }`}
+                >
+                  {ticketPanelNotice}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-6 border-t border-line pt-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium">Open tickets</p>
+                <span className="rounded-full border border-line bg-bg-subtle px-2.5 py-1 text-xs text-ink-muted">
+                  {config.data.tickets.open_count}
+                </span>
+              </div>
+              {config.data.tickets.open.length > 0 ? (
+                <ul className="mt-3 divide-y divide-line border-y border-line">
+                  {config.data.tickets.open.map((ticket) => (
+                    <li key={ticket.thread_id} className="flex items-center justify-between gap-3 py-3">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-ink">{ticket.opener_name}</span>
+                        <span className="mt-0.5 block text-xs text-ink-faint">
+                          Opened {new Date(ticket.created_at).toLocaleString("en-US")}
+                        </span>
+                      </span>
+                      <a
+                        href={`https://discord.com/channels/${guildId}/${ticket.thread_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ng-touch-target inline-flex shrink-0 items-center rounded-md px-2 text-sm text-primary hover:underline"
+                      >
+                        Open in Discord ↗
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-ink-muted">No tracked tickets are open.</p>
+              )}
             </div>
             </Section>
           )}

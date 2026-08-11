@@ -55,12 +55,12 @@ const channels = [
 ];
 
 const roles = [
-  { id: "r1", name: "Member", color: "#4f545c", assignable: true },
-  { id: "r2", name: "Regular", color: "#3ba55d", assignable: true },
-  { id: "r3", name: "Contributor", color: "#5865f2", assignable: true },
-  { id: "r4", name: "Moderator", color: "#faa61a", assignable: false },
-  { id: "r5", name: "Admin", color: "#ed4245", assignable: false },
-  { id: "r6", name: "Ticket Staff", color: "#eb459e", assignable: false },
+  { id: "r1", name: "Member", color: "#4f545c", assignable: true, manages_threads: false },
+  { id: "r2", name: "Regular", color: "#3ba55d", assignable: true, manages_threads: false },
+  { id: "r3", name: "Contributor", color: "#5865f2", assignable: true, manages_threads: false },
+  { id: "r4", name: "Moderator", color: "#faa61a", assignable: false, manages_threads: true },
+  { id: "r5", name: "Admin", color: "#ed4245", assignable: false, manages_threads: true },
+  { id: "r6", name: "Ticket Staff", color: "#eb459e", assignable: false, manages_threads: true },
 ];
 
 type Settings = {
@@ -71,6 +71,7 @@ type Settings = {
   update_channel: string | null;
   github_event_channel: string | null;
   error_log_channel: string | null;
+  ticket_panel_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: {
@@ -127,6 +128,7 @@ const settingsByGuild: Record<string, Settings> = {
     update_channel: "c3",
     github_event_channel: "c9",
     error_log_channel: "c10",
+    ticket_panel_channel: "c8",
     autorole: "r1",
     ticket_staff_role: "r6",
     automod: {
@@ -153,6 +155,7 @@ const settingsByGuild: Record<string, Settings> = {
     update_channel: null,
     github_event_channel: "c9",
     error_log_channel: null,
+    ticket_panel_channel: null,
     autorole: null,
     ticket_staff_role: null,
     automod: { ...automodDefaults(), invites: false },
@@ -166,6 +169,7 @@ const settingsByGuild: Record<string, Settings> = {
     update_channel: null,
     github_event_channel: null,
     error_log_channel: null,
+    ticket_panel_channel: null,
     autorole: "r1",
     ticket_staff_role: null,
     automod: { ...automodDefaults(), spam: false, badwords: ["spoiler"] },
@@ -177,6 +181,21 @@ const guildMeta: Record<string, { name: string; member_count: number }> = {
   "1001": { name: "Nova Community", member_count: 1287 },
   "1002": { name: "Indie Game Devs", member_count: 4630 },
   "1003": { name: "Study Lounge", member_count: 812 },
+};
+
+const ticketPanelMessageByGuild: Record<string, string | null> = { "1001": "panel-1001" };
+const openTicketsByGuild: Record<
+  string,
+  Array<{ thread_id: string; opener_id: string; opener_name: string; created_at: string }>
+> = {
+  "1001": [
+    {
+      thread_id: "ticket-42",
+      opener_id: "member-42",
+      opener_name: "Sorin",
+      created_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    },
+  ],
 };
 
 type AuditEntry = {
@@ -226,6 +245,18 @@ function configPayload(id: string): Json | null {
     github_watch_configured: false,
     guild: { id, name: meta.name, icon: null, member_count: meta.member_count },
     settings,
+    tickets: {
+      panel_channel_id: settings.ticket_panel_channel,
+      panel_message_id: ticketPanelMessageByGuild[id] ?? null,
+      ready: Boolean(
+        settings.ticket_panel_channel &&
+          roles.some(
+            (role) => role.id === settings.ticket_staff_role && role.manages_threads,
+          ),
+      ),
+      open_count: (openTicketsByGuild[id] ?? []).length,
+      open: openTicketsByGuild[id] ?? [],
+    },
     channels,
     roles,
   };
@@ -449,12 +480,26 @@ function route(pathname: string, method: string, body: Json | null): { status: n
     if (actionName === "voice_test" && !settings.voice_report_channel) {
       return { status: 400, data: { error: "Voice reports are not configured.", code: "voice_not_configured" } };
     }
+    if (
+      actionName === "ticket_panel_publish" &&
+      (!settings.ticket_panel_channel || !settings.ticket_staff_role)
+    ) {
+      return {
+        status: 400,
+        data: {
+          error: "Choose a ticket channel and staff role, then save before publishing.",
+          code: "ticket_setup_incomplete",
+        },
+      };
+    }
     const messages: Record<string, string> = {
       backup_check: "Latest backup passed the restore check.",
       voice_test: "Voice report preview sent to #voice-reports.",
       update_preview: "Latest update was sent to the configured update channel.",
+      ticket_panel_publish: "Ticket panel updated in #mod-alerts.",
     };
     if (!messages[actionName]) return { status: 404, data: { error: "Unknown dashboard action.", code: "unknown_action" } };
+    if (actionName === "ticket_panel_publish") ticketPanelMessageByGuild[id] = `panel-${id}`;
     (auditByGuild[id] ??= []).unshift({
       id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,
       username: me.user.username,

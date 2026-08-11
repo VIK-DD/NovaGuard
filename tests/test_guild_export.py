@@ -65,6 +65,13 @@ class GuildExportTests(unittest.TestCase):
                     " VALUES (?, ?, ?, 0, ?, ?, '[]', ?)",
                     (guild, user, coins, stamp, stamp, stamp),
                 )
+            for guild, thread, opener in (("111", "t-1", "a"), ("222", "t-2", "c")):
+                connection.execute(
+                    "INSERT INTO ticket_records"
+                    " (thread_id, guild_id, parent_channel_id, opener_id, opener_name, created_at)"
+                    " VALUES (?, ?, 'support', ?, 'Member', ?)",
+                    (thread, guild, opener, stamp),
+                )
             connection.commit()
 
     def test_the_export_carries_this_guilds_own_data(self):
@@ -74,6 +81,7 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual(payload["settings"]["welcome_channel"], "general")
         self.assertEqual({row["user_id"] for row in payload["levels"]}, {"a", "b"})
         self.assertEqual({row["user_id"] for row in payload["economy"]}, {"a"})
+        self.assertEqual([row["thread_id"] for row in payload["tickets"]], ["t-1"])
 
     def test_no_other_guild_leaks_into_the_export(self):
         blob = repr(self.database.export_guild_data("111"))
@@ -86,7 +94,8 @@ class GuildExportTests(unittest.TestCase):
         payload = self.database.export_guild_data("111")
 
         self.assertEqual(
-            payload["counts"], {"settings": 2, "levels": 2, "economy": 1, "voice": 0}
+            payload["counts"],
+            {"settings": 2, "levels": 2, "economy": 1, "voice": 0, "tickets": 1},
         )
 
     def test_a_guild_with_no_data_exports_an_empty_shell(self):

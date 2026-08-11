@@ -71,6 +71,7 @@ export const GuildSettingsSchema = z.object({
   update_channel: z.string().nullable(),
   github_event_channel: z.string().nullable(),
   error_log_channel: z.string().nullable(),
+  ticket_panel_channel: z.string().nullable(),
   autorole: z.string().nullable(),
   ticket_staff_role: z.string().nullable(),
   automod: AutomodSchema,
@@ -90,6 +91,20 @@ export const GuildConfigSchema = z.object({
     member_count: z.number(),
   }),
   settings: GuildSettingsSchema,
+  tickets: z.object({
+    panel_channel_id: z.string().nullable(),
+    panel_message_id: z.string().nullable(),
+    ready: z.boolean(),
+    open_count: z.number(),
+    open: z.array(
+      z.object({
+        thread_id: z.string(),
+        opener_id: z.string(),
+        opener_name: z.string(),
+        created_at: z.string(),
+      }),
+    ),
+  }),
   channels: z.array(
     z.object({ id: z.string(), name: z.string(), category: z.string().nullable() }),
   ),
@@ -99,6 +114,7 @@ export const GuildConfigSchema = z.object({
       name: z.string(),
       color: z.string(),
       assignable: z.boolean(),
+      manages_threads: z.boolean(),
     }),
   ),
 });
@@ -254,6 +270,7 @@ export type SettingsPatch = Partial<{
   update_channel: string | null;
   github_event_channel: string | null;
   error_log_channel: string | null;
+  ticket_panel_channel: string | null;
   autorole: string | null;
   ticket_staff_role: string | null;
   automod: Partial<z.infer<typeof AutomodSchema>>;

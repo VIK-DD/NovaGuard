@@ -72,6 +72,12 @@ class FakeGuild:
         self.text_channels = [FakeChannel(111, "general"), FakeChannel(112, "logs")]
         self.roles = []
 
+    def get_channel(self, channel_id):
+        return next((channel for channel in self.text_channels if channel.id == channel_id), None)
+
+    def get_role(self, role_id):
+        return next((role for role in self.roles if role.id == role_id), None)
+
 
 class FakeTree:
     def walk_commands(self):
@@ -426,7 +432,8 @@ async def main():
                 r.status == 200 and data["guild"]["id"] == str(TEST_GUILD_ID)
                 and len(data["channels"]) == 2
                 and "automod" in data["settings"]
-                and "voice_report_channel" in data["settings"],
+                and "voice_report_channel" in data["settings"]
+                and data.get("tickets", {}).get("open_count") == 0,
             )
         async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/config", cookies=cookies) as r:
             data = await r.json()
@@ -480,6 +487,7 @@ async def main():
         good = {
             "welcome_channel": "111",
             "log_channel": "112",
+            "ticket_panel_channel": "111",
             "automod": {
                 "invites": False,
                 "badwords": ["Spoiler", "spoiler", "  x  "],
@@ -496,11 +504,27 @@ async def main():
                 "PUT saves + normalizes",
                 r.status == 200
                 and saved.get("welcome_channel") == "111"
+                and saved.get("ticket_panel_channel") == "111"
                 and saved.get("automod", {}).get("invites") is False
                 and saved.get("automod", {}).get("badwords") == ["spoiler", "x"]
                 and saved.get("automod", {}).get("ignored_channels") == ["111"]
                 and saved.get("automod", {}).get("spam_messages") == 8,
             )
+
+        async with http.post(
+            f"{V1}/guilds/{TEST_GUILD_ID}/actions/ticket_panel_publish",
+            cookies=cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "ticket panel publish requires a saved staff role",
+                r.status == 400 and data.get("code") == "ticket_setup_incomplete",
+            )
+
+        await check(
+            "changing the ticket channel invalidates the old panel message",
+            get_guild_settings(TEST_GUILD_ID).get("ticket_panel_message") is None,
+        )
 
         async with http.put(
             f"{V1}/guilds/{TEST_GUILD_ID}/config",

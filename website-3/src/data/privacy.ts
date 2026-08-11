@@ -13,7 +13,7 @@ export const DATA_CATEGORIES = [
   },
   {
     name: "Community feature state",
-    data: "User IDs with XP and message counts, voice minutes, economy balances, warnings, reminders, giveaway entries and similar feature records.",
+    data: "User IDs with XP and message counts, voice minutes, economy balances, warnings, reminders, ticket metadata, giveaway entries and similar feature records.",
     use: "Provide the feature a member or server administrator chose to use.",
   },
   {

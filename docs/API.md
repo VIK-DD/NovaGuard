@@ -136,6 +136,7 @@ same value on every guild this bot serves, derived from the bot's
     "welcome_channel": "…|null", "goodbye_channel": "…|null",
     "log_channel": "…|null", "voice_report_channel": "…|null", "update_channel": "…|null",
     "github_event_channel": "…|null", "error_log_channel": "…|null",
+    "ticket_panel_channel": "…|null",
     "autorole": "…|null", "ticket_staff_role": "…|null",
     "automod": {
       "invites": true, "spam": true, "badwords": ["…"],
@@ -148,8 +149,15 @@ same value on every guild this bot serves, derived from the bot's
       "ignored_channels": ["…"], "ignored_roles": ["…"]
     }
   },
+  "tickets": {
+    "panel_channel_id": "…|null", "panel_message_id": "…|null",
+    "ready": true, "open_count": 1,
+    "open": [ { "thread_id": "…", "opener_id": "…", "opener_name": "Vik",
+      "created_at": "…" } ]
+  },
   "channels": [ { "id": "…", "name": "…", "category": "…|null" } ],
-  "roles": [ { "id": "…", "name": "…", "color": "#RRGGBB", "assignable": true } ]
+  "roles": [ { "id": "…", "name": "…", "color": "#RRGGBB",
+    "assignable": true, "manages_threads": false } ]
 }
 ```
 
@@ -159,6 +167,8 @@ only the keys present are changed. Returns the same payload as GET on success.
 
 - Channel keys must be a text channel **in that guild** (or `null`/`""`/`0` to clear).
 - `autorole` must be **below the bot's top role** and not managed.
+- When both ticket fields are selected, `ticket_staff_role` must have
+  **View Channel** and **Manage Threads** in `ticket_panel_channel`.
 - `automod` is validated by `core/automod_settings.validate_automod`, the same
   rules used by live message enforcement:
   - `invites` and `spam` must be JSON booleans; strings are not coerced.
@@ -231,6 +241,8 @@ actions:
   report channel.
 - `update_preview`: sends the latest saved update embed to this guild's
   configured update channel only.
+- `ticket_panel_publish`: publishes the saved ticket panel or updates its
+  existing Discord message in place. Requires a saved panel channel and staff role.
 
 ```json
 { "ok": true, "action": "backup_check",
