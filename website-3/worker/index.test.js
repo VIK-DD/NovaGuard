@@ -302,7 +302,10 @@ describe("maintenance sync", () => {
   let clock = Date.now();
 
   beforeEach(() => {
-    clock += 10 * 60 * 1000;
+    // Must exceed the largest jump any single test makes (currently one hour),
+    // or a test that travelled forward leaves cached state dated *after* the
+    // next test's clock, and the worker reads it as fresh.
+    clock += 6 * 60 * 60 * 1000;
     // Only Date is faked. Faking the timers too would break
     // AbortSignal.timeout inside readMaintenance, aborting every upstream call
     // and making the fail-closed path look like the answer.
@@ -424,6 +427,91 @@ describe("maintenance sync", () => {
     // The dashboard cannot work without the API, so saying so beats rendering
     // a page that will only fill with network errors.
     expect((await dashboardRequest(apiEnv)).status).toBe(503);
+  });
+
+  async function previewCookie(testEnv, code = "ng_preview_good") {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code }),
+      }),
+      testEnv,
+    );
+    const header = response.headers.get("set-cookie");
+    return { response, cookie: header ? header.split(";")[0] : null };
+  }
+
+  function previewStub({ ok = true, since = "2026-08-11T06:16:05+00:00" } = {}) {
+    return vi.fn(async (input) => {
+      const target = String(typeof input === "string" ? input : input.url);
+      if (target.endsWith("/maintenance/preview")) {
+        return ok
+          ? Response.json({ ok: true, since })
+          : Response.json({ code: "invalid_preview_code" }, { status: 401 });
+      }
+      return Response.json({
+        ok: true,
+        maintenance: { enabled: true, message: "Music Update", since },
+      });
+    });
+  }
+
+  it("lets a holder of the code walk the closed site", async () => {
+    vi.stubGlobal("fetch", previewStub());
+
+    const { cookie } = await previewCookie(apiEnv);
+    expect(cookie).toContain("ng_preview=");
+
+    const page = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { cookie } }),
+      apiEnv,
+    );
+
+    expect(page.status).not.toBe(503);
+  });
+
+  it("refuses a wrong code without setting a cookie", async () => {
+    vi.stubGlobal("fetch", previewStub({ ok: false }));
+
+    const { response, cookie } = await previewCookie(apiEnv, "ng_preview_wrong");
+
+    // Back to the form with a flag, not a bare error page: a wrong code is
+    // usually a typo, and the visitor needs somewhere to retype it.
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toContain("/preview/?error=1");
+    expect(cookie).toBeNull();
+  });
+
+  it("sets no cookie when the bot cannot be reached", async () => {
+    // Failing closed on the door is the opposite of failing closed on the site,
+    // and both are the safe direction.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("connection refused");
+      }),
+    );
+
+    const { cookie } = await previewCookie(apiEnv);
+
+    expect(cookie).toBeNull();
+  });
+
+  it("stops honouring a code once a new maintenance window opens", async () => {
+    vi.stubGlobal("fetch", previewStub({ since: "2026-08-11T06:00:00+00:00" }));
+    const { cookie } = await previewCookie(apiEnv);
+
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+    // Same site, new activation: the cookie is bound to the old one.
+    vi.stubGlobal("fetch", previewStub({ since: "2026-08-11T09:00:00+00:00" }));
+
+    const page = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { cookie } }),
+      apiEnv,
+    );
+
+    expect(page.status).toBe(503);
   });
 
   it("keeps the marketing pages up when the API is gone", async () => {

@@ -3,6 +3,8 @@
 // future `Domain=.novaguard.fun` on either would make them clobber each other.
 const SESSION_COOKIE = "ng_gate";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
+const PREVIEW_COOKIE = "ng_preview";
+const PREVIEW_TTL_SECONDS = 60 * 60 * 12;
 const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
 const UPDATES_FEED_TIMEOUT_MS = 8000;
@@ -138,6 +140,10 @@ function isPublicPath(pathname) {
 // Coming Soon face — closes.
 function isAlwaysOpenPath(pathname) {
   return (
+    // The way back in. Linked from nowhere, but it has to answer while the
+    // site is shut or the code would have nowhere to be typed.
+    pathname === "/preview" ||
+    pathname === "/preview/" ||
     pathname.startsWith("/_astro/") ||
     pathname.startsWith("/assets/") ||
     pathname === "/favicon.png" ||
@@ -347,6 +353,92 @@ async function handleLogin(request, env) {
   });
 }
 
+async function createPreviewSession(secret, since) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const payload = base64UrlEncode(
+    encoder.encode(JSON.stringify({ iat: issuedAt, exp: issuedAt + PREVIEW_TTL_SECONDS, since })),
+  );
+  const key = await importSigningKey(secret);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return `${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
+}
+
+async function isValidPreview(value, secret, since) {
+  if (!value || !secret || !since) return false;
+  const [payload, signature] = value.split(".");
+  if (!payload || !signature) return false;
+
+  try {
+    const key = await importSigningKey(secret);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      base64UrlDecode(signature),
+      encoder.encode(payload),
+    );
+    if (!valid) return false;
+
+    const session = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
+    const now = Math.floor(Date.now() / 1000);
+    return (
+      Number.isFinite(session.exp) &&
+      session.exp > now &&
+      // Bound to one activation: a code shared during a previous maintenance
+      // window opens nothing during this one.
+      session.since === since
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
+async function handlePreview(request, env) {
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: { Allow: "POST" } });
+  }
+
+  const form = await request.formData().catch(() => new FormData());
+  const code = String(form.get("code") || "").trim();
+  const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
+
+  let verified = null;
+  try {
+    const upstream = await fetch(`${apiBase}/maintenance/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ code }),
+      signal: AbortSignal.timeout(MAINTENANCE_TIMEOUT_MS),
+    });
+    if (upstream.ok) verified = await upstream.json();
+  } catch (error) {
+    // Unreachable bot means no bypass. Failing closed on the door is the
+    // opposite of failing closed on the site, and both are the safe direction.
+    verified = null;
+  }
+
+  if (!verified || !verified.since) {
+    // Back to the form with a flag rather than an error page: a wrong code is
+    // usually a typo. The flag says nothing about which failure it was.
+    return new Response(null, {
+      status: 303,
+      headers: {
+        Location: new URL("/preview/?error=1", request.url).toString(),
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const session = await createPreviewSession(env.AUTH_PASSWORD, verified.since);
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: new URL("/", request.url).toString(),
+      "Set-Cookie": `${PREVIEW_COOKIE}=${session}; Path=/; Max-Age=${PREVIEW_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 function handleLogout(request) {
   return new Response(null, {
     status: 303,
@@ -363,11 +455,14 @@ function maintenanceFromHealth(health) {
   // A bot that predates this field is not in maintenance. This is the rule that
   // makes deploy order irrelevant: the worker ships before the bot restarts, and
   // reading the gap as an error would black the dashboard out in between.
-  if (!raw || typeof raw !== "object") return { enabled: false, message: "" };
+  if (!raw || typeof raw !== "object") return { enabled: false, message: "", since: "" };
   const enabled = Boolean(raw.enabled);
   return {
     enabled,
     message: enabled && typeof raw.message === "string" ? raw.message : "",
+    // Which activation this is. Preview cookies bind to it, so a code from a
+    // previous window stops opening the site without anyone revoking it.
+    since: enabled && typeof raw.since === "string" ? raw.since : "",
   };
 }
 
@@ -458,6 +553,7 @@ export default {
     if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
     if (url.pathname === "/api/auth/login") return handleLogin(request, env);
     if (url.pathname === "/api/auth/logout") return handleLogout(request);
+    if (url.pathname === "/api/preview") return handlePreview(request, env);
     // Assets answer first: the maintenance page is built from them, so gating
     // them would leave it unable to render itself.
     if (isAlwaysOpenPath(url.pathname)) return serveAsset(request, env);
@@ -467,7 +563,12 @@ export default {
     // site that is closed anyway.
     const maintenance = await readMaintenance(request, env, ctx);
     if (maintenance.enabled && !maintenance.unreachable) {
-      return serveMaintenancePage(request, env, maintenance);
+      const holder = await isValidPreview(
+        readCookie(request, PREVIEW_COOKIE),
+        env.AUTH_PASSWORD,
+        maintenance.since,
+      );
+      if (!holder) return serveMaintenancePage(request, env, maintenance);
     }
     if (isMaintenanceEnabled(env)) {
       return serveMaintenancePage(request, env, { message: "" });
