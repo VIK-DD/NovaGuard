@@ -49,6 +49,7 @@ from .automod_settings import resolve_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import connect, load_levels_data, load_voice_store
+from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
 from .levels_settings import resolve_levels, validate_levels
 from .maintenance import (
     DEFAULT_MAINTENANCE_MESSAGE,
@@ -126,7 +127,10 @@ if COOKIE_SAMESITE not in {"Lax", "Strict", "None"}:
 if COOKIE_SAMESITE == "None":
     COOKIE_SECURE = True
 TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
-INVITE_PERMISSIONS = os.getenv("WEB_INVITE_PERMISSIONS", "8").strip() or "8"
+INVITE_PERMISSIONS = (
+    os.getenv("WEB_INVITE_PERMISSIONS", DEFAULT_INVITE_PERMISSIONS).strip()
+    or DEFAULT_INVITE_PERMISSIONS
+)
 
 API_PREFIX = "/api/v1"
 LEGACY_PREFIX = "/api"

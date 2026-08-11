@@ -13,6 +13,7 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlparse
 
 os.environ["WEB_ENABLED"] = "true"
 os.environ["WEB_PORT"] = "8399"
@@ -28,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import aiohttp  # noqa: E402
 
 from core.database import connect  # noqa: E402
+from core.invite_permissions import DEFAULT_INVITE_PERMISSIONS  # noqa: E402
 from core.levels_settings import resolve_levels  # noqa: E402
 from core.maintenance import (  # noqa: E402
     MAINTENANCE_STATE_FILE,
@@ -331,6 +333,15 @@ async def main():
                 and data.get("version") == "2.0"
                 and data.get("phase_label") == "Open Beta"
                 and {"release_label", "runtime_version", "guilds", "commands"} <= set(data),
+            )
+
+        async with http.get(f"{V1}/invite", allow_redirects=False) as r:
+            query = parse_qs(urlparse(r.headers.get("Location", "")).query)
+            await check(
+                "invite uses the least-privilege permission set",
+                r.status == 302
+                and query.get("permissions") == [DEFAULT_INVITE_PERMISSIONS]
+                and query.get("permissions") != ["8"],
             )
 
         # ── error envelope carries a machine-readable code (fix #2) ───

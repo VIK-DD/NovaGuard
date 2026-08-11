@@ -10,7 +10,7 @@ const communityChannels = CHANNEL_REFERENCE.filter((c) => c.group === "community
 const steps = [
   {
     title: "Invite NovaGuard",
-    body: "Add the bot to your server with the button below. No setup happens yet — this only gets it in the door.",
+    body: "Add the bot to your server with the button below. NovaGuard requests only the permissions its moderation, ticket, role, text and voice features use — never Administrator.",
   },
   {
     title: "Open /setup in Discord",
@@ -36,6 +36,9 @@ const steps = [
     </h1>
     <p class="mt-4 max-w-md text-ink-muted">
       Every channel below is optional — NovaGuard runs with none, some, or all of them set.
+    </p>
+    <p class="mt-3 max-w-xl text-sm leading-relaxed text-ink-faint">
+      Discord role hierarchy still applies: place NovaGuard above every role it should manage or moderate.
     </p>
 
     <div data-setup-strip class="mt-8"></div>
