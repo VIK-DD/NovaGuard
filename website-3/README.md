@@ -48,6 +48,15 @@ npx wrangler secret put AUTH_PASSWORD
 npm run deploy
 ```
 
+Production deploys persist a 25% sample of Worker logs and a 5% sample of
+automatic traces. Upstream/API failures are emitted as structured JSON without
+request bodies, cookies, passwords, preview codes or secret environment values.
+Inspect them from Cloudflare Workers → NovaGuard → Observability, or locally:
+
+```bash
+npx wrangler tail novaguard --status error
+```
+
 Protected routes can be temporarily replaced with the update page by setting the
 Worker variable `MAINTENANCE_MODE`.
 

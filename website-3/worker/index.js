@@ -32,6 +32,20 @@ const STATUS_EDGE_CACHE_HEADERS = {
   "X-Content-Type-Options": "nosniff",
 };
 
+function errorMessage(error) {
+  const message = error instanceof Error ? error.message : "Unknown error";
+  return message.replace(/\s+/g, " ").slice(0, 240);
+}
+
+function logWorkerEvent(level, event, details = {}) {
+  // Never pass request bodies, cookies, full URLs or env values here. The
+  // password and preview-code endpoints deliberately log outcomes only.
+  const payload = JSON.stringify({ event, ...details });
+  if (level === "error") console.error(payload);
+  else if (level === "warn") console.warn(payload);
+  else console.log(payload);
+}
+
 function base64UrlEncode(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -227,6 +241,10 @@ async function handleStatusSnapshot(request, env, ctx) {
     }
     return Response.json(snapshot, { headers: STATUS_CLIENT_HEADERS });
   } catch (error) {
+    logWorkerEvent("warn", "status_snapshot_upstream_failed", {
+      error: errorMessage(error),
+      fallback: lastGoodStatusSnapshot ? "stale_snapshot" : "none",
+    });
     if (lastGoodStatusSnapshot) {
       return Response.json(
         {
@@ -282,7 +300,10 @@ async function handleUpdatesFeed(request, env, ctx) {
       ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
     }
     return response;
-  } catch {
+  } catch (error) {
+    logWorkerEvent("warn", "updates_feed_upstream_failed", {
+      error: errorMessage(error),
+    });
     // The page ships its own archive, so an unreachable bot costs only the
     // newest entries — never the page itself.
     return Response.json(
@@ -324,6 +345,7 @@ async function timingSafeEqual(a, b) {
 
 async function handleLogin(request, env) {
   if (!env.AUTH_PASSWORD) {
+    logWorkerEvent("error", "auth_password_missing");
     return new Response("AUTH_PASSWORD is not configured.", { status: 500 });
   }
 
@@ -336,6 +358,7 @@ async function handleLogin(request, env) {
   const next = safeNext(String(form.get("next") || "/dashboard/"));
 
   if (!(await timingSafeEqual(password, env.AUTH_PASSWORD))) {
+    logWorkerEvent("warn", "auth_login_denied");
     const url = new URL("/login/", request.url);
     url.searchParams.set("next", next);
     url.searchParams.set("error", "1");
@@ -410,7 +433,13 @@ async function handlePreview(request, env) {
       signal: AbortSignal.timeout(MAINTENANCE_TIMEOUT_MS),
     });
     if (upstream.ok) verified = await upstream.json();
+    else if (upstream.status >= 500) {
+      logWorkerEvent("warn", "preview_upstream_rejected", { status: upstream.status });
+    }
   } catch (error) {
+    logWorkerEvent("warn", "preview_upstream_failed", {
+      error: errorMessage(error),
+    });
     // Unreachable bot means no bypass. Failing closed on the door is the
     // opposite of failing closed on the site, and both are the safe direction.
     verified = null;
@@ -500,6 +529,10 @@ async function readMaintenance(request, env, ctx) {
     }
     return state;
   } catch (error) {
+    logWorkerEvent("warn", "maintenance_health_unreachable", {
+      error: errorMessage(error),
+      fallback: known ? "last_known_state" : "fail_closed",
+    });
     // A restart lasts seconds; hold the last real answer through it. That answer
     // is deliberately not overwritten here, so recovery is picked up on the very
     // next request instead of after another freshness window.
@@ -545,68 +578,92 @@ async function serveMaintenancePage(request, env, state) {
   return new Response(body, { status: 503, headers });
 }
 
+async function handleRequest(request, env, ctx) {
+  const url = new URL(request.url);
+
+  if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
+  if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
+  if (url.pathname === "/api/auth/login") return handleLogin(request, env);
+  if (url.pathname === "/api/auth/logout") return handleLogout(request);
+  if (url.pathname === "/api/preview") return handlePreview(request, env);
+  // Assets answer first: the maintenance page is built from them, so gating
+  // them would leave it unable to render itself.
+  if (isAlwaysOpenPath(url.pathname)) return serveAsset(request, env);
+
+  // `/maintenance` toggles the whole site, before the password gate, so a
+  // visitor with no session sees the notice rather than a login form for a
+  // site that is closed anyway.
+  const maintenance = await readMaintenance(request, env, ctx);
+  let previewHolder = false;
+  if (maintenance.enabled && !maintenance.unreachable) {
+    previewHolder = await isValidPreview(
+      readCookie(request, PREVIEW_COOKIE),
+      env.AUTH_PASSWORD,
+      maintenance.since,
+    );
+    if (!previewHolder) return serveMaintenancePage(request, env, maintenance);
+  }
+  if (isMaintenanceEnabled(env)) {
+    return serveMaintenancePage(request, env, { message: "" });
+  }
+
+  if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
+  if (isPublicPath(url.pathname)) return serveAsset(request, env);
+
+  // A preview code stands in for the soft-launch password. The alternative
+  // pushes the operator to hand out that password to show someone an update,
+  // and it is fixed and never expires; a preview code is 24 random bytes,
+  // rotates every maintenance window, and dies in twelve hours.
+  const authenticated =
+    previewHolder ||
+    (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
+  if (!authenticated) return Response.redirect(loginUrl(request), 302);
+
+  if (url.pathname === "/maintenance") {
+    return Response.redirect(new URL("/maintenance/", request.url), 308);
+  }
+
+  if (url.pathname.startsWith("/dashboard/")) {
+    // An unreachable API closes only this: the dashboard genuinely cannot
+    // work without it, while the marketing pages never needed the bot at all.
+    // Deliberate maintenance closed everything above; an outage should not.
+    // A preview holder already passed that check, so they are let through.
+    if (maintenance.enabled && !previewHolder) {
+      return serveMaintenancePage(request, env, maintenance);
+    }
+
+    // The dashboard owns its nested routes client-side. Serve its static
+    // shell on direct visits so refreshes at /dashboard/g/:id keep working.
+    if (url.pathname !== "/dashboard/") {
+      return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
+    }
+  }
+
+  return serveAsset(request, env);
+}
+
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
-    if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
-    if (url.pathname === "/api/auth/login") return handleLogin(request, env);
-    if (url.pathname === "/api/auth/logout") return handleLogout(request);
-    if (url.pathname === "/api/preview") return handlePreview(request, env);
-    // Assets answer first: the maintenance page is built from them, so gating
-    // them would leave it unable to render itself.
-    if (isAlwaysOpenPath(url.pathname)) return serveAsset(request, env);
-
-    // `/maintenance` toggles the whole site, before the password gate, so a
-    // visitor with no session sees the notice rather than a login form for a
-    // site that is closed anyway.
-    const maintenance = await readMaintenance(request, env, ctx);
-    let previewHolder = false;
-    if (maintenance.enabled && !maintenance.unreachable) {
-      previewHolder = await isValidPreview(
-        readCookie(request, PREVIEW_COOKIE),
-        env.AUTH_PASSWORD,
-        maintenance.since,
+    try {
+      return await handleRequest(request, env, ctx);
+    } catch (error) {
+      const url = new URL(request.url);
+      logWorkerEvent("error", "worker_request_failed", {
+        method: request.method,
+        path: url.pathname,
+        ray: request.headers.get("cf-ray") || undefined,
+        error: errorMessage(error),
+      });
+      return Response.json(
+        { error: "The website edge is temporarily unavailable.", code: "edge_error" },
+        {
+          status: 500,
+          headers: {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+        },
       );
-      if (!previewHolder) return serveMaintenancePage(request, env, maintenance);
     }
-    if (isMaintenanceEnabled(env)) {
-      return serveMaintenancePage(request, env, { message: "" });
-    }
-
-    if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
-    if (isPublicPath(url.pathname)) return serveAsset(request, env);
-
-    // A preview code stands in for the soft-launch password. The alternative
-    // pushes the operator to hand out that password to show someone an update,
-    // and it is fixed and never expires; a preview code is 24 random bytes,
-    // rotates every maintenance window, and dies in twelve hours.
-    const authenticated =
-      previewHolder ||
-      (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
-    if (!authenticated) return Response.redirect(loginUrl(request), 302);
-
-    if (url.pathname === "/maintenance") {
-      return Response.redirect(new URL("/maintenance/", request.url), 308);
-    }
-
-    if (url.pathname.startsWith("/dashboard/")) {
-      // An unreachable API closes only this: the dashboard genuinely cannot
-      // work without it, while the marketing pages never needed the bot at all.
-      // Deliberate maintenance closed everything above; an outage should not.
-      // A preview holder already passed that check, so they are let through.
-      if (maintenance.enabled && !previewHolder) {
-        return serveMaintenancePage(request, env, maintenance);
-      }
-
-      // The dashboard owns its nested routes client-side. Serve its static
-      // shell on direct visits so refreshes at /dashboard/g/:id keep working.
-      if (url.pathname !== "/dashboard/") {
-        return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
-      }
-    }
-
-    return serveAsset(request, env);
   },
 };

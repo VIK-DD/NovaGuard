@@ -24,6 +24,8 @@ function loginRequest() {
 // the suite would be measuring the network, not the worker. Tests that need a
 // different answer override this with their own vi.stubGlobal.
 beforeEach(() => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubGlobal(
     "fetch",
     vi.fn(async () =>
@@ -35,6 +37,84 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("production observability", () => {
+  it("emits structured upstream failures without secrets", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/updates-feed"),
+      env,
+      { waitUntil() {} },
+    );
+
+    expect(response.status).toBe(502);
+    const call = vi.mocked(console.warn).mock.calls.find(([message]) =>
+      String(message).includes("updates_feed_upstream_failed"),
+    );
+    expect(call).toBeTruthy();
+    expect(JSON.parse(call[0])).toMatchObject({
+      event: "updates_feed_upstream_failed",
+      error: "offline",
+    });
+    expect(call[0]).not.toContain(env.AUTH_PASSWORD);
+  });
+
+  it("turns unexpected edge failures into a safe JSON response", async () => {
+    const brokenEnv = {
+      ...env,
+      ASSETS: {
+        fetch: async () => {
+          throw new Error("asset binding unavailable");
+        },
+      },
+    };
+
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/assets/broken.js", {
+        headers: { "cf-ray": "test-ray" },
+      }),
+      brokenEnv,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(body.code).toBe("edge_error");
+    const event = JSON.parse(vi.mocked(console.error).mock.calls.at(-1)[0]);
+    expect(event).toMatchObject({
+      event: "worker_request_failed",
+      method: "GET",
+      path: "/assets/broken.js",
+      ray: "test-ray",
+    });
+    expect(JSON.stringify(event)).not.toContain(env.AUTH_PASSWORD);
+  });
+
+  it("never logs a rejected password value", async () => {
+    const attemptedPassword = "wrong-super-secret-value";
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ password: attemptedPassword, next: "/dashboard/" }),
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(303);
+    const serializedCalls = JSON.stringify(vi.mocked(console.warn).mock.calls);
+    expect(serializedCalls).toContain("auth_login_denied");
+    expect(serializedCalls).not.toContain(attemptedPassword);
+    expect(serializedCalls).not.toContain(env.AUTH_PASSWORD);
+  });
 });
 
 describe("password session", () => {
