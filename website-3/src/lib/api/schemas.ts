@@ -107,7 +107,8 @@ export const AuditSchema = z.object({
       username: z.string(),
       user_id: z.string(),
       action: z.string(),
-      changes: z.record(z.unknown()),
+      // Zod 4 wants the key type spelled out; z.record(value) is gone.
+      changes: z.record(z.string(), z.unknown()),
       created_at: z.string(),
     }),
   ),
