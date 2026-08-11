@@ -47,6 +47,11 @@ state stands for two minutes, which makes an ordinary `pm2 restart` invisible.
 **One message, two surfaces.** The text typed into `/maintenance enable
 message:"…"` becomes both the Discord presence and a line on the website page.
 
+**`/maintenance` moves behind the admin key.** Today it checks owner identity
+only. Now that the command closes a public surface and not just the bot, both
+`enable` and `disable` require an unlocked admin session — the same second
+factor `/admin unlock` already grants for fifteen minutes.
+
 **The page is rethemed after the Coming Soon face** and rewritten standalone.
 
 ## Architecture
@@ -74,8 +79,24 @@ like `db_ping` beside it. Nothing blocking runs on the event loop.
 this API alive", not "is the site open"; conflating the two would make the status
 widget report an outage during a routine update.
 
-No new commands. `/maintenance` is unchanged apart from its confirmation embed
-mentioning that the dashboard closed too.
+No new commands. `/maintenance` keeps its shape; its confirmation embed gains a
+line saying the dashboard closed too.
+
+### 1b. The command moves behind the admin key
+
+`ensure_maintenance_manager` in `cogs/system.py` is replaced by the existing
+`require_admin(interaction, self.bot, action=…)` from `cogs/admin.py`, which
+already sends its own refusal embed and records denied attempts in the audit
+trail. `enable` records `maintenance.enable`, `disable` records
+`maintenance.disable`. The old owner-identity helper is deleted rather than left
+beside its replacement.
+
+There is no circular lockout. `bot.py:101` lets the owner past the maintenance
+block regardless, so `/admin unlock` still runs while maintenance is on.
+
+Two escape hatches exist for a lost key, and both are documented in `SETUP.md`:
+`python tools/admin_key.py --rotate` issues a new key from the VPS, and deleting
+`data/maintenance.json` clears the state outright.
 
 ### 2. The worker reads it and gates the dashboard
 
@@ -189,6 +210,14 @@ with the `sys.path` insert every other test file has):
 - `/health` reports `enabled: true` with the message when maintenance is on
 - `/health` reports `enabled: false` and **no** message when off
 - `/health` still returns 200 while maintenance is on
+
+**Admin gate** (extending `tests/test_admin_gate.py`, which already covers this
+pattern for other commands):
+
+- `/maintenance enable` refused when the admin session is locked
+- `/maintenance disable` refused when the admin session is locked
+- both proceed once the session is unlocked
+- a refusal is written to the audit trail
 
 ## Out of scope
 
