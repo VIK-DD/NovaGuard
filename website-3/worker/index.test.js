@@ -18,6 +18,20 @@ function loginRequest() {
   });
 }
 
+// Every /dashboard/* request asks the bot whether maintenance is on, so without
+// a default stub these tests reach for the real api.novaguard.fun. That passes
+// on a developer machine and fails closed in CI, where there is no network —
+// the suite would be measuring the network, not the worker. Tests that need a
+// different answer override this with their own vi.stubGlobal.
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      Response.json({ ok: true, bot_ready: true, db_ok: true, maintenance: { enabled: false } }),
+    ),
+  );
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
