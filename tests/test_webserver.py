@@ -251,6 +251,39 @@ async def main():
                 verify_preview_code(code) is None
                 and load_maintenance_state().get("preview_hash") is None,
             )
+
+            # ── the verify route ──────────────────────────────────────
+            live = save_maintenance_state(True, "Preview route", updated_by="test-suite")
+            live_code = live["preview_code"]
+
+            async with http.get(f"{V1}/health") as r:
+                data = await r.json()
+                await check(
+                    "health publishes when maintenance began, and no secrets",
+                    data["maintenance"]["since"] == live["updated_at"]
+                    and "preview_hash" not in data["maintenance"]
+                    and "preview_salt" not in data["maintenance"]
+                    and "preview_code" not in data["maintenance"],
+                )
+
+            async with http.post(f"{V1}/maintenance/preview", json={"code": live_code}) as r:
+                data = await r.json()
+                await check(
+                    "the right code is accepted",
+                    r.status == 200 and data["ok"] is True and data["since"] == live["updated_at"],
+                )
+
+            async with http.post(f"{V1}/maintenance/preview", json={"code": "ng_preview_wrong"}) as r:
+                wrong_status, wrong_body = r.status, await r.text()
+            await check("a wrong code is refused", wrong_status == 401)
+
+            save_maintenance_state(False, updated_by="test-suite")
+            async with http.post(f"{V1}/maintenance/preview", json={"code": live_code}) as r:
+                off_status, off_body = r.status, await r.text()
+            await check(
+                "a code sent while maintenance is off is indistinguishable from a wrong one",
+                off_status == wrong_status and off_body == wrong_body,
+            )
         finally:
             save_maintenance_state(
                 original_maintenance["enabled"],

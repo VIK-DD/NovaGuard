@@ -50,7 +50,11 @@ from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import connect, load_levels_data, load_voice_store
 from .levels_settings import resolve_levels, validate_levels
-from .maintenance import DEFAULT_MAINTENANCE_MESSAGE, load_maintenance_state
+from .maintenance import (
+    DEFAULT_MAINTENANCE_MESSAGE,
+    load_maintenance_state,
+    verify_preview_code,
+)
 from .release_versions import current_project_release
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
@@ -458,6 +462,7 @@ class WebServer:
             ("GET", "/health", self.handle_health),
             ("GET", "/stats", self.handle_stats),
             ("GET", "/updates", self.handle_updates),
+            ("POST", "/maintenance/preview", self.handle_maintenance_preview),
             ("GET", "/invite", self.handle_invite),
             ("GET", "/invite/complete", self.handle_invite_complete),
             ("GET", "/auth/login", self.handle_login),
@@ -945,6 +950,10 @@ class WebServer:
         maintenance = {"enabled": bool(state.get("enabled"))}
         if maintenance["enabled"]:
             maintenance["message"] = state.get("message") or DEFAULT_MAINTENANCE_MESSAGE
+            # Which activation this is. Not a secret — it only says when the
+            # window opened — and the website binds preview cookies to it, so a
+            # code from a previous window stops working on its own.
+            maintenance["since"] = state.get("updated_at")
         payload = {
             # Maintenance is deliberately absent from `ok`: this endpoint
             # answers "is the API alive", not "is the site open". Folding them
@@ -956,6 +965,26 @@ class WebServer:
             "maintenance": maintenance,
         }
         return web.json_response(payload, status=200 if db_ok else 503)
+
+    async def handle_maintenance_preview(self, request):
+        # "auth" is 10 requests per 60 s, keyed on the visitor's real address —
+        # _client_ip reads CF-Connecting-IP, so the proxy in front of the site
+        # does not merge every visitor into one bucket.
+        self._rate_limit(request, "auth")
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+            body = {}
+        code = body.get("code") if isinstance(body, dict) else None
+        since = await asyncio.to_thread(
+            verify_preview_code, code if isinstance(code, str) else ""
+        )
+        if not since:
+            # One answer for a wrong code, a missing one, and a valid one sent
+            # while maintenance is off. Nothing here tells a guesser whether a
+            # code currently exists, let alone whether they are close to it.
+            raise ApiError(401, "That preview code is not valid.", code="invalid_preview_code")
+        return web.json_response({"ok": True, "since": since})
 
     async def handle_invite(self, request):
         if not CLIENT_ID:
