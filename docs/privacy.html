@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NovaGuard Privacy Policy</title>
-  <meta name="description" content="Privacy Policy for the NovaGuard Discord bot.">
+  <meta name="description" content="Privacy and cookie information for the NovaGuard Discord bot and dashboard.">
   <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
@@ -12,14 +12,10 @@
   <main class="mx-auto max-w-4xl px-4 py-8">
     <div class="navbar mb-6 rounded-box border border-base-300 bg-base-100 shadow-sm">
       <div class="flex-1 gap-3 px-2">
-        <img
-          src="assets/novaguard-shield.png"
-          alt="NovaGuard shield"
-          class="h-12 w-12 rounded-2xl border border-base-300 bg-base-200 object-cover p-1"
-        >
+        <img src="assets/novaguard-shield.png" alt="NovaGuard shield" class="h-12 w-12 rounded-2xl border border-base-300 bg-base-200 object-cover p-1">
         <div>
           <p class="font-semibold">NovaGuard</p>
-          <p class="text-sm text-base-content/70">Privacy Policy</p>
+          <p class="text-sm text-base-content/70">Privacy &amp; cookies</p>
         </div>
       </div>
       <div class="flex gap-2">
@@ -31,80 +27,95 @@
     <div class="card border border-base-300 bg-base-100 shadow-xl">
       <div class="card-body">
         <div class="space-y-2">
-          <div class="badge badge-outline">Effective July 9, 2026</div>
+          <div class="badge badge-outline">Effective August 11, 2026</div>
           <h1 class="text-3xl font-bold">Privacy Policy</h1>
           <p class="text-base-content/70">
-            This Privacy Policy explains what information NovaGuard may process, why it is used and how it is handled.
-            NovaGuard is a self-hosted Discord bot developed by VIK & CloudMedia.
+            This policy covers the NovaGuard Discord bot, dashboard and website operated by VIK &amp; CloudMedia.
+            NovaGuard has no advertising, does not sell personal data and currently uses no third-party analytics.
           </p>
         </div>
 
         <div class="divider"></div>
 
-        <div class="space-y-6 leading-7">
+        <div class="space-y-7 leading-7">
           <section>
-            <h2 class="mb-2 text-xl font-semibold">1. Information We May Process</h2>
+            <h2 class="mb-2 text-xl font-semibold">1. Information NovaGuard Processes</h2>
             <p class="text-base-content/80">
-              NovaGuard may process Discord user IDs, guild IDs, channel IDs, role IDs, server configuration data,
-              moderation or feature state, and other metadata required to operate the bot's features.
+              NovaGuard processes Discord user, server, channel and role IDs; dashboard profile and server-access data;
+              server configuration; feature state such as XP, voice minutes, economy balances, warnings, reminders and
+              giveaway entries; and security records for dashboard actions.
             </p>
           </section>
 
           <section>
-            <h2 class="mb-2 text-xl font-semibold">2. Purpose of Processing</h2>
+            <h2 class="mb-2 text-xl font-semibold">2. Message Content</h2>
             <p class="text-base-content/80">
-              Data is used only to provide requested bot features, preserve configuration, keep feature state,
-              generate embeds, support moderation tools and maintain service stability.
+              Messages are inspected in real time for AutoMod and meaningful-message XP. If a server enables Discord
+              logging, deleted or edited message excerpts may be posted to its selected log channel. NovaGuard does not
+              maintain its own archive of ordinary message history. A question submitted with <code>/ask</code> is sent
+              to Anthropic when the optional AI feature is enabled.
             </p>
           </section>
 
           <section>
-            <h2 class="mb-2 text-xl font-semibold">3. Storage</h2>
+            <h2 class="mb-2 text-xl font-semibold">3. Storage and Retention</h2>
             <p class="text-base-content/80">
-              NovaGuard stores selected bot data in self-hosted local storage, including SQLite databases and JSON files,
-              depending on the active feature.
+              Operational data is self-hosted in SQLite and JSON storage. OAuth state expires after 10 minutes,
+              dashboard sessions after 7 days, and dashboard audit events after 90 days. Server configuration and
+              feature state remain while needed for the selected features or until deletion is requested. The newest
+              10 local full backups are retained; default off-site windows are 90 days for full backups and 60 days for
+              per-server exports.
             </p>
           </section>
 
           <section>
-            <h2 class="mb-2 text-xl font-semibold">4. Third-Party Services</h2>
+            <h2 class="mb-2 text-xl font-semibold">4. Essential Cookies and Browser Storage</h2>
             <p class="text-base-content/80">
-              NovaGuard may use third-party services such as Discord, GitHub and optional AI providers.
-              When those integrations are enabled, relevant data may pass through those services under their own policies.
+              The site uses only first-party cookies needed for security or a requested access flow:
+              <code>ng_state</code> (10 minutes), <code>ng_session</code> (7 days or logout),
+              <code>ng_gate</code> (2 hours) and <code>ng_preview</code> (up to 12 hours).
+              No advertising or analytics cookie is set, so there is no non-essential cookie choice to accept.
+              Browser storage remembers the selected theme and a public status snapshot; it is not used to identify
+              someone across websites.
             </p>
           </section>
 
           <section>
-            <h2 class="mb-2 text-xl font-semibold">5. Data Sharing</h2>
+            <h2 class="mb-2 text-xl font-semibold">5. Third-Party Services</h2>
             <p class="text-base-content/80">
-              NovaGuard does not sell personal data. Information is only shared when required for core bot functionality
-              or optional integrations explicitly used by the operator.
+              Discord hosts communities and provides OAuth data; Cloudflare hosts and protects the website; GitHub
+              provides repository data when enabled; and Anthropic processes <code>/ask</code> text when AI is enabled.
+              Each provider handles the information it receives under its own privacy policy. NovaGuard shares data
+              only to operate the service or an optional integration chosen by the server operator.
             </p>
           </section>
 
           <section>
-            <h2 class="mb-2 text-xl font-semibold">6. Retention</h2>
+            <h2 class="mb-2 text-xl font-semibold">6. Access, Export and Deletion</h2>
             <p class="text-base-content/80">
-              Data may be retained as long as needed for bot operation, server continuity, backups and configuration persistence,
-              unless manually removed by the operator.
+              A server administrator can run <code>/config export</code> for that server's settings, levels, economy and
+              voice records. Logging out revokes the active Discord OAuth token and removes the dashboard session.
+              Depending on local law, people may also request access, correction, deletion, restriction or objection.
             </p>
           </section>
 
           <section>
             <h2 class="mb-2 text-xl font-semibold">7. Security</h2>
             <p class="text-base-content/80">
-              Reasonable efforts are made to protect stored data, but no method of transmission or storage is completely secure.
-              Server owners should use safe secrets handling and secure hosting practices.
+              Dashboard OAuth tokens are encrypted at rest, session identifiers are hashed in the database, changes
+              are access-controlled and audited, and production traffic uses HTTPS. No transmission or storage method
+              is completely secure.
             </p>
           </section>
 
           <section>
             <h2 class="mb-2 text-xl font-semibold">8. Contact</h2>
             <p class="text-base-content/80">
-              For privacy-related questions, contact the operator through
+              Start a privacy request through
               <a class="link link-primary" href="https://github.com/VIK-DD/NovaGuard">the NovaGuard repository</a>
-              or
-              <a class="link link-primary" href="https://github.com/VIK-DD">the NovaGuard GitHub profile</a>.
+              or <a class="link link-primary" href="https://github.com/VIK-DD">the operator's GitHub profile</a>.
+              Do not post personal data in a public issue; arrange a private channel first, and never share passwords
+              or tokens. Identity or server authority may be verified before a request is completed.
             </p>
           </section>
         </div>

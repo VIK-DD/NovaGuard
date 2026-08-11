@@ -1,62 +1,205 @@
 ---
 import Base from "../layouts/Base.astro";
-import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
-
-// Wording ported from docs/privacy.html — keep the two in sync.
-const sections = [
-  {
-    h: "1. Information We May Process",
-    p: "NovaGuard may process Discord user IDs, guild IDs, channel IDs, role IDs, server configuration data, moderation or feature state, and other metadata required to operate the bot's features.",
-  },
-  {
-    h: "2. Purpose of Processing",
-    p: "Data is used only to provide requested bot features, preserve configuration, keep feature state, generate embeds, support moderation tools and maintain service stability.",
-  },
-  {
-    h: "3. Storage",
-    p: "NovaGuard stores selected bot data in self-hosted local storage, including SQLite databases and JSON files, depending on the active feature.",
-  },
-  {
-    h: "4. Third-Party Services",
-    p: "NovaGuard may use third-party services such as Discord, GitHub and optional AI providers. When those integrations are enabled, relevant data may pass through those services under their own policies.",
-  },
-  {
-    h: "5. Data Sharing",
-    p: "NovaGuard does not sell personal data. Information is only shared when required for core bot functionality or optional integrations explicitly used by the operator.",
-  },
-  {
-    h: "6. Retention",
-    p: "Data may be retained as long as needed for bot operation, server continuity, backups and configuration persistence, unless manually removed by the operator.",
-  },
-  {
-    h: "7. Security",
-    p: "Reasonable efforts are made to protect stored data, but no method of transmission or storage is completely secure. Server owners should use safe secrets handling and secure hosting practices.",
-  },
-  {
-    h: "8. Contact",
-    p: "For privacy-related questions, contact the NovaGuard team through the NovaGuard repository or the NovaGuard GitHub profile.",
-  },
-];
+import Nav from "../components/Nav.astro";
+import {
+  BROWSER_STORAGE,
+  DATA_CATEGORIES,
+  ESSENTIAL_COOKIES,
+  PRIVACY_EFFECTIVE_DATE,
+  RETENTION_ROWS,
+  THIRD_PARTIES,
+} from "../data/privacy";
 ---
 
-<Base title="Privacy Policy — NovaGuard">
+<Base
+  title="Privacy Policy — NovaGuard"
+  description="What NovaGuard processes, why it is needed, how long it is kept, and the essential storage used by the website."
+>
   <Nav />
-  <main class="mx-auto max-w-2xl px-5 py-12 sm:px-6 sm:py-20">
-    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Effective July 9, 2026</p>
-    <h1 class="font-display mt-4 text-3xl sm:text-5xl">Privacy Policy</h1>
-    <p class="mt-6 leading-relaxed text-ink-muted">
-      This Privacy Policy explains what information NovaGuard may process, why it is used and
-      how it is handled. NovaGuard is a self-hosted Discord bot developed by VIK & CloudMedia.
+  <main class="mx-auto max-w-4xl px-5 py-12 sm:px-6 sm:py-20">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">
+      Effective {PRIVACY_EFFECTIVE_DATE}
     </p>
-    {
-      sections.map((s) => (
-        <section class="mt-10 border-t border-line pt-6">
-          <h2 class="font-display text-2xl">{s.h}</h2>
-          <p class="mt-3 leading-relaxed text-ink-muted">{s.p}</p>
-        </section>
-      ))
-    }
+    <h1 class="font-display mt-4 text-3xl sm:text-5xl">Privacy Policy</h1>
+    <p class="mt-6 max-w-2xl leading-relaxed text-ink-muted">
+      This policy covers the NovaGuard Discord bot, dashboard and website operated by VIK &amp;
+      CloudMedia. It explains what data is processed, why it is needed, where it goes and how long
+      it remains.
+    </p>
+
+    <aside class="mt-8 rounded-lg border border-line bg-card p-5" aria-label="Privacy summary">
+      <p class="font-display text-lg font-semibold">The short version</p>
+      <p class="mt-2 leading-relaxed text-ink-muted">
+        NovaGuard has no advertising, does not sell personal data and currently uses no
+        third-party analytics. The website sets only security and sign-in cookies required to
+        provide the requested service, so there is no non-essential cookie choice to accept.
+      </p>
+    </aside>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">01 · Data inventory</p>
+      <h2 class="font-display mt-3 text-2xl">Information NovaGuard processes</h2>
+      <div class="mt-6 overflow-x-auto rounded-lg border border-line">
+        <table class="w-full min-w-[42rem] border-collapse text-left text-sm">
+          <thead class="bg-bg-subtle text-ink">
+            <tr>
+              <th class="px-4 py-3 font-medium">Category</th>
+              <th class="px-4 py-3 font-medium">What it includes</th>
+              <th class="px-4 py-3 font-medium">Why it is used</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line">
+            {
+              DATA_CATEGORIES.map((row) => (
+                <tr class="align-top">
+                  <th class="px-4 py-4 font-medium text-ink">{row.name}</th>
+                  <td class="px-4 py-4 leading-relaxed text-ink-muted">{row.data}</td>
+                  <td class="px-4 py-4 leading-relaxed text-ink-muted">{row.use}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">02 · Cookies</p>
+      <h2 class="font-display mt-3 text-2xl">Essential cookies only</h2>
+      <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
+        These cookies are first-party, are not used for advertising or cross-site tracking, and
+        are sent with <code>HttpOnly</code> and <code>SameSite</code> protections. Production cookies
+        are sent over HTTPS. Blocking them prevents the related sign-in, access or preview flow
+        from working.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-lg border border-line">
+        <table class="w-full min-w-[42rem] border-collapse text-left text-sm">
+          <thead class="bg-bg-subtle text-ink">
+            <tr>
+              <th class="px-4 py-3 font-medium">Cookie</th>
+              <th class="px-4 py-3 font-medium">Used for</th>
+              <th class="px-4 py-3 font-medium">Purpose</th>
+              <th class="px-4 py-3 font-medium">Lifetime</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line">
+            {
+              ESSENTIAL_COOKIES.map((row) => (
+                <tr class="align-top">
+                  <th class="px-4 py-4 font-mono font-normal text-ink">{row.name}</th>
+                  <td class="px-4 py-4 text-ink-muted">{row.when}</td>
+                  <td class="px-4 py-4 leading-relaxed text-ink-muted">{row.purpose}</td>
+                  <td class="px-4 py-4 text-ink-muted">{row.lifetime}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="font-display mt-9 text-xl">Browser storage</h3>
+      <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
+        The website also stores two small first-party preferences in the browser. Neither contains
+        a Discord identity, and neither is sent with web requests.
+      </p>
+      <dl class="mt-5 divide-y divide-line border-y border-line">
+        {
+          BROWSER_STORAGE.map((row) => (
+            <div class="grid gap-2 py-4 sm:grid-cols-[12rem_1fr] sm:gap-6">
+              <dt>
+                <code class="text-sm text-ink">{row.name}</code>
+                <span class="mt-1 block text-xs text-ink-faint">{row.lifetime}</span>
+              </dt>
+              <dd class="text-sm leading-relaxed text-ink-muted">{row.purpose}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">03 · Retention</p>
+      <h2 class="font-display mt-3 text-2xl">How long data is kept</h2>
+      <dl class="mt-6 divide-y divide-line border-y border-line">
+        {
+          RETENTION_ROWS.map((row) => (
+            <div class="grid gap-1 py-4 sm:grid-cols-[1fr_1.1fr] sm:gap-8">
+              <dt class="text-sm font-medium text-ink">{row.data}</dt>
+              <dd class="text-sm leading-relaxed text-ink-muted">{row.period}</dd>
+            </div>
+          ))
+        }
+      </dl>
+      <p class="mt-4 text-sm leading-relaxed text-ink-muted">
+        A backup can retain an item until that backup reaches its own deletion window. Legal or
+        security obligations may require a limited record to be kept longer.
+      </p>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">04 · Processors</p>
+      <h2 class="font-display mt-3 text-2xl">Third-party services</h2>
+      <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
+        Data is shared only to operate NovaGuard or an optional integration selected by the server
+        operator. Each provider handles the data it receives under its own policy.
+      </p>
+      <ul class="mt-6 divide-y divide-line border-y border-line">
+        {
+          THIRD_PARTIES.map((provider) => (
+            <li class="grid gap-1 py-4 sm:grid-cols-[10rem_1fr] sm:gap-6">
+              <a
+                href={provider.href}
+                target="_blank"
+                rel="noreferrer"
+                class="font-medium text-ink underline decoration-line-strong underline-offset-4 transition-colors hover:text-primary"
+              >
+                {provider.name}
+              </a>
+              <p class="text-sm leading-relaxed text-ink-muted">{provider.detail}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">05 · Your choices</p>
+      <h2 class="font-display mt-3 text-2xl">Access, export and deletion</h2>
+      <div class="mt-4 space-y-4 leading-relaxed text-ink-muted">
+        <p>
+          A server administrator can export that server's stored settings, levels, economy and
+          voice records with <code>/config export</code>. Logging out revokes the active Discord
+          OAuth token and removes the dashboard session.
+        </p>
+        <p>
+          Depending on where you live, you may also have rights to access, correct, delete,
+          restrict or object to processing of personal data. Start a request using the contact
+          details on the
+          <a
+            href="https://github.com/VIK-DD/NovaGuard"
+            target="_blank"
+            rel="noreferrer"
+            class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+          >NovaGuard repository</a
+          >. Do not post personal data in a public issue; arrange a private channel with the
+          operator first. Include the relevant Discord user ID or server ID only after that, and
+          never send a password, bot token or OAuth token. Identity or server authority may need to
+          be verified before a request is completed.
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">06 · Security and changes</p>
+      <h2 class="font-display mt-3 text-2xl">Safeguards</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        Dashboard OAuth tokens are encrypted at rest, session identifiers are hashed in the
+        database, changes are access-controlled and audited, and production traffic uses HTTPS.
+        No transmission or storage method is completely secure. Material policy changes will be
+        published here with a new effective date.
+      </p>
+    </section>
   </main>
   <Footer />
 </Base>
