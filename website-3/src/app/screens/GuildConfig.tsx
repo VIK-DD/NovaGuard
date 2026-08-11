@@ -433,6 +433,13 @@ export default function GuildConfig() {
     },
     [clearErrors],
   );
+  const setAi = useCallback(
+    (patch: Partial<GuildSettings["ai"]>) => {
+      clearErrors(["ai", ...Object.keys(patch).map((key) => `ai.${key}`)]);
+      setDraft((d) => (d ? { ...d, ai: { ...d.ai, ...patch } } : d));
+    },
+    [clearErrors],
+  );
 
   // One stable handler per channel field, built off the stable `set` above —
   // built once, not one fresh arrow function per field per render.
@@ -489,6 +496,18 @@ export default function GuildConfig() {
   const onIgnoredRolesChange = useCallback(
     (v: string[]) => setLevels({ ignored_roles: v }),
     [setLevels],
+  );
+  const onAiEnabledChange = useCallback(
+    (value: boolean) => setAi({ enabled: value }),
+    [setAi],
+  );
+  const onAiChannelChange = useCallback(
+    (value: string | null) => setAi({ channel_id: value }),
+    [setAi],
+  );
+  const onAiQuestionLimitChange = useCallback(
+    (value: number) => setAi({ max_question_chars: value }),
+    [setAi],
   );
 
   const dirty = Boolean(config.data && draft && isDirty(config.data.settings, draft));
@@ -1429,6 +1448,100 @@ export default function GuildConfig() {
                   <p className="mt-3 text-sm text-ink-muted">No completed giveaways yet.</p>
                 )}
               </div>
+            </Section>
+          )}
+
+          {selectedModule?.key === "ai" && (
+            <Section
+              id="ai"
+              icon="hash"
+              kicker="AI assistant"
+              description="Control how /ask uses the optional Claude integration on this server."
+              active={isModuleActive(draft, "ai")}
+            >
+              <div
+                className={`border-t py-5 ${
+                  config.data.ai_status.available ? "border-line" : "border-primary/40"
+                }`}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {config.data.ai_status.available
+                        ? "Claude is available"
+                        : "Claude is not configured on the bot host"}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-ink-muted">
+                      {config.data.ai_status.available
+                        ? `${config.data.ai_status.model} · ${config.data.ai_status.daily_calls}/${config.data.ai_status.daily_cap} calls used today`
+                        : "Add ANTHROPIC_API_KEY to the Oracle .env file and restart PM2. The key is never returned to this dashboard."}
+                    </p>
+                  </div>
+                  <span
+                    className={`w-fit rounded-full border px-3 py-1 text-xs ${
+                      config.data.ai_status.available
+                        ? "border-good/40 text-good"
+                        : "border-primary/40 text-primary"
+                    }`}
+                  >
+                    {config.data.ai_status.available ? "Provider ready" : "Host setup needed"}
+                  </span>
+                </div>
+                {config.data.ai_status.available && (
+                  <p className="mt-3 text-xs text-ink-faint">
+                    Current minute: {config.data.ai_status.minute_calls}/
+                    {config.data.ai_status.minute_cap} requests. Limits are global cost guards for
+                    every server using this bot instance.
+                  </p>
+                )}
+              </div>
+
+              <Toggle label="Enable /ask on this server" checked={draft.ai.enabled} onChange={onAiEnabledChange} />
+
+              <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
+                <ChannelSelect
+                  label="Only allow /ask in"
+                  value={draft.ai.channel_id}
+                  channels={channels}
+                  error={fieldErrors["ai.channel_id"]}
+                  onChange={onAiChannelChange}
+                />
+                <label className="block">
+                  <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
+                    Answer visibility
+                  </span>
+                  <select
+                    value={draft.ai.answer_mode}
+                    onChange={(event) =>
+                      setAi({ answer_mode: event.target.value as "public" | "private" })
+                    }
+                    aria-invalid={fieldErrors["ai.answer_mode"] ? true : undefined}
+                    className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
+                      fieldErrors["ai.answer_mode"] ? "border-primary" : "border-line"
+                    }`}
+                  >
+                    <option value="public">Public in the channel</option>
+                    <option value="private">Private to the person asking</option>
+                  </select>
+                  {fieldErrors["ai.answer_mode"] && (
+                    <p className="mt-1 text-xs text-primary">{fieldErrors["ai.answer_mode"]}</p>
+                  )}
+                </label>
+                <NumberField
+                  label="Maximum question length"
+                  value={draft.ai.max_question_chars}
+                  min={100}
+                  max={2000}
+                  suffix="chars"
+                  error={fieldErrors["ai.max_question_chars"]}
+                  onChange={onAiQuestionLimitChange}
+                />
+              </div>
+              <p className="mt-4 text-xs leading-5 text-ink-muted">
+                Leaving the channel empty allows <code>/ask</code> everywhere. Questions are sent
+                to Anthropic only when a member runs the command; NovaGuard does not store a local
+                question history.
+              </p>
             </Section>
           )}
 

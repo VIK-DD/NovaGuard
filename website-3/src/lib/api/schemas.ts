@@ -63,6 +63,14 @@ export const LevelsSchema = z.object({
 export type Levels = z.infer<typeof LevelsSchema>;
 export type AnnounceMode = Levels["announce"];
 
+export const AiSettingsSchema = z.object({
+  enabled: z.boolean(),
+  answer_mode: z.enum(["public", "private"]),
+  channel_id: z.string().nullable(),
+  max_question_chars: z.number(),
+});
+export type AiSettings = z.infer<typeof AiSettingsSchema>;
+
 export const GuildSettingsSchema = z.object({
   welcome_channel: z.string().nullable(),
   goodbye_channel: z.string().nullable(),
@@ -78,6 +86,7 @@ export const GuildSettingsSchema = z.object({
   ticket_staff_role: z.string().nullable(),
   automod: AutomodSchema,
   levels: LevelsSchema,
+  ai: AiSettingsSchema,
 });
 export type GuildSettings = z.infer<typeof GuildSettingsSchema>;
 
@@ -93,6 +102,14 @@ export const GuildConfigSchema = z.object({
     member_count: z.number(),
   }),
   settings: GuildSettingsSchema,
+  ai_status: z.object({
+    available: z.boolean(),
+    model: z.string().nullable(),
+    minute_calls: z.number(),
+    minute_cap: z.number(),
+    daily_calls: z.number(),
+    daily_cap: z.number(),
+  }),
   tickets: z.object({
     panel_channel_id: z.string().nullable(),
     panel_message_id: z.string().nullable(),
@@ -312,4 +329,5 @@ export type SettingsPatch = Partial<{
   ticket_staff_role: string | null;
   automod: Partial<z.infer<typeof AutomodSchema>>;
   levels: Partial<Levels>;
+  ai: Partial<AiSettings>;
 }>;

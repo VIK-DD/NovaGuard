@@ -52,6 +52,13 @@ export const CONFIG_MODULES = [
     fields: ["giveaway_channel"],
   },
   {
+    key: "ai",
+    label: "AI assistant",
+    description: "Control where /ask works, answer privacy and question limits.",
+    icon: "hash",
+    fields: ["ai"],
+  },
+  {
     key: "updates",
     label: "Updates",
     description: "Send NovaGuard releases and GitHub activity to Discord.",
@@ -98,6 +105,8 @@ export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): b
       return Boolean(settings.role_panel_channel);
     case "giveaways":
       return Boolean(settings.giveaway_channel);
+    case "ai":
+      return settings.ai.enabled;
     case "updates":
       return Boolean(settings.update_channel || settings.github_event_channel);
   }

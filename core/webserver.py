@@ -45,6 +45,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
+from .ai_settings import resolve_ai, validate_ai
 from .automod_settings import resolve_automod, validate_automod
 from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
@@ -1154,6 +1155,7 @@ class WebServer:
 
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         automod = resolve_automod(settings)
+        ai_settings = resolve_ai(settings)
         open_tickets, open_ticket_count, role_panels, all_giveaways = await asyncio.gather(
             asyncio.to_thread(list_ticket_records, guild.id, open_only=True, limit=20),
             asyncio.to_thread(count_open_tickets, guild.id),
@@ -1210,6 +1212,20 @@ class WebServer:
             ticket_ready = role_can_manage_tickets(ticket_channel, ticket_role)
         else:
             ticket_ready = False
+        get_cog = getattr(self.bot, "get_cog", None)
+        ai_cog = get_cog("AI") if callable(get_cog) else None
+        ai_status = (
+            ai_cog.status_payload()
+            if ai_cog is not None
+            else {
+                "available": False,
+                "model": None,
+                "minute_calls": 0,
+                "minute_cap": 30,
+                "daily_calls": 0,
+                "daily_cap": 500,
+            }
+        )
 
         return {
             "guild": {
@@ -1235,7 +1251,9 @@ class WebServer:
                 **{key: (str(settings[key]) if settings.get(key) else None) for key in ROLE_KEYS},
                 "automod": automod,
                 "levels": resolve_levels(settings),
+                "ai": ai_settings,
             },
+            "ai_status": ai_status,
             "tickets": {
                 "panel_channel_id": str(settings.get("ticket_panel_channel"))
                 if settings.get("ticket_panel_channel")
@@ -1419,6 +1437,7 @@ class WebServer:
             {"key": "tickets", "label": "Tickets", "enabled": bool(settings.get("ticket_staff_role"))},
             {"key": "roles", "label": "Role panels", "enabled": bool(settings.get("role_panel_channel"))},
             {"key": "giveaways", "label": "Giveaways", "enabled": bool(settings.get("giveaway_channel"))},
+            {"key": "ai", "label": "AI assistant", "enabled": bool(resolve_ai(settings)["enabled"])},
             {
                 "key": "updates",
                 "label": "Updates",
@@ -2123,6 +2142,14 @@ class WebServer:
                 errors.extend(levels_errors)
             else:
                 changes["levels"] = levels
+
+        if "ai" in body:
+            current = await asyncio.to_thread(get_guild_settings, guild.id)
+            ai, ai_errors = validate_ai(body["ai"], resolve_ai(current), text_channel_ids)
+            if ai_errors:
+                errors.extend(ai_errors)
+            else:
+                changes["ai"] = ai
 
         if errors:
             raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)

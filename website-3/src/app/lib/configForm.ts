@@ -36,6 +36,7 @@ const AUTOMOD_SCALAR_KEYS = [
 ] as const;
 
 const AUTOMOD_LIST_KEYS = ["badwords", "ignored_channels", "ignored_roles"] as const;
+const AI_KEYS = ["enabled", "answer_mode", "channel_id", "max_question_chars"] as const;
 
 /** Mirrors the server's badwords rules: lowercase, trim, dedupe, truncate to 40 chars, ≤100 words. */
 export function normalizeBadwords(raw: string[]): string[] {
@@ -52,7 +53,7 @@ export function normalizeBadwords(raw: string[]): string[] {
 /** Client-side mirror of the cross-field Levels rules enforced by the API. */
 export function validateSettings(draft: GuildSettings): Record<string, string> {
   const errors: Record<string, string> = {};
-  const { automod, levels } = draft;
+  const { ai, automod, levels } = draft;
 
   const wholeNumber = (value: number, min: number, max: number) =>
     Number.isInteger(value) && value >= min && value <= max;
@@ -96,6 +97,9 @@ export function validateSettings(draft: GuildSettings): Record<string, string> {
   }
   if (automod.ignored_roles.length > 50) {
     errors["automod.ignored_roles"] = "You can exempt at most 50 roles.";
+  }
+  if (!wholeNumber(ai.max_question_chars, 100, 2000)) {
+    errors["ai.max_question_chars"] = "Enter a whole number between 100 and 2000.";
   }
 
   return errors;
@@ -149,6 +153,14 @@ export function diffSettings(server: GuildSettings, draft: GuildSettings): Setti
     patch.levels = levels;
   }
 
+  const ai: NonNullable<SettingsPatch["ai"]> = {};
+  for (const key of AI_KEYS) {
+    if (server.ai[key] !== draft.ai[key]) {
+      (ai as Record<string, unknown>)[key] = draft.ai[key];
+    }
+  }
+  if (Object.keys(ai).length > 0) patch.ai = ai;
+
   return patch;
 }
 
@@ -170,10 +182,12 @@ export function mapValidationDetails(details: string[] | undefined): Record<stri
     ...[...LEVELS_SCALAR_KEYS, ...LEVELS_LIST_KEYS]
       .map((k) => `levels.${k}`)
       .sort((a, b) => b.length - a.length),
+    ...AI_KEYS.map((k) => `ai.${k}`).sort((a, b) => b.length - a.length),
     ...ID_KEYS,
     "badwords",
     "automod",
     "levels",
+    "ai",
   ];
   for (const message of details) {
     const key = known.find((k) => message.includes(k));

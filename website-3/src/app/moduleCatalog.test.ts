@@ -40,6 +40,12 @@ const emptySettings: GuildSettings = {
     ignored_channels: [],
     ignored_roles: [],
   },
+  ai: {
+    enabled: false,
+    answer_mode: "public",
+    channel_id: null,
+    max_question_chars: 2000,
+  },
 };
 
 describe("configuration module catalog", () => {
@@ -49,6 +55,7 @@ describe("configuration module catalog", () => {
       [
         "automod",
         "autorole",
+        "ai",
         "error_log_channel",
         "github_event_channel",
         "giveaway_channel",
@@ -77,6 +84,7 @@ describe("configuration module catalog", () => {
       "tickets",
       "roles",
       "giveaways",
+      "ai",
       "updates",
     ]);
   });
@@ -100,9 +108,11 @@ describe("configuration module catalog", () => {
     configured.ticket_staff_role = "789";
     configured.role_panel_channel = "456";
     configured.giveaway_channel = "456";
+    configured.ai.enabled = true;
     configured.github_event_channel = "101";
 
     expect(CONFIG_MODULES.map((module) => isModuleActive(configured, module.key))).toEqual([
+      true,
       true,
       true,
       true,

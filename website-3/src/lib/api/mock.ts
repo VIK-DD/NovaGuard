@@ -96,6 +96,12 @@ type Settings = {
     ignored_channels: string[];
     ignored_roles: string[];
   };
+  ai: {
+    enabled: boolean;
+    answer_mode: "public" | "private";
+    channel_id: string | null;
+    max_question_chars: number;
+  };
 };
 
 /** Mirrors LEVELS_DEFAULTS in core/levels_settings.py. */
@@ -119,6 +125,13 @@ const automodDefaults = (): Settings["automod"] => ({
   spam_messages: 6,
   spam_window_seconds: 6,
   spam_timeout_seconds: 60,
+});
+
+const aiDefaults = (): Settings["ai"] => ({
+  enabled: true,
+  answer_mode: "public",
+  channel_id: null,
+  max_question_chars: 2000,
 });
 
 const settingsByGuild: Record<string, Settings> = {
@@ -150,6 +163,7 @@ const settingsByGuild: Record<string, Settings> = {
       ignored_channels: ["c7"],
       ignored_roles: ["r6"],
     },
+    ai: { ...aiDefaults(), channel_id: "c4", max_question_chars: 1200 },
   },
   "1002": {
     welcome_channel: "c4",
@@ -166,6 +180,7 @@ const settingsByGuild: Record<string, Settings> = {
     ticket_staff_role: null,
     automod: { ...automodDefaults(), invites: false },
     levels: levelsDefaults(),
+    ai: { ...aiDefaults(), answer_mode: "private" },
   },
   "1003": {
     welcome_channel: null,
@@ -182,6 +197,7 @@ const settingsByGuild: Record<string, Settings> = {
     ticket_staff_role: null,
     automod: { ...automodDefaults(), spam: false, badwords: ["spoiler"] },
     levels: { ...levelsDefaults(), enabled: false, announce: "off" },
+    ai: { ...aiDefaults(), enabled: false },
   },
 };
 
@@ -312,6 +328,14 @@ function configPayload(id: string): Json | null {
     github_watch_configured: false,
     guild: { id, name: meta.name, icon: null, member_count: meta.member_count },
     settings,
+    ai_status: {
+      available: true,
+      model: "claude-opus-4-8",
+      minute_calls: 4,
+      minute_cap: 30,
+      daily_calls: 83,
+      daily_cap: 500,
+    },
     tickets: {
       panel_channel_id: settings.ticket_panel_channel,
       panel_message_id: ticketPanelMessageByGuild[id] ?? null,
@@ -394,6 +418,7 @@ function dashboardPayload(id: string): Json | null {
       { key: "tickets", label: "Tickets", enabled: Boolean(settings.ticket_staff_role) },
       { key: "roles", label: "Role panels", enabled: Boolean(settings.role_panel_channel) },
       { key: "giveaways", label: "Giveaways", enabled: Boolean(settings.giveaway_channel) },
+      { key: "ai", label: "AI assistant", enabled: settings.ai.enabled },
       {
         key: "updates",
         label: "Updates",
@@ -478,19 +503,22 @@ function applyPatch(
   patch: Partial<Settings> & {
     automod?: Partial<Settings["automod"]>;
     levels?: Partial<Settings["levels"]>;
+    ai?: Partial<Settings["ai"]>;
   },
 ) {
   const s = settingsByGuild[id];
   if (!s) return;
-  const { automod, levels, ...rest } = patch;
+  const { automod, levels, ai, ...rest } = patch;
   Object.assign(s, rest);
   if (automod) s.automod = { ...s.automod, ...automod };
   if (levels) s.levels = { ...s.levels, ...levels };
+  if (ai) s.ai = { ...s.ai, ...ai };
 
   const flat: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rest)) flat[k] = v;
   if (automod) for (const [k, v] of Object.entries(automod)) flat[`automod.${k}`] = v;
   if (levels) for (const [k, v] of Object.entries(levels)) flat[`levels.${k}`] = v;
+  if (ai) for (const [k, v] of Object.entries(ai)) flat[`ai.${k}`] = v;
 
   (auditByGuild[id] ??= []).unshift({
     id: Math.max(0, ...(auditByGuild[id] ?? []).map((entry) => entry.id)) + 1,

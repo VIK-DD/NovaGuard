@@ -41,6 +41,12 @@ const base: GuildSettings = {
     ignored_channels: ["400"],
     ignored_roles: [],
   },
+  ai: {
+    enabled: true,
+    answer_mode: "public",
+    channel_id: null,
+    max_question_chars: 2000,
+  },
 };
 
 const clone = (): GuildSettings => structuredClone(base);
@@ -149,6 +155,12 @@ describe("diffSettings", () => {
       automod: { spam_messages: 8, ignored_roles: ["900"] },
     });
   });
+
+  it("sends only the changed AI setting", () => {
+    const draft = clone();
+    draft.ai.answer_mode = "private";
+    expect(diffSettings(base, draft)).toEqual({ ai: { answer_mode: "private" } });
+  });
 });
 
 describe("isDirty", () => {
@@ -219,6 +231,12 @@ describe("validateSettings", () => {
     expect(errors).toHaveProperty("automod.spam_window_seconds");
     expect(errors).toHaveProperty("automod.spam_timeout_seconds");
     expect(errors).toHaveProperty("automod.ignored_roles");
+  });
+
+  it("validates the per-server AI question limit", () => {
+    const draft = clone();
+    draft.ai.max_question_chars = 99;
+    expect(validateSettings(draft)).toHaveProperty("ai.max_question_chars");
   });
 });
 

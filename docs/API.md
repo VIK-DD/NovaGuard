@@ -149,7 +149,15 @@ same value on every guild this bot serves, derived from the bot's
       "enabled": true, "announce": "dm|channel|off", "announce_channel": "…|null",
       "xp_min": 5, "xp_max": 10, "cooldown": 120,
       "ignored_channels": ["…"], "ignored_roles": ["…"]
+    },
+    "ai": {
+      "enabled": true, "answer_mode": "public|private",
+      "channel_id": "…|null", "max_question_chars": 2000
     }
+  },
+  "ai_status": {
+    "available": true, "model": "claude-…", "minute_calls": 4,
+    "minute_cap": 30, "daily_calls": 83, "daily_cap": 500
   },
   "tickets": {
     "panel_channel_id": "…|null", "panel_message_id": "…|null",
@@ -202,6 +210,11 @@ only the keys present are changed. Returns the same payload as GET on success.
     guild, duplicates dropped. Messages there earn no XP and are not counted.
   - The XP curve and level cap are **not** configurable: a member's level is
     derived from total XP, so changing them would move everyone at once.
+- `ai` is validated by `core/ai_settings.validate_ai`, the same settings read
+  by `/ask`: `enabled` is boolean, `answer_mode` is `public` or `private`,
+  `channel_id` is null or a text channel in this guild, and
+  `max_question_chars` is an integer from 100 to 2000. `ai_status` exposes
+  availability and safe usage counts, never `ANTHROPIC_API_KEY`.
 
 ```json
 { "welcome_channel": "123", "autorole": "456",
