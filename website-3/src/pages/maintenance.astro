@@ -3,6 +3,12 @@
 // renders precisely when something else is broken, so every dependency it drops
 // is one less way for it to fail. The look is the Coming Soon face — same
 // palette, type scale and motion — so the two read as one product.
+//
+// Fonts are self-hosted rather than fetched from Google. Loading them remotely
+// sends every visitor's IP to a third party before they can consent to
+// anything, and this page is shown to people who never chose to be here.
+import manrope from "@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2";
+import dmMono from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2";
 ---
 
 <!doctype html>
@@ -15,12 +21,8 @@
     <meta name="description" content="The NovaGuard dashboard is briefly closed for maintenance." />
     <meta name="robots" content="noindex" />
     <link rel="icon" type="image/png" href="/assets/novaguard-icon-96.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;800&display=swap"
-    />
+    <link rel="preload" href={manrope} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={dmMono} as="font" type="font/woff2" crossorigin />
     <script is:inline>
       // Pre-paint, so the page never flashes the wrong theme. Coming Soon stores
       // its choice under a different key than the rest of the site; read both so
@@ -37,6 +39,30 @@
         document.documentElement.dataset.theme = theme;
       })();
     </script>
+    <style
+      is:inline
+      set:html={`
+        /* Written out rather than @import-ed from fontsource: that package's
+           CSS carries relative url(./files/…) paths, which Astro does not
+           rewrite from inside a page, so the fonts 404 and the page silently
+           falls back to system faces. These point at the hashed files that
+           actually ship. */
+        @font-face {
+          font-family: "Manrope Variable";
+          font-style: normal;
+          font-display: swap;
+          font-weight: 200 800;
+          src: url(${manrope}) format("woff2");
+        }
+        @font-face {
+          font-family: "DM Mono";
+          font-style: normal;
+          font-display: swap;
+          font-weight: 400;
+          src: url(${dmMono}) format("woff2");
+        }
+      `}
+    />
     <style is:global>
       :root {
         color-scheme: dark;
@@ -65,7 +91,7 @@
         margin: 0;
         background: var(--background);
         color: var(--foreground);
-        font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+        font-family: "Manrope Variable", Manrope, ui-sans-serif, system-ui, sans-serif;
         transition:
           background-color 0.18s ease,
           color 0.18s ease;

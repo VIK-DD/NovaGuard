@@ -1,7 +1,10 @@
 ---
 // Reachable while the site is closed, and linked from nowhere: a door nobody
 // can see is a door nobody rattles. Same standalone construction as the
-// maintenance page — it has to render when the rest of the site will not.
+// maintenance page — it has to render when the rest of the site will not,
+// and its fonts are self-hosted for the same reason as that page's.
+import manrope from "@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2";
+import dmMono from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2";
 ---
 
 <!doctype html>
@@ -13,11 +16,29 @@
     <title>Preview access — NovaGuard</title>
     <meta name="robots" content="noindex" />
     <link rel="icon" type="image/png" href="/assets/novaguard-icon-96.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;800&display=swap"
+    <link rel="preload" href={manrope} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={dmMono} as="font" type="font/woff2" crossorigin />
+    <style
+      is:inline
+      set:html={`
+        /* Written out rather than @import-ed: fontsource's CSS carries relative
+           url(./files/…) paths that Astro does not rewrite from inside a page,
+           so the fonts 404 and the face silently falls back to a system one. */
+        @font-face {
+          font-family: "Manrope Variable";
+          font-style: normal;
+          font-display: swap;
+          font-weight: 200 800;
+          src: url(${manrope}) format("woff2");
+        }
+        @font-face {
+          font-family: "DM Mono";
+          font-style: normal;
+          font-display: swap;
+          font-weight: 400;
+          src: url(${dmMono}) format("woff2");
+        }
+      `}
     />
     <style is:global>
       :root {
@@ -38,7 +59,7 @@
         padding: 1.5rem;
         background: var(--background);
         color: var(--foreground);
-        font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+        font-family: "Manrope Variable", Manrope, ui-sans-serif, system-ui, sans-serif;
       }
       .content {
         width: 100%;
