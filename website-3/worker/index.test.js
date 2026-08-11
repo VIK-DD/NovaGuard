@@ -380,4 +380,49 @@ describe("maintenance sync", () => {
     // a page that will only fill with network errors.
     expect((await dashboardRequest(apiEnv)).status).toBe(503);
   });
+
+  const pageEnv = {
+    ...env,
+    STATUS_API_BASE: "https://api.example.test/api/v1",
+    ASSETS: {
+      fetch: async (request) =>
+        new URL(request.url).pathname === "/maintenance/"
+          ? new Response('<p class="message"><!--ng:message--></p>', {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : new Response(new URL(request.url).pathname, { status: 200 }),
+    },
+  };
+
+  it("puts the bot's message on the page", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true, message: "Music install" } }));
+
+    const response = await dashboardRequest(pageEnv);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Retry-After")).toBe("120");
+    await expect(response.text()).resolves.toContain("Music install");
+  });
+
+  it("escapes a message instead of rendering it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      healthStub({ maintenance: { enabled: true, message: "<img src=x onerror=alert(1)>" } }),
+    );
+
+    const body = await (await dashboardRequest(pageEnv)).text();
+
+    expect(body).not.toContain("<img");
+    expect(body).toContain("&lt;img");
+  });
+
+  it("leaves the placeholder empty when there is no message", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true } }));
+
+    const body = await (await dashboardRequest(pageEnv)).text();
+
+    expect(body).toContain('<p class="message"></p>');
+  });
 });

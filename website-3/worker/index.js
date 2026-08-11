@@ -407,9 +407,34 @@ async function readMaintenance(request, env, ctx) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 async function serveMaintenancePage(request, env, state) {
   const asset = await serveAsset(new Request(new URL("/maintenance/", request.url), request), env);
-  return new Response(asset.body, { status: 503, headers: new Headers(asset.headers) });
+  if (!asset.ok) {
+    // The page is missing from the build. The dashboard at least explains
+    // itself; serving nothing does not.
+    return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
+  }
+
+  const html = await asset.text();
+  // Only the bot owner can set this text, but it is escaped anyway: the page is
+  // public, and the cost of being sure is nothing.
+  const body = html.replace("<!--ng:message-->", state.message ? escapeHtml(state.message) : "");
+
+  const headers = new Headers(asset.headers);
+  // Without no-store a browser keeps showing maintenance after it has ended —
+  // a bug that surfaces an hour later, to one person, and looks like nothing.
+  headers.set("Cache-Control", "no-store");
+  headers.set("Retry-After", "120");
+  headers.delete("Content-Length");
+  return new Response(body, { status: 503, headers });
 }
 
 export default {
