@@ -1,0 +1,136 @@
+---
+// Reachable while the site is closed, and linked from nowhere: a door nobody
+// can see is a door nobody rattles. Same standalone construction as the
+// maintenance page — it has to render when the rest of the site will not.
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <title>Preview access — NovaGuard</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="/assets/novaguard-icon-96.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;800&display=swap"
+    />
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --background: #0a0a0a;
+        --foreground: #f5f5f5;
+        --muted: #8a8a8a;
+        --line: #2a2a2a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+      }
+      .content {
+        width: 100%;
+        max-width: 22rem;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 7vw, 3rem);
+        font-weight: 800;
+        letter-spacing: -0.05em;
+        line-height: 0.95;
+      }
+      .eyebrow {
+        margin: 0.9rem 0 1.6rem;
+        color: var(--muted);
+        font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9rem;
+        letter-spacing: 0.08em;
+      }
+      input {
+        width: 100%;
+        padding: 0.7rem 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--foreground);
+        font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85rem;
+        text-align: center;
+      }
+      input:focus {
+        border-color: var(--foreground);
+        outline: none;
+      }
+      button {
+        width: 100%;
+        margin-top: 0.7rem;
+        padding: 0.7rem 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--foreground);
+        color: var(--background);
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.18s ease;
+      }
+      button:hover {
+        opacity: 0.85;
+      }
+      .error {
+        margin: 1rem 0 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      /* Hidden until the worker sends the visitor back with ?error=1. The page
+         is static, so the flag is read in the browser, not at build time. */
+      .error[hidden] {
+        display: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="content">
+      <h1>NovaGuard</h1>
+      <p class="eyebrow">Preview access</p>
+
+      <form method="POST" action="/api/preview">
+        <input
+          type="password"
+          name="code"
+          autocomplete="off"
+          autofocus
+          aria-label="Preview code"
+          placeholder="preview code"
+        />
+        <button type="submit">Enter</button>
+      </form>
+
+      <p class="error" role="status" hidden>That code did not work. Check it and try again.</p>
+    </main>
+
+    <script is:inline>
+      if (new URLSearchParams(location.search).has("error")) {
+        document.querySelector(".error").hidden = false;
+      }
+    </script>
+  </body>
+</html>
