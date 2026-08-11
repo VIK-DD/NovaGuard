@@ -2,7 +2,13 @@
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
-import { commandCategories } from "../data/commands";
+import { commandCategories, commandCount } from "../data/commands";
+
+const audienceLabels = {
+  everyone: "Everyone",
+  "server-admin": "Server managers",
+  owner: "Bot owner",
+};
 ---
 
 <Base
@@ -13,7 +19,11 @@ import { commandCategories } from "../data/commands";
   <main class="mx-auto max-w-5xl px-5 py-12 sm:px-6 sm:py-20">
     <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Command catalog</p>
     <h1 class="font-display mt-4 max-w-2xl text-3xl leading-tight sm:text-5xl">Every command, one page.</h1>
-    <p class="mt-4 text-ink-muted">
+    <p class="mt-4 max-w-2xl text-ink-muted">
+      {commandCount} supported slash commands, including server-management and owner-only tools.
+      Access labels show who can use each group.
+    </p>
+    <p class="mt-3 text-ink-muted">
       Tip: <code class="rounded-md border border-line bg-card px-1.5 py-0.5 text-sm">/help</code>
       opens an interactive hub inside Discord.
     </p>
@@ -27,7 +37,11 @@ import { commandCategories } from "../data/commands";
                 <h2 class="font-display text-xl">
                   <span aria-hidden="true">{cat.emoji}</span> {cat.name}
                 </h2>
+                <p class="mt-2 text-[0.68rem] font-semibold tracking-[0.16em] text-accent uppercase">
+                  {audienceLabels[cat.audience]}
+                </p>
                 <p class="mt-1 text-sm text-ink-muted">{cat.blurb}</p>
+                {cat.note && <p class="mt-2 text-xs leading-relaxed text-ink-faint">{cat.note}</p>}
               </div>
               <ul class="flex flex-wrap content-start gap-2">
                 {cat.commands.map((c) => (

@@ -373,59 +373,16 @@ backups/          automatic/manual backup archives — auto-created
 
 ## 5. Command catalog
 
-### 🚀 Setup
-`/setup` — one-command setup dashboard with buttons, select menus and channel picker
-`/config view|export|backup|reset` — advanced admin config tools
+The canonical, machine-checked catalog lives in
+`website-3/src/data/commands.json` and is rendered at `/commands`. It currently
+contains all 120 slash commands exposed by the standard and Lavalink backends,
+including Music, Voice Reports, Voice Hours, server-management commands and
+owner-only operations. A Python test compares it directly with every command
+decorator in `cogs/`, so adding or removing a bot command without updating the
+public catalog fails CI.
 
-### ⚙️ System
-`/ping` `/uptime` `/status` `/botinfo` `/doctor` `/help` `/latest` `/updates` `/forceupdate`
-
-### 🐙 Developer
-`/github` `/repo` `/dev` `/health` `/commits` `/release` `/ghwatch`
-
-### 🧰 Utility
-`/userinfo` `/serverinfo` `/avatar` `/roleinfo` `/poll` `/remind` `/reminders` `/timestamp` `/choose` `/color`
-
-### 🎉 Fun
-`/8ball` `/coinflip` `/dice` `/rps` `/trivia` `/joke` `/ship` `/vibecheck`
-
-### 🛡️ Moderation
-`/purge` `/kick` `/ban` `/timeout` `/untimeout` `/slowmode` `/announce` `/warn add|list|clear`
-
-### 🏆 Levels
-`/rank` `/leaderboard` (+ slower automatic chat XP, private DM level-up cards with progress bars)
-Admin: `/levels backfill preview` estimates historical XP, `/levels backfill run confirm:true` rebuilds the current XP totals after a backup.
-
-### 🎙️ Voice Reports
-`/voice set` chooses the report channel, `/voice status` shows the setup,
-`/voice test` posts a safe preview and `/voice off` disables it.
-When the last human leaves a voice room, NovaGuard posts one colored report after sessions lasting at least one hour. It includes the start/end times, total duration, unique participants, peak concurrent members and each member's accumulated time across rejoins.
-
-### 👋 Welcome
-`/welcome set` `/welcome off` `/welcome test` (+ auto join/leave embeds, auto-role)
-
-### 📋 Logs
-`/logs set` `/logs off` (+ deleted/edited messages, joins/leaves, bans, mod actions)
-
-### 🎭 Roles
-`/rolepanel` — button panels where members pick their own roles (persist across restarts)
-
-### 🎁 Giveaways
-`/giveaway start|end|reroll` — button entry, live counter, automatic winner draw
-
-### 🎫 Tickets
-`/ticketpanel` — one button opens a private thread with the staff role pinged
-
-### 🤖 AutoMod
-`/automod status|invites|spam` `/automod badword add|remove|list`
-
-### 💰 Economy
-`/balance` `/daily` `/work` `/pay` `/gamble` `/slots` `/richest` `/shop` `/buy`
-
-### 🧠 AI
-`/ask` — Claude answers right in the chat (needs `ANTHROPIC_API_KEY`)
-
-Tip: `/help` opens an interactive hub with a category menu.
+Access is presented in three clear levels: **Everyone**, **Server managers**
+and **Bot owner**. `/help` remains the interactive in-Discord command browser.
 
 ## 5b. New systems — one-time setup
 
