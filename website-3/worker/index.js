@@ -7,8 +7,18 @@ const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
 const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
+const MAINTENANCE_FRESH_MS = 30_000;
+const MAINTENANCE_GRACE_MS = 120_000;
+const MAINTENANCE_TIMEOUT_MS = 2_500;
+const MAINTENANCE_EDGE_CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+  "X-Content-Type-Options": "nosniff",
+};
 const encoder = new TextEncoder();
 let lastGoodStatusSnapshot = null;
+// Mirrors lastGoodStatusSnapshot: the edge cache is shared between isolates but
+// missing in tests and on a cold start, so each isolate keeps its own copy.
+let lastMaintenanceState = null;
 const STATUS_CLIENT_HEADERS = {
   "Cache-Control": "no-store, private",
   "CDN-Cache-Control": "no-store",
@@ -335,6 +345,73 @@ function handleLogout(request) {
   });
 }
 
+function maintenanceFromHealth(health) {
+  const raw = health && typeof health === "object" ? health.maintenance : null;
+  // A bot that predates this field is not in maintenance. This is the rule that
+  // makes deploy order irrelevant: the worker ships before the bot restarts, and
+  // reading the gap as an error would black the dashboard out in between.
+  if (!raw || typeof raw !== "object") return { enabled: false, message: "" };
+  const enabled = Boolean(raw.enabled);
+  return {
+    enabled,
+    message: enabled && typeof raw.message === "string" ? raw.message : "",
+  };
+}
+
+async function readMaintenance(request, env, ctx) {
+  const now = Date.now();
+  const url = new URL(request.url);
+  const cacheKey = new Request(`${url.origin}/api/maintenance-state`);
+  const edgeCache = globalThis.caches?.default;
+
+  let known = lastMaintenanceState;
+  if (!known && edgeCache) {
+    const cached = await edgeCache.match(cacheKey);
+    const parsed = cached ? await cached.json().catch(() => null) : null;
+    if (parsed && typeof parsed.fetchedAt === "number") known = parsed;
+  }
+  if (known && now - known.fetchedAt < MAINTENANCE_FRESH_MS) return known;
+
+  const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
+  try {
+    const response = await fetch(`${apiBase}/health`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(MAINTENANCE_TIMEOUT_MS),
+    });
+    // 503 is what the bot returns when its own database probe fails; the payload
+    // is still there and still tells the truth about maintenance.
+    if (response.status >= 500 && response.status !== 503) {
+      throw new Error(`Maintenance upstream failed: ${response.status}`);
+    }
+    const state = { ...maintenanceFromHealth(await response.json()), fetchedAt: now };
+    lastMaintenanceState = state;
+    if (edgeCache && ctx?.waitUntil) {
+      ctx.waitUntil(
+        edgeCache.put(cacheKey, Response.json(state, { headers: MAINTENANCE_EDGE_CACHE_HEADERS })),
+      );
+    }
+    return state;
+  } catch (error) {
+    // A restart lasts seconds; hold the last real answer through it. That answer
+    // is deliberately not overwritten here, so recovery is picked up on the very
+    // next request instead of after another freshness window.
+    if (known && !known.unreachable && now - known.fetchedAt < MAINTENANCE_GRACE_MS) {
+      return known;
+    }
+    // Past the grace window the API is genuinely gone, and a dashboard that
+    // cannot reach it would only fill with errors. Remember the verdict so a
+    // long outage costs one upstream attempt per window, not one per request.
+    const state = { enabled: true, message: "", fetchedAt: now, unreachable: true };
+    lastMaintenanceState = state;
+    return state;
+  }
+}
+
+async function serveMaintenancePage(request, env, state) {
+  const asset = await serveAsset(new Request(new URL("/maintenance/", request.url), request), env);
+  return new Response(asset.body, { status: 503, headers: new Headers(asset.headers) });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -357,10 +434,18 @@ export default {
       return serveAsset(new Request(new URL("/maintenance/", request.url), request), env);
     }
 
-    // The dashboard owns its nested routes client-side. Serve its static shell
-    // on direct visits so refreshes at /dashboard/g/:id keep working.
-    if (url.pathname.startsWith("/dashboard/") && url.pathname !== "/dashboard/") {
-      return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
+    // The dashboard is the only surface /maintenance closes: the marketing
+    // pages stay up, because a two-minute bot restart should not take the whole
+    // site down. Public paths returned above, so they never pay for this call.
+    if (url.pathname.startsWith("/dashboard/")) {
+      const maintenance = await readMaintenance(request, env, ctx);
+      if (maintenance.enabled) return serveMaintenancePage(request, env, maintenance);
+
+      // The dashboard owns its nested routes client-side. Serve its static
+      // shell on direct visits so refreshes at /dashboard/g/:id keep working.
+      if (url.pathname !== "/dashboard/") {
+        return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
+      }
     }
 
     return serveAsset(request, env);

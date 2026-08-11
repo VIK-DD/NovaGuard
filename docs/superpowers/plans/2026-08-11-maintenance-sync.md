@@ -250,14 +250,24 @@ describe("maintenance sync", () => {
 **Isolation note:** `lastMaintenanceState` is module-level and survives between tests in the same file. Add this as the first thing inside the `describe`:
 
 ```javascript
+  // Advanced, never reset: afterEach restores the real clock, so a jump
+  // measured from `Date.now()` would land at roughly the same instant every
+  // time and leave the previous test's answer inside the 30 s freshness window.
+  let clock = Date.now();
+
   beforeEach(() => {
-    // The worker remembers its last answer for 30 s, so without this one test's
-    // state would decide the next one's. Fake timers also let the grace-window
-    // tests below jump forward without waiting.
-    vi.useFakeTimers();
-    vi.setSystemTime(Date.now() + 10 * 60 * 1000);
+    clock += 10 * 60 * 1000;
+    // Only Date is faked. Faking the timers too would break
+    // AbortSignal.timeout inside readMaintenance, aborting every upstream call
+    // and making the fail-closed path look like the answer.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(clock);
   });
 ```
+
+Both halves are load-bearing, and each was found the hard way: a plain
+`vi.useFakeTimers()` aborts every upstream call, and a jump measured from
+`Date.now()` does not accumulate across tests.
 
 Add `beforeEach` to the `vitest` import at the top of the file. The file's existing `afterEach` already calls `vi.useRealTimers()`, so nothing leaks into the other suites.
 

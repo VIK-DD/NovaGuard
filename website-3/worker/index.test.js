@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "./index.js";
 
 const env = {
@@ -274,5 +274,110 @@ describe("updates feed", () => {
       { waitUntil() {} },
     );
     expect(response.status).toBe(405);
+  });
+});
+
+describe("maintenance sync", () => {
+  const apiEnv = { ...env, STATUS_API_BASE: "https://api.example.test/api/v1" };
+
+  // Advanced, never reset: afterEach restores the real clock, so a jump
+  // measured from `Date.now()` would land at roughly the same instant every
+  // time and leave the previous test's answer inside the 30 s freshness window.
+  let clock = Date.now();
+
+  beforeEach(() => {
+    clock += 10 * 60 * 1000;
+    // Only Date is faked. Faking the timers too would break
+    // AbortSignal.timeout inside readMaintenance, aborting every upstream call
+    // and making the fail-closed path look like the answer.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(clock);
+  });
+
+  function healthStub(maintenance) {
+    return vi.fn(async () =>
+      Response.json({ ok: true, bot_ready: true, db_ok: true, ...maintenance }),
+    );
+  }
+
+  async function dashboardRequest(testEnv, path = "/dashboard/") {
+    const login = await worker.fetch(loginRequest(), testEnv);
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+    return worker.fetch(
+      new Request(`https://novaguard.fun${path}`, { headers: { cookie } }),
+      testEnv,
+    );
+  }
+
+  it("closes the dashboard when the bot says it is in maintenance", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true, message: "Music install" } }));
+
+    const response = await dashboardRequest(apiEnv);
+
+    expect(response.status).toBe(503);
+    await expect(response.text()).resolves.toBe("/maintenance/");
+  });
+
+  it("serves the dashboard shell when maintenance is off", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: false } }));
+
+    const response = await dashboardRequest(apiEnv, "/dashboard/g/123");
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("/dashboard/");
+  });
+
+  it("treats a bot that predates the field as open, not broken", async () => {
+    // The worker deploys before the bot restarts. If a missing field read as an
+    // error, the dashboard would black out in the gap between the two.
+    vi.stubGlobal("fetch", healthStub({}));
+
+    const response = await dashboardRequest(apiEnv);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("never asks the bot about a public page", async () => {
+    const upstream = healthStub({ maintenance: { enabled: true } });
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await worker.fetch(new Request("https://novaguard.fun/"), apiEnv);
+
+    expect(response.status).toBe(200);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("rides out a restart on the last known answer", async () => {
+    // A pm2 restart is seconds long. Flipping the dashboard closed for it would
+    // be worse than briefly serving a slightly old answer.
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: false } }));
+    expect((await dashboardRequest(apiEnv)).status).toBe(200);
+
+    vi.setSystemTime(Date.now() + 60_000); // past freshness, inside grace
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("connection refused");
+      }),
+    );
+
+    expect((await dashboardRequest(apiEnv)).status).toBe(200);
+  });
+
+  it("closes the dashboard once the API has been gone past the grace window", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: false } }));
+    expect((await dashboardRequest(apiEnv)).status).toBe(200);
+
+    vi.setSystemTime(Date.now() + 180_000); // past the 120 s grace
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("host unreachable");
+      }),
+    );
+
+    // The dashboard cannot work without the API, so saying so beats rendering
+    // a page that will only fill with network errors.
+    expect((await dashboardRequest(apiEnv)).status).toBe(503);
   });
 });
