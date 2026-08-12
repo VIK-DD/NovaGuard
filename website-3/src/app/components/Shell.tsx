@@ -158,6 +158,9 @@ export default function Shell({ children }: { children: ReactNode }) {
         <a href="/privacy#your-choices" className="transition-colors hover:text-ink">
           Export or erase data
         </a>
+        <a href="/server-admin-notice" className="transition-colors hover:text-ink">
+          Server admin notice
+        </a>
         <a href="/terms" className="transition-colors hover:text-ink">
           Terms
         </a>

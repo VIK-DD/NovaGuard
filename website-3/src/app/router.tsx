@@ -14,6 +14,7 @@ import Shell from "./components/Shell";
 const GuildPicker = lazy(() => import("./screens/GuildPicker"));
 const GuildOverview = lazy(() => import("./screens/GuildOverview"));
 const GuildConfig = lazy(() => import("./screens/GuildConfig"));
+const GuildPrivacySafety = lazy(() => import("./screens/GuildPrivacySafety"));
 const AuditLog = lazy(() => import("./screens/AuditLog"));
 
 function RouteFallback() {
@@ -53,6 +54,14 @@ function GuildLayout() {
             inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
           >
             Modules
+          </Link>
+          <Link
+            to="/g/$guildId/privacy"
+            params={{ guildId }}
+            activeProps={{ className: `${tab} border-primary text-ink` }}
+            inactiveProps={{ className: `${tab} border-transparent text-ink-muted hover:text-ink` }}
+          >
+            Privacy &amp; safety
           </Link>
           <Link
             to="/g/$guildId/audit"
@@ -136,6 +145,12 @@ const guildModuleRoute = createRoute({
   component: GuildConfig,
 });
 
+const guildPrivacyRoute = createRoute({
+  getParentRoute: () => guildRoute,
+  path: "/privacy",
+  component: GuildPrivacySafety,
+});
+
 const guildAuditRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "/audit",
@@ -148,6 +163,7 @@ const routeTree = rootRoute.addChildren([
     guildConfigRoute,
     guildSettingsRoute,
     guildModuleRoute,
+    guildPrivacyRoute,
     guildAuditRoute,
   ]),
 ]);
