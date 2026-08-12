@@ -17,6 +17,8 @@ from core.privacy import (
     run_retention_cleanup,
     scrub_user_state,
 )
+from core.privacy_ledger import ensure_deletion_ledger, sync_deletion_ledger
+from core.error_digest import send_error_digest
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
 
@@ -92,6 +94,7 @@ async def erase_live_user_data(bot, user_id):
             for attribute in ("sessions", "pending_reports", "report_history"):
                 cleaned, _ = scrub_user_state(getattr(voice, attribute), user_id)
                 setattr(voice, attribute, cleaned)
+    await _sync_privacy_ledger(bot, report)
     return report
 
 
@@ -116,7 +119,42 @@ async def erase_live_guild_data(bot, guild_id):
             voice.sessions.pop(guild_id, None)
             voice.pending_reports.pop(guild_id, None)
             voice.report_history.pop(guild_id, None)
+    await _sync_privacy_ledger(bot, report)
     return report
+
+
+async def _sync_privacy_ledger(bot, report):
+    if not report.get("deletion_ledger"):
+        return
+    try:
+        remote = await asyncio.to_thread(sync_deletion_ledger)
+    except Exception as error:
+        remote = {"configured": True, "ok": False, "message": str(error)}
+    report["deletion_ledger"]["remote"] = remote
+    if remote.get("configured") and not remote.get("ok"):
+        await send_error_digest(
+            bot,
+            "Deletion Ledger Sync Error",
+            RuntimeError(remote.get("message") or "off-site ledger sync failed"),
+            context=(
+                "Live erasure completed and the local deletion ledger is safe, but its "
+                "off-site recovery copy could not be updated."
+            ),
+        )
+
+
+async def _sync_current_privacy_ledger(bot):
+    try:
+        remote = await asyncio.to_thread(sync_deletion_ledger)
+    except Exception as error:
+        remote = {"configured": True, "ok": False, "message": str(error)}
+    if remote.get("configured") and not remote.get("ok"):
+        await send_error_digest(
+            bot,
+            "Deletion Ledger Sync Error",
+            RuntimeError(remote.get("message") or "off-site ledger sync failed"),
+            context="Startup privacy recovery ledger sync failed.",
+        )
 
 
 class Privacy(commands.Cog):
@@ -132,6 +170,7 @@ class Privacy(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        await asyncio.to_thread(ensure_deletion_ledger)
         self.retention_loop.start()
 
     async def cog_unload(self):
@@ -146,6 +185,7 @@ class Privacy(commands.Cog):
         removed = sum(report["counts"].values())
         if removed:
             print(f"Privacy retention cleanup removed {removed} expired record(s).")
+        await _sync_current_privacy_ledger(self.bot)
 
     @retention_loop.before_loop
     async def before_retention_loop(self):

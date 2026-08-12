@@ -18,6 +18,7 @@ once.
 | Secrets (`.env`) | host only | **no** | no |
 | rclone credentials (`~/.config/rclone/rclone.conf`) | host only | **no** | no |
 | Litestream credentials (`/etc/litestream.env`) | host only | **no** | no |
+| Deletion ledger (`.privacy_deletions.json`) | host + encrypted off-site copy | **no** | no |
 
 The last three rows are the trap. A restore from Google Drive gives you every
 byte of user data and a bot that still cannot start, because the token and the
@@ -97,7 +98,8 @@ When Litestream is unavailable, restore `.env` (including
 
 ```bash
 cd /home/ubuntu/NovaGuard
-venv/bin/python tools/restore_backup.py /path/to/novaguard-full-YYYY-MM-DD_HH-MM-SS-auto.zip.ngbackup --output backups/restore-check --replace
+rclone copyto gdrive:NovaGuard/backups/privacy/deletion-ledger.json.ngbackup /tmp/deletion-ledger.json.ngbackup
+venv/bin/python tools/restore_backup.py /path/to/novaguard-full-YYYY-MM-DD_HH-MM-SS-auto.zip.ngbackup --encrypted-ledger /tmp/deletion-ledger.json.ngbackup --output backups/restore-check --replace
 sqlite3 backups/restore-check/data/novaguard.sqlite3 "PRAGMA integrity_check; SELECT 'guilds', COUNT(*) FROM guild_settings UNION ALL SELECT 'levels', COUNT(*) FROM level_records UNION ALL SELECT 'wallets', COUNT(*) FROM economy_wallets;"
 ```
 
@@ -105,6 +107,12 @@ sqlite3 backups/restore-check/data/novaguard.sqlite3 "PRAGMA integrity_check; SE
 `backups/restore-check/data/` over `NovaGuard/data/`. The restore helper
 authenticates the entire archive before extraction, rejects unsafe paths and
 creates extracted files with owner-only permissions.
+Copy the verified local ledger into place as well before starting the bot:
+
+```bash
+venv/bin/python -c "from core.secure_files import decrypt_file; decrypt_file('/tmp/deletion-ledger.json.ngbackup', '.privacy_deletions.json')"
+chmod 600 .privacy_deletions.json
+```
 
 ### 5. Secrets and permissions
 

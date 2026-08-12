@@ -10,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core import database, privacy, storage  # noqa: E402
+from core import database, privacy, privacy_ledger, storage  # noqa: E402
 
 
 class PrivacyDataTests(unittest.TestCase):
@@ -18,6 +18,9 @@ class PrivacyDataTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
+        self.old_backup_key = os.environ.get("BACKUP_ENCRYPTION_KEY")
+        os.environ["BACKUP_ENCRYPTION_KEY"] = "privacy-tests-only-backup-key-2026-xxxxxxxx"
+        self.addCleanup(self._restore_backup_key)
         self.patches = [
             mock.patch.object(database, "DATA_DIR", self.root),
             mock.patch.object(database, "DB_PATH", self.root / "novaguard.sqlite3"),
@@ -32,6 +35,7 @@ class PrivacyDataTests(unittest.TestCase):
             ),
             mock.patch.object(database, "_INITIALIZED", False),
             mock.patch.object(storage, "DATA_DIR", self.root),
+            mock.patch.object(privacy_ledger, "LEDGER_PATH", self.root / ".privacy_deletions.json"),
         ]
         for patch in self.patches:
             patch.start()
@@ -40,6 +44,12 @@ class PrivacyDataTests(unittest.TestCase):
         database.init_database()
         self._seed_database()
         self._seed_json()
+
+    def _restore_backup_key(self):
+        if self.old_backup_key is None:
+            os.environ.pop("BACKUP_ENCRYPTION_KEY", None)
+        else:
+            os.environ["BACKUP_ENCRYPTION_KEY"] = self.old_backup_key
 
     def _seed_database(self):
         stamp = "2026-08-12T00:00:00+00:00"
@@ -173,6 +183,8 @@ class PrivacyDataTests(unittest.TestCase):
         giveaways = json.loads((self.root / "giveaways.json").read_text())
         self.assertEqual(giveaways[0]["host_name"], "Deleted member")
         self.assertNotIn(42, giveaways[0]["entrants"])
+        ledger_blob = (self.root / ".privacy_deletions.json").read_text(encoding="utf-8")
+        self.assertNotIn('"42"', ledger_blob)
 
     def test_guild_export_includes_every_guild_scoped_store(self):
         exported = privacy.export_guild_data(111)
@@ -194,8 +206,13 @@ class PrivacyDataTests(unittest.TestCase):
         self.assertEqual(other["reminders"][0]["message"], "other")
         self.assertIn("voice_sessions", other["voice_state"])
         legacy = json.loads((self.root / "settings.json").read_text())
+        with database.connect() as connection:
+            guild_cache = database.decode_value(
+                connection.execute("SELECT guilds_json FROM web_sessions").fetchone()[0]
+            )
         self.assertNotIn("111", legacy)
         self.assertIn("222", legacy)
+        self.assertNotIn("111", guild_cache)
 
 
 if __name__ == "__main__":

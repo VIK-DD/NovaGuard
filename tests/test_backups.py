@@ -16,6 +16,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core.backups as backups
+from core.privacy_ledger import ensure_deletion_ledger
+from tools import restore_backup as restore_tool
 
 
 class BackupIntegrityTests(unittest.TestCase):
@@ -321,6 +323,48 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertTrue(result["integrity"]["encrypted"])
         self.assertTrue(backups.is_encrypted_file(archive))
         self.assertEqual(list(backups.BACKUP_DIR.glob("novaguard-full-*.zip")), [])
+
+    def test_restore_cli_enforces_a_valid_deletion_ledger(self):
+        archive = self.write_encrypted_backup()
+        ledger = self.root / ".privacy_deletions.json"
+        ensure_deletion_ledger(ledger)
+        output = self.root / "restore-cli"
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "restore_backup.py",
+                str(archive),
+                "--ledger",
+                str(ledger),
+                "--output",
+                str(output),
+            ],
+        ):
+            result = restore_tool.main()
+
+        self.assertEqual(result, 0)
+        self.assertTrue((output / "data" / "novaguard.sqlite3").is_file())
+
+    def test_restore_cli_fails_closed_when_deletion_ledger_is_missing(self):
+        archive = self.write_encrypted_backup()
+        output = self.root / "restore-without-ledger"
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "restore_backup.py",
+                str(archive),
+                "--ledger",
+                str(self.root / "missing-ledger.json"),
+                "--output",
+                str(output),
+            ],
+        ):
+            result = restore_tool.main()
+
+        self.assertEqual(result, 1)
+        self.assertFalse(output.exists())
 
     def test_backup_schedule_is_configurable(self):
         os.environ["BACKUP_SCHEDULE"] = "19:00,07:00,bad,25:10"

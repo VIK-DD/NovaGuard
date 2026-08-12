@@ -141,6 +141,11 @@ exports with AES-256-GCM and refuses to upload plaintext ZIP files. Never post
 backups in Discord or commit them to Git; access to the storage destination and
 the encryption key must be separated where practical.
 
+The pseudonymous `.privacy_deletions.json` ledger is deliberately kept outside
+normal snapshots and mirrored as an encrypted off-site object. Never bypass it
+during restore: doing so can resurrect data that was already erased after a
+valid user or server deletion request.
+
 ## 5. Verification
 - `python tests/test_webserver.py` → 30 checks (auth, CORS, CSRF, encryption,
   rate-limit, error envelope, both SameSite modes).

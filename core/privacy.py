@@ -13,6 +13,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 
 from . import database, storage
+from .privacy_ledger import record_deletion
 
 
 _LOCK = threading.RLock()
@@ -36,6 +37,7 @@ RETENTION_DEFAULTS = {
     "PRIVACY_ADMIN_AUDIT_KEEP_DAYS": 365,
     "PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS": 90,
 }
+_PENDING_DELETION_AT = "9999-12-31T23:59:59.999999+00:00"
 
 
 def _id(value) -> str:
@@ -491,6 +493,11 @@ def erase_user_data(user_id):
     if not user_id:
         raise ValueError("user_id is required")
 
+    # A future marker closes the tiny race where a scheduled backup could be
+    # captured between recording the request and completing the SQL/JSON scrub.
+    # It is replaced with the real completion time below; after a crash it
+    # remains conservative and scrubs every snapshot until recovery completes.
+    record_deletion("user", user_id, deleted_at=_PENDING_DELETION_AT)
     database.init_database()
     counts = {}
     with _LOCK, database._LOCK, database.connect() as connection:
@@ -530,7 +537,14 @@ def erase_user_data(user_id):
         connection.commit()
 
     counts.update(_erase_json_user_data(user_id))
-    return {"user_id": user_id, "erased_at": database.utc_now(), "counts": counts}
+    erased_at = database.utc_now()
+    ledger = record_deletion("user", user_id, deleted_at=erased_at)
+    return {
+        "user_id": user_id,
+        "erased_at": erased_at,
+        "counts": counts,
+        "deletion_ledger": ledger,
+    }
 
 
 def erase_guild_data(guild_id):
@@ -539,6 +553,7 @@ def erase_guild_data(guild_id):
     if not guild_id:
         raise ValueError("guild_id is required")
 
+    record_deletion("guild", guild_id, deleted_at=_PENDING_DELETION_AT)
     database.init_database()
     counts = {}
     with _LOCK, database._LOCK, database.connect() as connection:
@@ -557,6 +572,31 @@ def erase_guild_data(guild_id):
             counts["dashboard_audit"] = connection.execute(
                 "DELETE FROM web_audit WHERE guild_id = ?", (guild_id,)
             ).rowcount
+        if _table_exists(connection, "web_sessions"):
+            session_count = 0
+            for sid_hash, raw_guilds in connection.execute(
+                "SELECT sid_hash, guilds_json FROM web_sessions"
+            ).fetchall():
+                try:
+                    guilds = database.decode_value(raw_guilds)
+                except (TypeError, ValueError):
+                    continue
+                original = copy.deepcopy(guilds)
+                if isinstance(guilds, dict):
+                    guilds.pop(guild_id, None)
+                elif isinstance(guilds, list):
+                    guilds = [
+                        item
+                        for item in guilds
+                        if not (isinstance(item, dict) and _id(item.get("id")) == guild_id)
+                    ]
+                if guilds != original:
+                    connection.execute(
+                        "UPDATE web_sessions SET guilds_json = ? WHERE sid_hash = ?",
+                        (database.encode_value(guilds), sid_hash),
+                    )
+                    session_count += 1
+            counts["dashboard_session_guild_cache"] = session_count
 
         voice_count = 0
         for store_name, payload in _voice_payloads(connection).items():
@@ -596,7 +636,14 @@ def erase_guild_data(guild_id):
     counts["legacy"] = legacy_count
 
     storage.invalidate_guild_settings_cache(guild_id)
-    return {"guild_id": guild_id, "erased_at": database.utc_now(), "counts": counts}
+    erased_at = database.utc_now()
+    ledger = record_deletion("guild", guild_id, deleted_at=erased_at)
+    return {
+        "guild_id": guild_id,
+        "erased_at": erased_at,
+        "counts": counts,
+        "deletion_ledger": ledger,
+    }
 
 
 def run_retention_cleanup(*, now=None, env=None):

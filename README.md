@@ -313,6 +313,7 @@ That means the bot can tell your server what changed without you writing a manua
 - Set a dedicated `BACKUP_ENCRYPTION_KEY` (32+ random characters) and keep it in a password manager. Losing it makes the archives unrecoverable.
 - If `BACKUP_REMOTE_DEST` is configured, each verified encrypted full backup is uploaded off-site under `full/YYYY/MM/` and confirmed with a remote existence check. Plaintext archives are never uploaded.
 - The same scheduled run encrypts each Discord server export under `guilds/<server-name>-<guild-id>/YYYY/MM/`, then prunes old remote files using the configured retention windows.
+- User and server erasures are recorded in a separate pseudonymous deletion ledger. Restore tooling reapplies deletions to older snapshots so a rollback cannot revive erased records.
 - `/config backup` and `/backup create` create immediate manual archives.
 - `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` verify local archives, off-site uploads, archive contents, backup health score and safe manual restore steps.
 - See `docs/RESTORE.md` before restoring live data or setting up an off-site copy.

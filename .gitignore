@@ -1,6 +1,7 @@
 .env
 .update_state.json
 .github_state.json
+.privacy_deletions.json
 __pycache__/
 .venv/
 .venv-mac/

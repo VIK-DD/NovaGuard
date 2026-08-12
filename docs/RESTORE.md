@@ -8,6 +8,13 @@ it in `.env` on each recovery host. Losing this key makes every archive created
 with it unrecoverable. Do not reuse the Discord token, OAuth secret or web
 session secret as the backup key.
 
+NovaGuard also maintains `.privacy_deletions.json` outside every snapshot. It
+contains keyed hashes rather than Discord IDs and prevents an old backup from
+reviving records erased after that backup was created. If off-site storage is
+enabled, the encrypted current copy is stored at
+`privacy/deletion-ledger.json.ngbackup`. A normal restore refuses to proceed
+without a valid ledger made with the same key.
+
 > Lost the host entirely — deleted, reclaimed or locked out? This page assumes
 > the server still exists. See [DISASTER-RECOVERY.md](DISASTER-RECOVERY.md) for
 > rebuilding from nothing, including the pieces these archives deliberately do
@@ -51,6 +58,9 @@ pm2 logs 0 --lines 100
 ```
 
 If something looks wrong, stop the bot again and restore `data-before-restore/`.
+Do not use `--allow-missing-deletion-ledger` in a normal recovery. That escape
+hatch exists only for an operator who has independently proved that no deletion
+requests occurred after the chosen snapshot.
 
 ## Off-Site Backup
 
@@ -126,6 +136,8 @@ NovaGuard/
           08/
             2026-08-01_07-00-00.json.ngbackup
             2026-08-01_19-00-00.json.ngbackup
+    privacy/
+      deletion-ledger.json.ngbackup
 ```
 
 Use `full/` for disaster recovery. Use `guilds/` when you need to inspect or
