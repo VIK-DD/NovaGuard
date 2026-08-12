@@ -41,7 +41,7 @@ HEALTHY_ENV = {
     "LEGAL_HOSTING_PROVIDER": "Test Compute",
     "LEGAL_HOSTING_REGION": "Test Region, Test Country",
     "LEGAL_BACKUP_PROVIDER": "Test Storage",
-    "LEGAL_BACKUP_COUNTRY": "Test Backup Country",
+    "LEGAL_BACKUP_LOCATION": "Test Backup Region, Test Country",
     "LEGAL_SUPERVISORY_AUTHORITY_URL": "https://authority.example.test/complaints",
 }
 
@@ -126,6 +126,7 @@ class ProductionCheckTests(unittest.TestCase):
         self.assertIn("PRIVACY_CONTACT_EMAIL", critical)
         self.assertIn("LEGAL_HOSTING_REGION", critical)
         self.assertIn("LEGAL_BACKUP_PROVIDER", critical)
+        self.assertIn("LEGAL_BACKUP_LOCATION", critical)
         self.assertIn("LEGAL_SUPERVISORY_AUTHORITY_URL", critical)
         self.assertIn("database", critical)
         self.assertIn("deletion ledger", critical)

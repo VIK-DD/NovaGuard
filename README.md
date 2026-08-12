@@ -223,7 +223,7 @@ NovaGuard loads `.env` automatically at startup.
 | `LEGAL_HOSTING_PROVIDER` | Launch required | Main infrastructure provider disclosed in the privacy notice |
 | `LEGAL_HOSTING_REGION` | Launch required | Actual region/country of the bot and dashboard API host |
 | `LEGAL_BACKUP_PROVIDER` | Launch required | Provider that receives encrypted rclone backups |
-| `LEGAL_BACKUP_COUNTRY` | Launch required | Country/region where encrypted backups are stored |
+| `LEGAL_BACKUP_LOCATION` | Launch required | Disclosed backup location, including `global / region not pinned` when no region is guaranteed |
 | `LEGAL_SUPERVISORY_AUTHORITY_URL` | Launch required | HTTPS complaint link for the competent privacy authority |
 | `BACKUP_REMOTE_TIMEOUT_SECONDS` | Optional | Off-site upload timeout; defaults to `300` |
 | `ANTHROPIC_API_KEY` | Optional | Enables `/ask` |
