@@ -2,57 +2,201 @@
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
-
-// Wording ported from docs/terms.html — keep the two in sync.
-const sections = [
-  {
-    h: "1. Service Description",
-    p: "NovaGuard is a Discord bot that may provide moderation, logging, setup automation, utility tools, tickets, giveaways, GitHub integrations, status commands and other community management features.",
-  },
-  {
-    h: "2. Acceptable Use",
-    p: "You may not use NovaGuard to abuse others, spam, exploit systems, violate privacy or break applicable laws or Discord platform rules.",
-  },
-  {
-    h: "3. Administrator Responsibility",
-    p: "Server owners and administrators are responsible for how the bot is configured and used in their communities, including moderation settings, logs and automations.",
-  },
-  {
-    h: "4. Availability",
-    p: "NovaGuard is provided on an “as available” basis. Features may change, be interrupted or become unavailable during maintenance, updates, provider issues or host outages.",
-  },
-  {
-    h: "5. Third-Party Services",
-    p: "NovaGuard may interact with third-party services such as Discord, GitHub and optional AI providers. Those services are governed by their own terms and policies.",
-  },
-  {
-    h: "6. Disclaimer and Liability",
-    p: "NovaGuard is provided without warranties of any kind. To the fullest extent permitted by law, the operator is not liable for indirect or consequential damages, data loss, moderation outcomes or server disruptions related to use of the bot.",
-  },
-  {
-    h: "7. Contact",
-    p: "For questions about these terms, contact the NovaGuard team through the NovaGuard repository or the NovaGuard GitHub profile.",
-  },
-];
+import { LEGAL_EFFECTIVE_DATE, LEGAL_OPERATOR } from "../data/legal";
 ---
 
-<Base title="Terms of Service — NovaGuard">
+<Base
+  title="Terms of Service — NovaGuard"
+  description="The rules, responsibilities and service conditions that apply when NovaGuard is added to or used in a Discord server."
+>
   <Nav />
-  <main class="mx-auto max-w-2xl px-5 py-12 sm:px-6 sm:py-20">
-    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Effective July 9, 2026</p>
-    <h1 class="font-display mt-4 text-3xl sm:text-5xl">Terms of Service</h1>
-    <p class="mt-6 leading-relaxed text-ink-muted">
-      These Terms of Service govern your access to and use of NovaGuard, a self-hosted Discord
-      bot developed by VIK & CloudMedia. By using NovaGuard or adding it to a server, you agree to these terms.
+  <main class="mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-20">
+    <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">
+      Effective {LEGAL_EFFECTIVE_DATE}
     </p>
-    {
-      sections.map((s) => (
-        <section class="mt-10 border-t border-line pt-6">
-          <h2 class="font-display text-2xl">{s.h}</h2>
-          <p class="mt-3 leading-relaxed text-ink-muted">{s.p}</p>
-        </section>
-      ))
-    }
+    <h1 class="font-display mt-4 text-3xl sm:text-5xl">Terms of Service</h1>
+    <p class="mt-6 max-w-2xl leading-relaxed text-ink-muted">
+      These terms govern access to the hosted NovaGuard Discord bot, dashboard and website
+      operated by {LEGAL_OPERATOR.name} in the {LEGAL_OPERATOR.country}. By adding NovaGuard to a
+      server, configuring it or using its commands, you agree to these terms. If you do not agree,
+      do not use the service.
+    </p>
+
+    <section class="mt-12 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">1. Eligibility</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        You must meet
+        <a
+          href="https://discord.com/terms"
+          target="_blank"
+          rel="noreferrer"
+          class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+        >Discord's minimum age</a>
+        for your country and any higher minimum required by applicable law. If you are not legally
+        able to accept these terms yourself, a parent or legal guardian must accept them for you.
+        You must use a valid Discord account and may not evade Discord restrictions, suspensions
+        or age requirements.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">2. What NovaGuard provides</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        NovaGuard provides optional community tools such as moderation, logging, setup,
+        configuration, levels, economy, voice statistics, tickets, giveaways, reminders, music,
+        GitHub updates, status information and AI-assisted answers. Features depend on Discord,
+        hosting and third-party providers and may differ between servers. No feature is promised
+        to remain available permanently.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">3. Server administrator responsibilities</h2>
+      <div class="mt-3 space-y-4 leading-relaxed text-ink-muted">
+        <p>
+          A server owner or administrator decides whether NovaGuard is installed, which optional
+          features are enabled, which roles can use them and where logs or results are posted. They
+          are responsible for having authority to make those choices and for complying with the
+          rules and laws that apply to their community.
+        </p>
+        <p>
+          Administrators must explain relevant uses to members before enabling optional message
+          logging, behavioural features or AI, use proportionate settings, keep a human moderation
+          and appeal route, restrict log channels, and never use NovaGuard to infer sensitive
+          traits, conduct unlawful surveillance or make legally significant automated decisions.
+          Organisations that require a data-processing agreement must contact the operator before
+          using NovaGuard for processing that requires one; these terms alone are not such an
+          agreement.
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">4. Acceptable use</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">You may not use or attempt to use NovaGuard to:</p>
+      <ul class="mt-4 list-disc space-y-2 pl-5 leading-relaxed text-ink-muted marker:text-primary">
+        <li>break applicable law, Discord's Terms, Developer Policy or Community Guidelines;</li>
+        <li>harass, threaten, discriminate against, exploit or invade the privacy of another person;</li>
+        <li>spam, manipulate engagement, scrape data or build profiles across communities;</li>
+        <li>upload malware, attack, probe, overload, reverse engineer or bypass service controls;</li>
+        <li>obtain credentials, tokens, private exports or data you are not authorised to access;</li>
+        <li>train an AI model on Discord data obtained through NovaGuard;</li>
+        <li>misrepresent NovaGuard output as guaranteed, professional or human-reviewed advice.</li>
+      </ul>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">5. Content, commands and AI output</h2>
+      <div class="mt-3 space-y-4 leading-relaxed text-ink-muted">
+        <p>
+          You retain any rights you hold in content submitted through Discord. You grant only the
+          limited permission needed to receive, process and return that content for the command or
+          feature you request. Do not submit secrets, credentials or content you have no right to
+          process.
+        </p>
+        <p>
+          AI and automated output can be incomplete, inaccurate or inappropriate. Verify important
+          information independently. NovaGuard is not a substitute for legal, medical, financial,
+          safety or other professional advice, and AI output must not be the sole basis for a
+          decision that materially affects another person.
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">6. Privacy and third-party services</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        The <a
+          href="/privacy"
+          class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+        >Privacy Policy</a> explains NovaGuard's processing, retention, providers, cookies and
+        individual controls. NovaGuard depends on services including Discord, Cloudflare, Oracle,
+        Google Drive, GitHub and, when enabled, Anthropic. Their own terms and policies also apply
+        to their services. You must not use NovaGuard in a way that causes the operator to violate
+        those provider rules.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">7. Security</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        Keep Discord accounts, server permissions and exported files secure. Report suspected
+        vulnerabilities or unauthorised access privately to
+        <a
+          href={`mailto:${LEGAL_OPERATOR.privacyEmail}`}
+          class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+        >{LEGAL_OPERATOR.privacyEmail}</a> and allow a reasonable period to investigate before any
+        public disclosure. Never include active tokens, passwords or another person's private data
+        in a public report.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">8. Availability and changes to the service</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        NovaGuard is provided on an “as available” basis. Maintenance, provider failures, rate
+        limits, security incidents or development changes may interrupt or alter the service. The
+        operator may add, change, limit or retire features and may impose reasonable safeguards or
+        usage limits. Where practical, material planned changes will be announced through the
+        website or configured Discord update channels.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">9. Suspension and termination</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        Access may be limited or terminated where reasonably necessary for security, provider
+        compliance, legal obligations, abuse prevention or a material breach of these terms.
+        Administrators may stop using NovaGuard by removing it from their server. Members may stop
+        using commands and can use the export and erasure controls described in the Privacy Policy.
+        Provisions that logically survive termination, including security, disclaimers, liability
+        and governing law, remain effective.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">10. Disclaimer and liability</h2>
+      <div class="mt-3 space-y-4 leading-relaxed text-ink-muted">
+        <p>
+          To the extent permitted by law, NovaGuard is provided without warranties of uninterrupted
+          availability, fitness for a particular purpose, error-free operation or preservation of
+          every community record. Administrators remain responsible for moderation decisions,
+          permissions, notices and independent recovery plans appropriate to their community.
+        </p>
+        <p>
+          To the extent permitted by law, the operator is not liable for indirect, incidental,
+          special or consequential loss arising from use or unavailability of NovaGuard, including
+          loss caused by third-party services or administrator configuration. Nothing in these
+          terms excludes liability, remedies or mandatory consumer rights that applicable law does
+          not allow to be excluded or limited.
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">11. Governing law and disputes</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        These terms are governed by the laws of the Republic of Moldova, without removing any
+        mandatory protection you have under the law of your residence. Before filing a dispute,
+        contact the operator and allow a reasonable opportunity to resolve it informally. Disputes
+        not resolved informally may be brought before a competent court. Privacy complaints may
+        also be made to the authority identified in the Privacy Policy.
+      </p>
+    </section>
+
+    <section class="mt-10 border-t border-line pt-7">
+      <h2 class="font-display text-2xl">12. Changes and contact</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        Material changes will be published here with a new effective date and an additional notice
+        where required. Continued use after a change takes effect constitutes acceptance only to
+        the extent permitted by law. Questions about these terms can be sent to
+        <a
+          href={`mailto:${LEGAL_OPERATOR.contactAddress}`}
+          class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+        >{LEGAL_OPERATOR.contactAddress}</a>. The operator is {LEGAL_OPERATOR.name}, contactable by
+        email in the {LEGAL_OPERATOR.country}.
+      </p>
+    </section>
   </main>
   <Footer />
 </Base>

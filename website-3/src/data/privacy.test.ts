@@ -29,6 +29,30 @@ describe("privacy inventory", () => {
     expect(inventory).toContain("/ask");
   });
 
+  it("publishes a basis for every data category", () => {
+    for (const category of DATA_CATEGORIES) {
+      expect(category.basis.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("discloses production hosting, encrypted backups and every enforced retention", () => {
+    const inventory = JSON.stringify({ RETENTION_ROWS, THIRD_PARTIES });
+    for (const disclosure of [
+      "Oracle Cloud Infrastructure",
+      "Germany",
+      "Google Drive",
+      "encrypted",
+      "180 days",
+      "365 days",
+      "90 days",
+      "13 months",
+      "30 days",
+      "deletion tokens",
+    ]) {
+      expect(inventory).toContain(disclosure);
+    }
+  });
+
   it("documents all persistent browser-storage keys", () => {
     expect(BROWSER_STORAGE.map((row) => row.name)).toEqual([
       "ng-theme",

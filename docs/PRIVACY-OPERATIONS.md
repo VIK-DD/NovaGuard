@@ -5,6 +5,19 @@ hosted NovaGuard service. It describes how the current code behaves; it is not
 jurisdiction-specific legal advice. Review it whenever a feature, provider,
 hosting region, retention value or public policy changes.
 
+## Confirmed deployment facts
+
+- Individual operator: Breabin Victor, Republic of Moldova.
+- Private privacy/security and contact address: `breabinvc@gmail.com`.
+- Main runtime and primary operational storage: Oracle Cloud Infrastructure,
+  Germany.
+- Encrypted off-site backup destination: Google Drive. The configured account
+  does not currently pin a disclosed storage region; treat it as global
+  processing. Archives are encrypted before upload and Google does not receive
+  the NovaGuard backup key.
+- Competent national authority: National Center for Personal Data Protection of
+  the Republic of Moldova (CNPDCP), <https://datepersonale.md/about/contacts/>.
+
 ## Accountability and roles
 
 - The NovaGuard operator controls account access, service security, abuse

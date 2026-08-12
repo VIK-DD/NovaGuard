@@ -10,11 +10,12 @@ import {
   RETENTION_ROWS,
   THIRD_PARTIES,
 } from "../data/privacy";
+import { LEGAL_INFRASTRUCTURE, LEGAL_OPERATOR, MOLDOVA_AUTHORITY } from "../data/legal";
 ---
 
 <Base
   title="Privacy Policy — NovaGuard"
-  description="What NovaGuard processes, why it is needed, how long it is kept, and the essential storage used by the website."
+  description="Who operates NovaGuard, what data it processes, why, where it goes, how long it is kept and how to exercise your rights."
 >
   <Nav />
   <main class="mx-auto max-w-4xl px-5 py-12 sm:px-6 sm:py-20">
@@ -23,30 +24,81 @@ import {
     </p>
     <h1 class="font-display mt-4 text-3xl sm:text-5xl">Privacy Policy</h1>
     <p class="mt-6 max-w-2xl leading-relaxed text-ink-muted">
-      This policy covers the NovaGuard Discord bot, dashboard and website operated by VIK &amp;
-      CloudMedia. It explains what data is processed, why it is needed, where it goes and how long
-      it remains.
+      This policy covers the hosted NovaGuard Discord bot, dashboard and website. It explains who
+      is responsible, what is processed, why it is needed, where it goes and how long it remains.
     </p>
 
-    <aside class="mt-8 rounded-lg border border-line bg-card p-5" aria-label="Privacy summary">
-      <p class="font-display text-lg font-semibold">The short version</p>
-      <p class="mt-2 leading-relaxed text-ink-muted">
-        NovaGuard has no advertising, does not sell personal data and currently uses no
-        third-party analytics. The website sets only security and sign-in cookies required to
-        provide the requested service, so there is no non-essential cookie choice to accept.
+    <aside class="mt-8 rounded-lg border border-line bg-card p-5" aria-label="Controller details">
+      <p class="font-display text-lg font-semibold">Operator and privacy contact</p>
+      <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-[11rem_1fr]">
+        <dt class="text-ink-faint">Operator</dt>
+        <dd class="text-ink">{LEGAL_OPERATOR.name}, individual operator</dd>
+        <dt class="text-ink-faint">Country</dt>
+        <dd class="text-ink">{LEGAL_OPERATOR.country}</dd>
+        <dt class="text-ink-faint">Contact address</dt>
+        <dd>
+          <a
+            href={`mailto:${LEGAL_OPERATOR.contactAddress}`}
+            class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+          >{LEGAL_OPERATOR.contactAddress}</a>
+        </dd>
+      </dl>
+      <p class="mt-4 text-sm leading-relaxed text-ink-muted">
+        {LEGAL_OPERATOR.name} controls NovaGuard's hosting, account access, security, support,
+        backups and service-level processing. A Discord server administrator separately chooses
+        which optional community features are enabled and how they are used in that server. For a
+        community-specific concern, contact the server administrator and NovaGuard where relevant.
       </p>
     </aside>
 
-    <section id="your-choices" class="mt-14 scroll-mt-8 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">01 · Data inventory</p>
+    <aside class="mt-5 rounded-lg border border-line bg-card p-5" aria-label="Privacy summary">
+      <p class="font-display text-lg font-semibold">The short version</p>
+      <p class="mt-2 leading-relaxed text-ink-muted">
+        NovaGuard has no advertising, does not sell personal data and uses no third-party
+        analytics. Ordinary messages and AI questions are not kept as a NovaGuard history. The
+        website sets only storage required for security, sign-in or a theme you explicitly select.
+      </p>
+    </aside>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">01 · Scope and responsibility</p>
+      <h2 class="font-display mt-3 text-2xl">How processing decisions are made</h2>
+      <div class="mt-4 space-y-4 leading-relaxed text-ink-muted">
+        <p>
+          NovaGuard processes data needed to operate the service, secure accounts, answer support
+          requests and deliver features requested by members or server administrators. Depending
+          on the activity, the legal basis is providing a requested service, legitimate interests
+          in security and reliable community operation, or a legal obligation. Where consent is
+          legally required, it can be withdrawn without affecting earlier lawful processing.
+        </p>
+        <p>
+          Server administrators must enable only features their community needs, give members an
+          understandable notice before optional logging, AI or behavioural features are used, and
+          identify any additional lawful basis required for their own use. NovaGuard does not use
+          Discord data for advertising, cross-community profiling or AI-model training.
+        </p>
+        <p>
+          Data comes from Discord, the person using a command, server administrators, configured
+          public GitHub repositories and technical request metadata. Discord identifiers and
+          requested command fields are necessary for the corresponding feature. Optional logging,
+          levels, economy, voice statistics, GitHub and AI can remain disabled. Refusing essential
+          dashboard cookies prevents that sign-in flow, but does not itself remove NovaGuard from
+          a Discord server.
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">02 · Data inventory</p>
       <h2 class="font-display mt-3 text-2xl">Information NovaGuard processes</h2>
       <div class="mt-6 overflow-x-auto rounded-lg border border-line">
-        <table class="w-full min-w-[42rem] border-collapse text-left text-sm">
+        <table class="w-full min-w-[64rem] border-collapse text-left text-sm">
           <thead class="bg-bg-subtle text-ink">
             <tr>
               <th class="px-4 py-3 font-medium">Category</th>
               <th class="px-4 py-3 font-medium">What it includes</th>
-              <th class="px-4 py-3 font-medium">Why it is used</th>
+              <th class="px-4 py-3 font-medium">Purpose</th>
+              <th class="px-4 py-3 font-medium">Basis</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line">
@@ -56,6 +108,7 @@ import {
                   <th class="px-4 py-4 font-medium text-ink">{row.name}</th>
                   <td class="px-4 py-4 leading-relaxed text-ink-muted">{row.data}</td>
                   <td class="px-4 py-4 leading-relaxed text-ink-muted">{row.use}</td>
+                  <td class="px-4 py-4 leading-relaxed text-ink-muted">{row.basis}</td>
                 </tr>
               ))
             }
@@ -65,13 +118,13 @@ import {
     </section>
 
     <section class="mt-14 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">02 · Cookies</p>
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">03 · Cookies</p>
       <h2 class="font-display mt-3 text-2xl">Essential cookies only</h2>
       <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
-        These cookies are first-party, are not used for advertising or cross-site tracking, and
-        are sent with <code>HttpOnly</code> and <code>SameSite</code> protections. Production cookies
-        are sent over HTTPS. Blocking them prevents the related sign-in, access or preview flow
-        from working.
+        These first-party cookies are not used for advertising or cross-site tracking. They use
+        <code>HttpOnly</code> and <code>SameSite</code> protections, and production cookies travel
+        over HTTPS. Because they are strictly necessary for a flow you request, NovaGuard does not
+        show a misleading accept/reject banner. Blocking one prevents that flow from working.
       </p>
       <div class="mt-6 overflow-x-auto rounded-lg border border-line">
         <table class="w-full min-w-[42rem] border-collapse text-left text-sm">
@@ -100,8 +153,8 @@ import {
 
       <h3 class="font-display mt-9 text-xl">Browser storage</h3>
       <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
-        The website also stores two small first-party preferences in the browser. Neither contains
-        a Discord identity, and neither is sent with web requests.
+        Two small first-party preferences remember the theme selected on this device. Neither
+        contains a Discord identity, and neither is sent with web requests.
       </p>
       <dl class="mt-5 divide-y divide-line border-y border-line">
         {
@@ -119,7 +172,7 @@ import {
     </section>
 
     <section class="mt-14 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">03 · Retention</p>
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">04 · Retention</p>
       <h2 class="font-display mt-3 text-2xl">How long data is kept</h2>
       <dl class="mt-6 divide-y divide-line border-y border-line">
         {
@@ -132,22 +185,35 @@ import {
         }
       </dl>
       <p class="mt-4 text-sm leading-relaxed text-ink-muted">
-        A backup can retain an item until that backup reaches its own deletion window. Legal or
-        security obligations may require a limited record to be kept longer.
+        An erased item can remain inside an encrypted backup until that archive expires. A signed
+        pseudonymous deletion ledger prevents restored backups from making erased records live
+        again. A limited record may be isolated longer where law, a security investigation or a
+        legal claim requires it.
       </p>
     </section>
 
     <section class="mt-14 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">04 · Processors</p>
-      <h2 class="font-display mt-3 text-2xl">Third-party services</h2>
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">05 · Providers and transfers</p>
+      <h2 class="font-display mt-3 text-2xl">Where data is processed</h2>
       <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
-        Data is shared only to operate NovaGuard or an optional integration selected by the server
-        operator. Each provider handles the data it receives under its own policy.
+        Primary NovaGuard runtime data is hosted through {LEGAL_INFRASTRUCTURE.hostingProvider} in
+        {` ${LEGAL_INFRASTRUCTURE.hostingRegion}`}. Cloudflare protects and serves the website at
+        the network edge. Encrypted recovery archives are uploaded to {LEGAL_INFRASTRUCTURE.backupProvider}.
+        They are encrypted and authenticated before upload, and Google does not receive the backup
+        key. The configured Google Drive account does not currently pin a disclosed storage
+        region, so encrypted files and related service metadata may be processed on Google's
+        global infrastructure.
+      </p>
+      <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
+        Discord, Cloudflare, Google, GitHub and Anthropic may also process information outside the
+        operator's country. Applicable provider contracts and available legal transfer safeguards
+        are used where required. No claim is made that every request, support event or encrypted
+        backup remains exclusively in Germany or the European Economic Area.
       </p>
       <ul class="mt-6 divide-y divide-line border-y border-line">
         {
           THIRD_PARTIES.map((provider) => (
-            <li class="grid gap-1 py-4 sm:grid-cols-[10rem_1fr] sm:gap-6">
+            <li class="grid gap-1 py-4 sm:grid-cols-[12rem_1fr] sm:gap-6">
               <a
                 href={provider.href}
                 target="_blank"
@@ -163,41 +229,94 @@ import {
       </ul>
     </section>
 
-    <section class="mt-14 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">05 · Your choices</p>
-      <h2 class="font-display mt-3 text-2xl">Access, export and deletion</h2>
+    <section id="your-choices" class="mt-14 scroll-mt-8 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">06 · Your rights</p>
+      <h2 class="font-display mt-3 text-2xl">Access, export, correction and erasure</h2>
       <div class="mt-4 space-y-4 leading-relaxed text-ink-muted">
         <p>
-          A server administrator can export that server's stored settings, levels, economy and
-          voice records with <code>/config export</code>. Logging out revokes the active Discord
-          OAuth token and removes the dashboard session.
+          Use <code>/privacy export</code> to privately download records tied to your Discord ID.
+          Use <code>/privacy delete</code> to receive a final export and erase or anonymise live
+          records. A server administrator can use <code>/privacy server-export</code> and
+          <code>/privacy server-delete</code> for server-scoped data. Logging out revokes the
+          active Discord OAuth token and removes the dashboard session.
         </p>
         <p>
-          Depending on where you live, you may also have rights to access, correct, delete,
-          restrict or object to processing of personal data. Start a request using the contact
-          details on the
+          Depending on applicable law, you may request information, access, correction, erasure,
+          restriction, portability or objection, and may withdraw consent where processing relied
+          on it. Email
           <a
-            href="https://github.com/VIK-DD/NovaGuard"
+            href={`mailto:${LEGAL_OPERATOR.privacyEmail}`}
+            class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+          >{LEGAL_OPERATOR.privacyEmail}</a>.
+          Do not send passwords, bot tokens or OAuth tokens. NovaGuard may verify control of the
+          relevant Discord account or authority over a server and will respond within the period
+          required by applicable law, normally within one month where the new Moldovan law or GDPR
+          applies.
+        </p>
+        <p>
+          You may complain to the
+          <a
+            href={MOLDOVA_AUTHORITY.href}
             target="_blank"
             rel="noreferrer"
             class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
-          >NovaGuard repository</a
-          >. Do not post personal data in a public issue; arrange a private channel with the
-          operator first. Include the relevant Discord user ID or server ID only after that, and
-          never send a password, bot token or OAuth token. Identity or server authority may need to
-          be verified before a request is completed.
+          >{MOLDOVA_AUTHORITY.name}</a>
+          at <a
+            href={`mailto:${MOLDOVA_AUTHORITY.email}`}
+            class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+          >{MOLDOVA_AUTHORITY.email}</a>, or to another competent authority where applicable. You
+          also retain the right to seek a judicial remedy.
         </p>
       </div>
     </section>
 
     <section class="mt-14 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">06 · Security and changes</p>
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">07 · Moderation and AI</p>
+      <h2 class="font-display mt-3 text-2xl">Automated processing and human review</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        AutoMod applies rules configured by a server administrator and can remove or flag content;
+        it is not used to make legal or similarly significant decisions. Appeals and human review
+        belong with that server's moderators. The optional <code>/ask</code> command returns an AI
+        answer requested by the member; it does not decide access, moderation or legal rights.
+        AI output can be inaccurate and must not replace professional advice or a human decision.
+      </p>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">08 · Age</p>
+      <h2 class="font-display mt-3 text-2xl">Children and minimum age</h2>
+      <p class="mt-3 leading-relaxed text-ink-muted">
+        NovaGuard is available only through Discord and is not directed to anyone below Discord's
+        minimum age or the minimum age required by local law. NovaGuard does not request a date of
+        birth. If a parent or guardian believes a child used the service below the permitted age,
+        contact the privacy address so relevant NovaGuard records can be investigated and erased.
+      </p>
+    </section>
+
+    <section class="mt-14 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">09 · Security and changes</p>
       <h2 class="font-display mt-3 text-2xl">Safeguards</h2>
       <p class="mt-3 leading-relaxed text-ink-muted">
-        Dashboard OAuth tokens are encrypted at rest, session identifiers are hashed in the
-        database, changes are access-controlled and audited, and production traffic uses HTTPS.
-        No transmission or storage method is completely secure. Material policy changes will be
-        published here with a new effective date.
+        Dashboard OAuth tokens are encrypted at rest, session identifiers are hashed, production
+        traffic uses HTTPS, private backups are authenticated and encrypted before upload, changes
+        are access-controlled and audited, and erasures are protected across restores. No method
+        is completely secure. Report a suspected incident privately to
+        <a
+          href={`mailto:${LEGAL_OPERATOR.privacyEmail}`}
+          class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+        >{LEGAL_OPERATOR.privacyEmail}</a>.
+      </p>
+      <p class="mt-4 leading-relaxed text-ink-muted">
+        This policy was prepared for launch in view of Moldova's
+        <a
+          href="https://datepersonale.md/legea-nr-195-2024-privind-protectia-datelor-cu-caracter-personal-principalele-prevederi-si-noutati-legislative/"
+          target="_blank"
+          rel="noreferrer"
+          class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary"
+        >Law no. 195/2024</a>, which enters into force on August 23, 2026. This does not replace
+        continuing operational or legal review. Material changes to purposes, providers, storage
+        or rights will be published here with a new effective date and, where required, an
+        additional notice.
       </p>
     </section>
   </main>

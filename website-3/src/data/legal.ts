@@ -1,0 +1,21 @@
+export const LEGAL_EFFECTIVE_DATE = "August 12, 2026";
+
+export const LEGAL_OPERATOR = {
+  name: "Breabin Victor",
+  contactAddress: "breabinvc@gmail.com",
+  privacyEmail: "breabinvc@gmail.com",
+  country: "Republic of Moldova",
+} as const;
+
+export const LEGAL_INFRASTRUCTURE = {
+  hostingProvider: "Oracle Cloud Infrastructure",
+  hostingRegion: "Germany",
+  backupProvider: "Google Drive",
+  backupLocation: "Google's global infrastructure",
+} as const;
+
+export const MOLDOVA_AUTHORITY = {
+  name: "National Center for Personal Data Protection of the Republic of Moldova (CNPDCP)",
+  href: "https://datepersonale.md/about/contacts/",
+  email: "centru@datepersonale.md",
+} as const;
