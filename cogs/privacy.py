@@ -24,8 +24,15 @@ from core.utils import defer_interaction, respond
 
 
 PRIVACY_URL = "https://novaguard.fun/privacy"
+PRIVACY_ADMIN_NOTICE_URL = "https://novaguard.fun/server-admin-notice"
 USER_DELETE_CONFIRMATION = "DELETE MY DATA"
 GUILD_DELETE_CONFIRMATION = "DELETE SERVER DATA"
+PRIVACY_CONTROLS_TEXT = (
+    "`/privacy export` — download your own data\n"
+    "`/privacy delete` — export, then erase your own data\n"
+    "`/privacy server-export` — server administrator export\n"
+    "`/privacy server-delete` — server owner export, erasure and bot removal"
+)
 
 
 def _json_file(payload, filename):
@@ -201,16 +208,15 @@ class Privacy(commands.Cog):
         )
         embed.add_field(
             name="Controls",
-            value=(
-                "`/privacy export` — download your own data\n"
-                "`/privacy delete` — export, then erase your own data\n"
-                "`/privacy server-export` — server administrator export"
-            ),
+            value=PRIVACY_CONTROLS_TEXT,
             inline=False,
         )
         embed.add_field(
             name="Full policy",
-            value=f"[Read the Privacy Policy]({PRIVACY_URL})",
+            value=(
+                f"[Read the Privacy Policy]({PRIVACY_URL})\n"
+                f"[Server administrator notice]({PRIVACY_ADMIN_NOTICE_URL})"
+            ),
             inline=False,
         )
         brand_footer(embed, "Privacy controls")
