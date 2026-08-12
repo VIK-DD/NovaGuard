@@ -22,8 +22,14 @@ LEGAL_FIELDS = (
     "LEGAL_OPERATOR_ADDRESS",
     "LEGAL_OPERATOR_COUNTRY",
     "PRIVACY_CONTACT_EMAIL",
+    "LEGAL_HOSTING_PROVIDER",
+    "LEGAL_HOSTING_REGION",
+    "LEGAL_BACKUP_PROVIDER",
+    "LEGAL_BACKUP_COUNTRY",
+    "LEGAL_SUPERVISORY_AUTHORITY_URL",
 )
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_HTTPS_URL = re.compile(r"^https://[^\s/]+(?:/[^\s]*)?$")
 
 
 def _mode_is_private(path):
@@ -138,6 +144,15 @@ def production_findings(
     email = (env.get("PRIVACY_CONTACT_EMAIL") or "").strip()
     if email and not _EMAIL.fullmatch(email):
         findings.append(Finding(CRITICAL, "PRIVACY_CONTACT_EMAIL", "is not a valid contact email."))
+    authority_url = (env.get("LEGAL_SUPERVISORY_AUTHORITY_URL") or "").strip()
+    if authority_url and not _HTTPS_URL.fullmatch(authority_url):
+        findings.append(
+            Finding(
+                CRITICAL,
+                "LEGAL_SUPERVISORY_AUTHORITY_URL",
+                "must be an absolute HTTPS URL.",
+            )
+        )
 
     env_path = base_dir / ".env"
     if not env_path.is_file():

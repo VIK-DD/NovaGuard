@@ -38,6 +38,11 @@ HEALTHY_ENV = {
     "LEGAL_OPERATOR_ADDRESS": "Test Address",
     "LEGAL_OPERATOR_COUNTRY": "Test Country",
     "PRIVACY_CONTACT_EMAIL": "privacy@example.test",
+    "LEGAL_HOSTING_PROVIDER": "Test Compute",
+    "LEGAL_HOSTING_REGION": "Test Region, Test Country",
+    "LEGAL_BACKUP_PROVIDER": "Test Storage",
+    "LEGAL_BACKUP_COUNTRY": "Test Backup Country",
+    "LEGAL_SUPERVISORY_AUTHORITY_URL": "https://authority.example.test/complaints",
 }
 
 
@@ -119,10 +124,38 @@ class ProductionCheckTests(unittest.TestCase):
         critical = {item.name for item in findings if item.level == CRITICAL}
         self.assertIn("LEGAL_OPERATOR_NAME", critical)
         self.assertIn("PRIVACY_CONTACT_EMAIL", critical)
+        self.assertIn("LEGAL_HOSTING_REGION", critical)
+        self.assertIn("LEGAL_BACKUP_PROVIDER", critical)
+        self.assertIn("LEGAL_SUPERVISORY_AUTHORITY_URL", critical)
         self.assertIn("database", critical)
         self.assertIn("deletion ledger", critical)
         self.assertIn("latest backup", critical)
         self.assertIn("off-site backup", critical)
+
+    def test_invalid_privacy_contact_and_authority_url_block_launch(self):
+        env = {
+            **HEALTHY_ENV,
+            "PRIVACY_CONTACT_EMAIL": "public issue tracker",
+            "LEGAL_SUPERVISORY_AUTHORITY_URL": "http://authority.example.test",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ, env, clear=True
+        ):
+            root = Path(temp_dir)
+            db_path, backup_dir = self._healthy_state(root)
+            with mock.patch.object(backups, "BACKUP_DIR", backup_dir), mock.patch.object(
+                backups, "RESTORE_CHECK_DIR", backup_dir / "restore-check"
+            ):
+                findings = production_findings(
+                    env,
+                    base_dir=root,
+                    db_path=db_path,
+                    backup_dir=backup_dir,
+                )
+
+        critical = {item.name for item in findings if item.level == CRITICAL}
+        self.assertIn("PRIVACY_CONTACT_EMAIL", critical)
+        self.assertIn("LEGAL_SUPERVISORY_AUTHORITY_URL", critical)
 
 
 if __name__ == "__main__":

@@ -364,7 +364,10 @@ only public path to the API.
 
 Before opening the site publicly, complete `LEGAL_OPERATOR_NAME`,
 `LEGAL_OPERATOR_ADDRESS`, `LEGAL_OPERATOR_COUNTRY` and
-`PRIVACY_CONTACT_EMAIL`, generate separate random values for
+`PRIVACY_CONTACT_EMAIL`. Also name the actual infrastructure and legal complaint
+route in `LEGAL_HOSTING_PROVIDER`, `LEGAL_HOSTING_REGION`,
+`LEGAL_BACKUP_PROVIDER`, `LEGAL_BACKUP_COUNTRY` and
+`LEGAL_SUPERVISORY_AUTHORITY_URL`. Generate separate random values for
 `BACKUP_ENCRYPTION_KEY` and `WEB_TOKEN_KEY`, then run:
 
 ```bash
