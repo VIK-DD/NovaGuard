@@ -28,11 +28,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="NovaGuard single-file host migration")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    export_parser = commands.add_parser("export", help="create one portable .sql file")
-    export_parser.add_argument("--output", type=Path, help="custom output .sql path")
+    export_parser = commands.add_parser("export", help="create one encrypted .sql.ngbackup file")
+    export_parser.add_argument("--output", type=Path, help="custom output .sql.ngbackup path")
 
     verify_parser = commands.add_parser("verify", help="validate a .sql migration without importing it")
     verify_parser.add_argument("file", type=Path)
+    verify_parser.add_argument(
+        "--allow-plaintext",
+        action="store_true",
+        help="explicitly allow a trusted legacy plaintext SQL migration",
+    )
 
     import_parser = commands.add_parser("import", help="replace local state from a .sql migration")
     import_parser.add_argument("file", type=Path)
@@ -40,6 +45,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--confirm-replace",
         action="store_true",
         help="confirm that the current database may be replaced",
+    )
+    import_parser.add_argument(
+        "--ledger",
+        type=Path,
+        help="deletion ledger path (defaults to .privacy_deletions.json)",
+    )
+    import_parser.add_argument(
+        "--allow-missing-deletion-ledger",
+        action="store_true",
+        help="dangerous: import without preventing resurrection of erased data",
+    )
+    import_parser.add_argument(
+        "--allow-plaintext",
+        action="store_true",
+        help="explicitly allow a trusted legacy plaintext SQL migration",
     )
     return parser
 
@@ -56,7 +76,7 @@ def main() -> int:
             )
             print("Secrets are not included: copy/configure .env separately.")
         elif args.command == "verify":
-            result = verify_host_sql(args.file)
+            result = verify_host_sql(args.file, allow_plaintext=args.allow_plaintext)
             print(f"OK: migration is valid ({result['path']})")
             print(
                 f"Exported: {result['exported_at']} | "
@@ -64,7 +84,13 @@ def main() -> int:
                 f"auxiliary JSON: {result['auxiliary_files']} | size: {human_size(result['size'])}"
             )
         else:
-            result = import_host_sql(args.file, confirm_replace=args.confirm_replace)
+            result = import_host_sql(
+                args.file,
+                confirm_replace=args.confirm_replace,
+                ledger_path=args.ledger,
+                allow_missing_deletion_ledger=args.allow_missing_deletion_ledger,
+                allow_plaintext=args.allow_plaintext,
+            )
             print(f"OK: imported into {result['database']}")
             print(
                 f"Restored: {result['tables']} tables | {result['rows']} rows | "
@@ -72,6 +98,13 @@ def main() -> int:
             )
             if result["safety_backup"]:
                 print(f"Previous state safety backup: {result['safety_backup']}")
+            if result["privacy"]:
+                print(
+                    "Privacy ledger enforced: "
+                    f"{result['privacy']['removed_or_anonymised']} restored reference(s) scrubbed"
+                )
+            else:
+                print("WARNING: deletion ledger was not applied")
             print("Start NovaGuard and run /doctor to finish the check.")
     except HostMigrationError as error:
         print(f"ERROR: {error}", file=sys.stderr)

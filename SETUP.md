@@ -431,30 +431,32 @@ and **Bot owner**. `/help` remains the interactive in-Discord command browser.
 - `/doctor` checks database, JSON files, GitHub API, permissions, latency, uptime, backup status and event-loop lag.
 - The health monitor sends admin error embeds if the event loop lag becomes dangerously high.
 
-### Move NovaGuard to another host with one SQL file
+### Move NovaGuard to another host with one encrypted migration
 
 Stop the bot on the old host, then create and verify the portable migration:
 
 ```bash
 pm2 stop Novaguard
 venv/bin/python tools/host_migration.py export
-venv/bin/python tools/host_migration.py verify backups/novaguard-host-YYYY-MM-DD_HH-MM-SS.sql
+venv/bin/python tools/host_migration.py verify backups/novaguard-host-YYYY-MM-DD_HH-MM-SS.sql.ngbackup
 ```
 
-Copy that single `.sql` file to the new host. After cloning NovaGuard and
+Copy that single `.sql.ngbackup` file plus the independent
+`.privacy_deletions.json` ledger to the new host. After cloning NovaGuard and
 installing its dependencies there, import it and start the bot:
 
 ```bash
-venv/bin/python tools/host_migration.py import novaguard-host-YYYY-MM-DD_HH-MM-SS.sql --confirm-replace
+venv/bin/python tools/host_migration.py import novaguard-host-YYYY-MM-DD_HH-MM-SS.sql.ngbackup --confirm-replace
 pm2 start bot.py --name Novaguard --interpreter venv/bin/python
 pm2 save
 ```
 
-The SQL migration contains the complete SQLite database plus NovaGuard's
-auxiliary JSON state. It intentionally excludes `.env`, cookies and external
-credentials; configure `.env` separately on the new host. Import validates the
-SQL, JSON checksums, SQLite integrity and foreign keys before replacing live
-data, and saves any previous destination state in `backups/` first. Run
+The encrypted migration contains the complete SQLite database plus NovaGuard's
+auxiliary JSON state. It intentionally excludes `.env`, cookies, the deletion
+ledger and external credentials; configure/restore them separately on the new
+host. Import authenticates the encrypted file, validates SQL, JSON checksums,
+SQLite integrity and foreign keys, reapplies post-snapshot deletions, and saves
+any previous destination state as another encrypted archive in `backups/`. Run
 `/doctor` after the move for the final live check. Never import an SQL file from
 an untrusted source.
 

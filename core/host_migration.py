@@ -1,8 +1,9 @@
 """Portable, single-file host migrations for NovaGuard.
 
-The regular backup system intentionally creates ZIP archives.  A host move has
-a different goal: one human-readable SQL file that can rebuild the SQLite
-database and carry the small JSON state files that still live beside it.
+The regular backup system creates encrypted ZIP archives. A host move has a
+different goal: one encrypted portable file whose authenticated payload is a
+human-readable SQL dump that rebuilds SQLite and carries the small JSON state
+files that still live beside it.
 
 Secrets are deliberately excluded.  ``.env``, cookies and rclone credentials
 must be configured independently on the destination host.
@@ -16,11 +17,19 @@ import os
 import sqlite3
 import tempfile
 import zipfile
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from .config import BASE_DIR
 from .database import DB_PATH, init_database
+from .privacy_ledger import (
+    LEDGER_PATH,
+    PrivacyLedgerError,
+    apply_deletion_ledger_to_paths,
+    load_deletion_ledger,
+)
+from .secure_files import SecureFileError, decrypt_file, encrypt_file, is_encrypted_file
 
 FORMAT_VERSION = 1
 MARKER_TABLE = "__novaguard_host_migration"
@@ -151,11 +160,18 @@ def export_host_sql(
     if not db_path.exists():
         raise HostMigrationError(f"Database does not exist: {db_path}")
 
-    output = Path(output_path) if output_path else base_dir / "backups" / f"novaguard-host-{_timestamp()}.sql"
+    output = (
+        Path(output_path)
+        if output_path
+        else base_dir / "backups" / f"novaguard-host-{_timestamp()}.sql.ngbackup"
+    )
+    if not output.name.endswith(".sql.ngbackup"):
+        raise HostMigrationError("Host migration output must end in .sql.ngbackup")
     output.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="novaguard-host-export-") as temp_dir:
         snapshot = Path(temp_dir) / "snapshot.sqlite3"
+        clear_sql = Path(temp_dir) / output.name.removesuffix(".ngbackup")
         auxiliary_count = _prepare_snapshot(db_path, snapshot, base_dir)
         snapshot_connection = sqlite3.connect(snapshot)
         try:
@@ -164,15 +180,17 @@ def export_host_sql(
         finally:
             snapshot_connection.close()
 
-    header = (
-        "-- NovaGuard portable host migration\n"
-        f"-- Format: {FORMAT_VERSION}\n"
-        "-- Contains application data, not .env secrets or credentials.\n"
-    )
-    temporary = output.with_name(f".{output.name}.tmp")
-    temporary.write_text(header + dump, encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, output)
+        header = (
+            "-- NovaGuard portable host migration\n"
+            f"-- Format: {FORMAT_VERSION}\n"
+            "-- Contains application data, not .env secrets or credentials.\n"
+        )
+        clear_sql.write_text(header + dump, encoding="utf-8")
+        os.chmod(clear_sql, 0o600)
+        try:
+            encrypt_file(clear_sql, output)
+        except SecureFileError as error:
+            raise HostMigrationError(str(error)) from error
     return {
         "path": str(output),
         "size": output.stat().st_size,
@@ -233,13 +251,33 @@ def _load_and_validate(sql_path: Path, staging_db: Path) -> tuple[dict, list[tup
         connection.close()
 
 
-def verify_host_sql(sql_path: str | Path) -> dict:
+@contextmanager
+def readable_host_sql(sql_path: str | Path, *, allow_plaintext=False):
+    sql_path = Path(sql_path)
+    if is_encrypted_file(sql_path):
+        with tempfile.TemporaryDirectory(prefix="novaguard-host-decrypt-") as temp_dir:
+            clear_path = Path(temp_dir) / sql_path.name.removesuffix(".ngbackup")
+            decrypt_file(sql_path, clear_path)
+            yield clear_path
+        return
+    if not allow_plaintext:
+        raise HostMigrationError(
+            "Plaintext host migration refused; use allow_plaintext only for a trusted legacy file"
+        )
+    yield sql_path
+
+
+def verify_host_sql(sql_path: str | Path, *, allow_plaintext=False) -> dict:
     """Fully load and validate a migration without changing live state."""
     sql_path = Path(sql_path)
     if not sql_path.is_file():
         raise HostMigrationError(f"Migration file does not exist: {sql_path}")
-    with tempfile.TemporaryDirectory(prefix="novaguard-host-verify-") as temp_dir:
-        info, _ = _load_and_validate(sql_path, Path(temp_dir) / "verify.sqlite3")
+    try:
+        with readable_host_sql(sql_path, allow_plaintext=allow_plaintext) as clear_sql:
+            with tempfile.TemporaryDirectory(prefix="novaguard-host-verify-") as temp_dir:
+                info, _ = _load_and_validate(clear_sql, Path(temp_dir) / "verify.sqlite3")
+    except SecureFileError as error:
+        raise HostMigrationError(str(error)) from error
     return {**info, "path": str(sql_path), "size": sql_path.stat().st_size, "ok": True}
 
 
@@ -250,9 +288,10 @@ def _create_pre_import_backup(base_dir: Path, db_path: Path) -> Path | None:
 
     backup_dir = base_dir / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_dir / f"novaguard-pre-host-import-{_timestamp()}.zip"
+    backup_path = backup_dir / f"novaguard-pre-host-import-{_timestamp()}.zip.ngbackup"
     with tempfile.TemporaryDirectory(prefix="novaguard-pre-import-") as temp_dir:
         db_snapshot = Path(temp_dir) / "novaguard.sqlite3"
+        clear_zip = Path(temp_dir) / backup_path.name.removesuffix(".ngbackup")
         if db_path.exists():
             source = sqlite3.connect(db_path)
             target = sqlite3.connect(db_snapshot)
@@ -261,13 +300,61 @@ def _create_pre_import_backup(base_dir: Path, db_path: Path) -> Path | None:
             finally:
                 target.close()
                 source.close()
-        with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(clear_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             if db_snapshot.exists():
                 archive.write(db_snapshot, "data/novaguard.sqlite3")
             for relative, path in candidates:
                 archive.write(path, relative)
-    os.chmod(backup_path, 0o600)
+        os.chmod(clear_zip, 0o600)
+        try:
+            encrypt_file(clear_zip, backup_path)
+        except SecureFileError as error:
+            raise HostMigrationError(str(error)) from error
     return backup_path
+
+
+def _enforce_migration_privacy(
+    staging_db,
+    files,
+    *,
+    exported_at,
+    ledger_path,
+    allow_missing_deletion_ledger,
+):
+    ledger_path = Path(ledger_path)
+    if not ledger_path.is_file():
+        if allow_missing_deletion_ledger:
+            return files, None
+        raise HostMigrationError(
+            "Deletion ledger is missing; host import refused to prevent erased data resurrection"
+        )
+    try:
+        load_deletion_ledger(ledger_path, require=True)
+        with tempfile.TemporaryDirectory(prefix="novaguard-host-privacy-") as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir()
+            data_files = {}
+            for relative, content in files:
+                path = PurePosixPath(relative)
+                if len(path.parts) == 2 and path.parts[0] == "data" and path.suffix == ".json":
+                    target = data_dir / path.name
+                    target.write_text(content, encoding="utf-8")
+                    data_files[relative] = target
+            report = apply_deletion_ledger_to_paths(
+                staging_db,
+                data_dir,
+                ledger_path=ledger_path,
+                snapshot_created_at=exported_at,
+            )
+            scrubbed = []
+            for relative, content in files:
+                target = data_files.get(relative)
+                scrubbed.append(
+                    (relative, target.read_text(encoding="utf-8") if target else content)
+                )
+            return scrubbed, report
+    except (OSError, PrivacyLedgerError, SecureFileError) as error:
+        raise HostMigrationError(str(error)) from error
 
 
 def import_host_sql(
@@ -276,6 +363,9 @@ def import_host_sql(
     confirm_replace: bool = False,
     base_dir: str | Path = BASE_DIR,
     db_path: str | Path = DB_PATH,
+    ledger_path: str | Path | None = None,
+    allow_missing_deletion_ledger: bool = False,
+    allow_plaintext: bool = False,
 ) -> dict:
     """Validate and atomically install a portable host migration."""
     if not confirm_replace:
@@ -284,6 +374,7 @@ def import_host_sql(
     sql_path = Path(sql_path)
     base_dir = Path(base_dir)
     db_path = Path(db_path)
+    ledger_path = Path(ledger_path) if ledger_path else base_dir / LEDGER_PATH.name
     if not sql_path.is_file():
         raise HostMigrationError(f"Migration file does not exist: {sql_path}")
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,13 +383,30 @@ def import_host_sql(
     if staging_db.exists():
         staging_db.unlink()
     try:
-        info, files = _load_and_validate(sql_path, staging_db)
+        try:
+            with readable_host_sql(sql_path, allow_plaintext=allow_plaintext) as clear_sql:
+                info, files = _load_and_validate(clear_sql, staging_db)
+        except SecureFileError as error:
+            raise HostMigrationError(str(error)) from error
+        files, privacy_report = _enforce_migration_privacy(
+            staging_db,
+            files,
+            exported_at=info.get("exported_at"),
+            ledger_path=ledger_path,
+            allow_missing_deletion_ledger=allow_missing_deletion_ledger,
+        )
         connection = sqlite3.connect(staging_db)
         try:
             connection.execute(f'DROP TABLE "{FILES_TABLE}"')
             connection.execute(f'DROP TABLE "{MARKER_TABLE}"')
             connection.commit()
             _integrity(connection)
+            row_counts = _data_counts(connection)
+            info.update(
+                tables=len(row_counts),
+                rows=sum(row_counts.values()),
+                row_counts=row_counts,
+            )
         finally:
             connection.close()
 
@@ -323,6 +431,7 @@ def import_host_sql(
             "path": str(sql_path),
             "database": str(db_path),
             "safety_backup": str(safety_backup) if safety_backup else None,
+            "privacy": privacy_report,
             "ok": True,
         }
     finally:

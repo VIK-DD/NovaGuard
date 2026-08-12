@@ -503,6 +503,24 @@ def apply_deletion_ledger(
 ):
     """Remove records deleted after the restored snapshot was created."""
     restore_root = Path(restore_root)
+    return apply_deletion_ledger_to_paths(
+        restore_root / "data" / "novaguard.sqlite3",
+        restore_root / "data",
+        ledger_path=ledger_path,
+        snapshot_created_at=snapshot_created_at,
+        secret=secret,
+    )
+
+
+def apply_deletion_ledger_to_paths(
+    db_path,
+    data_dir,
+    *,
+    ledger_path=None,
+    snapshot_created_at=None,
+    secret=None,
+):
+    """Apply the ledger to explicit snapshot paths (archive or host migration)."""
     secret = encryption_secret() if secret is None else bytes(secret)
     ledger = load_deletion_ledger(ledger_path, require=True, secret=secret)
     user_digests = _active_digests(ledger, "users", snapshot_created_at)
@@ -510,10 +528,8 @@ def apply_deletion_ledger(
     user_matches = _matcher("user", user_digests, secret)
     guild_matches = _matcher("guild", guild_digests, secret)
 
-    counts = _scrub_sqlite(
-        restore_root / "data" / "novaguard.sqlite3", guild_matches, user_matches
-    )
-    counts.update(_scrub_json_files(restore_root / "data", guild_matches, user_matches))
+    counts = _scrub_sqlite(Path(db_path), guild_matches, user_matches)
+    counts.update(_scrub_json_files(Path(data_dir), guild_matches, user_matches))
     return {
         "snapshot_created_at": snapshot_created_at,
         "active_user_deletions": len(user_digests),

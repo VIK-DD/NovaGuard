@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -40,7 +41,7 @@ class PrivacyLedgerTests(unittest.TestCase):
         data = restore / "data"
         data.mkdir(parents=True)
         database = data / "novaguard.sqlite3"
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             connection.executescript(
                 """
                 CREATE TABLE level_records (guild_id TEXT, user_id TEXT, xp INTEGER);
@@ -154,7 +155,7 @@ class PrivacyLedgerTests(unittest.TestCase):
         )
 
         self.assertGreater(report["removed_or_anonymised"], 0)
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             self.assertEqual(
                 connection.execute("SELECT guild_id, user_id FROM level_records").fetchall(),
                 [("222", "99")],
@@ -202,7 +203,7 @@ class PrivacyLedgerTests(unittest.TestCase):
         )
 
         self.assertEqual(report["active_user_deletions"], 0)
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             self.assertEqual(
                 connection.execute("SELECT xp FROM level_records WHERE user_id='42'").fetchone(),
                 (500,),

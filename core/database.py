@@ -28,6 +28,16 @@ _LOCK = threading.RLock()
 _INITIALIZED = False
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """A transactional context manager that also releases the DB handle."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def utc_now():
     return datetime.now(UTC).isoformat()
 
@@ -44,7 +54,7 @@ def _restrict_permissions():
 
 def connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH, timeout=30)
+    connection = sqlite3.connect(DB_PATH, timeout=30, factory=_ClosingConnection)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys=ON")
