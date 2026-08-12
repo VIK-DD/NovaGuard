@@ -41,6 +41,9 @@ class PrivacyOperationsTests(unittest.TestCase):
             "deletion token",
             "data-protection impact assessment",
             "human review",
+            "Server Admin Notice",
+            "Privacy & Safety",
+            "production_check.py --strict",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, self.register)

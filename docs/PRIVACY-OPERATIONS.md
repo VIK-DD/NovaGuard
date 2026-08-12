@@ -37,6 +37,32 @@ hosting region, retention value or public policy changes.
 The role analysis follows the EDPB controller/processor guidance:
 <https://www.edpb.europa.eu/documents/guideline/guidelines-072020-on-the-concepts-of-controller-and-processor-in-the-gdpr_en>.
 
+## Server-administrator notice and dashboard review
+
+The public [Server Admin Notice](https://novaguard.fun/server-admin-notice)
+is the copy-and-adapt notice for Discord communities. It covers the optional
+features that are most likely to affect members: moderation/logging, levels,
+voice reports, AI, tickets and economy. It must be adapted to the modules a
+server actually enables; do not paste it unchanged while claiming features are
+off when they are configured.
+
+The authenticated dashboard's **Privacy & Safety** tab reads the live server
+configuration and labels those feature effects as active or off. It is a review
+aid, not an automated compliance attestation: it cannot know whether a server
+owner has a lawful basis, published a community notice, restricted staff access
+or provided human review. The release owner must keep those decisions outside
+the dashboard and review them whenever the configuration changes.
+
+Before enabling or materially changing one of these modules in a community:
+
+1. Open Dashboard → Privacy & Safety and compare every active item with the
+   server's visible notice and rules.
+2. Restrict log, ticket and moderation channels to authorised staff roles.
+3. Tell members where they can ask for a moderation review and use
+   `/privacy export` or `/privacy delete` privately.
+4. For organisations, record who made the enablement decision, its purpose,
+   the notice location and the review date in the restricted processing log.
+
 ## Processing register
 
 | Activity | People and data | Purpose | Working legal-basis assessment | Recipient/location | Live retention |
@@ -154,6 +180,11 @@ The operator must complete and retain evidence for every item:
 
 - [ ] Publish the legal operator's full name, contact address, country and a
       monitored private privacy/security email.
+- [ ] Verify `/privacy policy` lists personal export/deletion and both
+      server-scoped controls, including owner-only server deletion.
+- [ ] In a test server, open Dashboard → Privacy & Safety, compare each active
+      item with the enabled configuration, adapt the Server Admin Notice and
+      post it in a visible rules, onboarding or privacy channel.
 - [ ] Identify the competent supervisory authority and complaint route.
 - [ ] Confirm the Oracle region and every rclone backup destination/country.
 - [ ] Record the lawful basis and legitimate-interest assessment for every
@@ -168,6 +199,22 @@ The operator must complete and retain evidence for every item:
 - [ ] Assign a person who monitors the privacy inbox and incident alerts.
 - [ ] Complete the DPIA screen and record the release decision.
 - [ ] Recheck minimum-age handling against Discord's current Terms.
+
+### Evidence to retain for this release
+
+Keep a restricted release record with the date, person performing the check and
+result for: the public Privacy Policy and Terms URLs; a screenshot or permalink
+to the adapted server notice; the selected module configuration; a private
+privacy export/deletion test; encrypted backup and off-site verification; and
+the output of the following command from the production host:
+
+```bash
+venv/bin/python tools/production_check.py --strict
+```
+
+The command demonstrates the host configuration and backup/ledger state. It
+does not replace provider contract review, a legal assessment or the human
+server-administration checks above.
 
 If the operator is established in Moldova, obtain local advice before the
 September launch: Law no. 195/2024 enters into force on 23 August 2026 and
