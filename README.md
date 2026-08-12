@@ -209,6 +209,7 @@ NovaGuard loads `.env` automatically at startup.
 | `BACKUP_REMOTE_FULL_KEEP_DAYS` | Optional | How long to keep full zips on remote storage; defaults to `90` |
 | `BACKUP_REMOTE_GUILD_KEEP_DAYS` | Optional | How long to keep per-server JSON exports on remote storage; defaults to `60` |
 | `BACKUP_REMOTE_RETENTION_ENABLED` | Optional | Prune old remote files after uploads; defaults to `true` |
+| `BACKUP_ENCRYPTION_KEY` | Required | Dedicated random key (32+ characters) for encrypted local and off-site archives |
 | `PRIVACY_TICKET_KEEP_DAYS` | Optional | Retain closed ticket metadata; defaults to `180` days |
 | `PRIVACY_WARNING_KEEP_DAYS` | Optional | Retain moderation warnings; defaults to `365` days |
 | `PRIVACY_GIVEAWAY_KEEP_DAYS` | Optional | Retain completed giveaway records; defaults to `90` days |
@@ -308,9 +309,10 @@ That means the bot can tell your server what changed without you writing a manua
 - `/status` gives members a clean public summary without exposing admin details.
 - Admin error digests can be routed into a private channel.
 - SQLite stores server setup/config, levels, economy, dashboard state and voice report state.
-- Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 full archives in `backups/`.
-- If `BACKUP_REMOTE_DEST` is configured, each verified full backup is uploaded off-site under `full/YYYY/MM/` and confirmed with a remote existence check.
-- The same scheduled run exports every Discord server under `guilds/<server-name>-<guild-id>/YYYY/MM/`, then prunes old remote files using the configured retention windows.
+- Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, encrypt every archive with authenticated AES-256-GCM, and keep the newest 10 full archives in `backups/`.
+- Set a dedicated `BACKUP_ENCRYPTION_KEY` (32+ random characters) and keep it in a password manager. Losing it makes the archives unrecoverable.
+- If `BACKUP_REMOTE_DEST` is configured, each verified encrypted full backup is uploaded off-site under `full/YYYY/MM/` and confirmed with a remote existence check. Plaintext archives are never uploaded.
+- The same scheduled run encrypts each Discord server export under `guilds/<server-name>-<guild-id>/YYYY/MM/`, then prunes old remote files using the configured retention windows.
 - `/config backup` and `/backup create` create immediate manual archives.
 - `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` verify local archives, off-site uploads, archive contents, backup health score and safe manual restore steps.
 - See `docs/RESTORE.md` before restoring live data or setting up an off-site copy.

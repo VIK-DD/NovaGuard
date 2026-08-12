@@ -418,10 +418,11 @@ and **Bot owner**. `/help` remains the interactive in-Discord command browser.
 - `/voicehours` counts months on `VOICE_TIMEZONE`, falling back to `BACKUP_TIMEZONE` and then `Europe/Chisinau`. Set it only if voice hours should roll over on a different clock than the one backups run on.
 - Voice hours are tracked on every server, configured or not — `/voice set` only controls session reports.
 - Old `data/settings.json`, `data/levels.json` and `data/economy.json` are migrated automatically once and kept as safety backups.
-- Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 full zip archives in `backups/`.
+- Automatic backups run at `07:00` and `19:00` Europe/Chisinau by default, and keep the newest 10 encrypted `.zip.ngbackup` archives in `backups/`.
+- Generate a dedicated key with `openssl rand -base64 48`, set it as `BACKUP_ENCRYPTION_KEY` in `.env`, and keep the exact value in a password manager. The key is never stored in an archive and cannot be recovered from one.
 - Set `BACKUP_SCHEDULE=07:00,19:00` and `BACKUP_TIMEZONE=Europe/Chisinau` if you want to make the schedule explicit.
 - Set `BACKUP_REMOTE_DEST=gdrive:NovaGuard/backups` after configuring `rclone` to upload every verified full backup off-server under `full/YYYY/MM/`.
-- Scheduled backups also export each Discord server to `guilds/<server-name>-<guild-id>/YYYY/MM/`.
+- Scheduled backups also export each Discord server as an encrypted `.json.ngbackup` file under `guilds/<server-name>-<guild-id>/YYYY/MM/`.
 - Remote uploads are checked with `rclone size`; old remote files are pruned by `BACKUP_REMOTE_FULL_KEEP_DAYS` and `BACKUP_REMOTE_GUILD_KEEP_DAYS`.
 - `/config backup` and `/backup create` create a manual backup immediately.
 - `/backup status`, `/backup remote`, `/backup inspect`, `/backup list`, `/backup test` and `/backup restore` inspect backup health score, restore readiness and off-site upload status without touching live data.

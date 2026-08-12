@@ -90,6 +90,18 @@ def check_config(env=None, *, file_exists=None):
     else:
         findings.append(Finding(OK, "BACKUP_REMOTE_DEST", "off-site backup destination configured."))
 
+    backup_key = _value(env, "BACKUP_ENCRYPTION_KEY")
+    if len(backup_key.encode("utf-8")) < 32:
+        findings.append(
+            Finding(
+                CRITICAL,
+                "BACKUP_ENCRYPTION_KEY",
+                "missing or shorter than 32 characters - private backups cannot be created or restored.",
+            )
+        )
+    else:
+        findings.append(Finding(OK, "BACKUP_ENCRYPTION_KEY", "configured for encrypted archives."))
+
     backend = _value(env, "MUSIC_BACKEND").lower()
     if backend and backend not in KNOWN_BACKENDS:
         findings.append(

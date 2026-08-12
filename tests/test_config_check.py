@@ -20,6 +20,7 @@ HEALTHY = {
     "TOKEN": "a-token",
     "GUILD_ID": "123",
     "BACKUP_REMOTE_DEST": "gdrive:NovaGuard",
+    "BACKUP_ENCRYPTION_KEY": "a-long-random-backup-key-with-more-than-32-chars",
 }
 
 
@@ -38,7 +39,10 @@ class HealthyConfigTests(unittest.TestCase):
         self.assertEqual(problems(findings_for()), [])
 
     def test_a_healthy_config_still_confirms_the_important_settings(self):
-        self.assertEqual(names(findings_for(), OK), {"TOKEN", "BACKUP_REMOTE_DEST"})
+        self.assertEqual(
+            names(findings_for(), OK),
+            {"TOKEN", "BACKUP_REMOTE_DEST", "BACKUP_ENCRYPTION_KEY"},
+        )
 
 
 class CriticalTests(unittest.TestCase):
@@ -59,6 +63,12 @@ class SilentFailureTests(unittest.TestCase):
         self.assertIn("BACKUP_REMOTE_DEST", names(found, WARN))
         detail = next(f.detail for f in found if f.name == "BACKUP_REMOTE_DEST")
         self.assertIn("DISASTER-RECOVERY", detail)
+
+    def test_a_missing_or_short_backup_encryption_key_is_critical(self):
+        for value in ("", "too-short"):
+            with self.subTest(value=value):
+                found = findings_for({"BACKUP_ENCRYPTION_KEY": value})
+                self.assertIn("BACKUP_ENCRYPTION_KEY", names(found, CRITICAL))
 
     def test_a_missing_cookies_file_is_warned_about(self):
         found = findings_for(

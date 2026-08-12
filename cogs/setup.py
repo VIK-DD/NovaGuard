@@ -261,9 +261,12 @@ def backup_health_summary(latest, report=None, remote_status=None):
     score = 0
     lines = []
 
-    if latest:
+    if latest and report.get("encrypted"):
         score += 20
-        lines.append("✅ Local archive exists")
+        lines.append("✅ Encrypted local archive exists")
+    elif latest:
+        score += 5
+        lines.append("⚠️ Local archive is legacy plaintext")
     else:
         lines.append("⚠️ No local archive found")
 
@@ -436,6 +439,7 @@ def backup_status_embed(latest, report=None):
         name="Integrity",
         value=(
             f"{backup_integrity_line(checked_report)}\n"
+            f"Encrypted: `{'yes' if checked_report.get('encrypted') else 'no'}`\n"
             f"SQLite: `{checked_report.get('sqlite') or 'not included'}`\n"
             f"Files: `{len(checked_report.get('included', []))}` total • "
             f"`{len(checked_report.get('json_files', []))}` JSON checked"
@@ -527,7 +531,7 @@ def backup_restore_plan_embed(backup, report):
         "mkdir -p data-before-restore\n"
         "cp -a data/. data-before-restore/\n"
         "rm -rf backups/restore-check\n"
-        f"unzip backups/{backup['name']} -d backups/restore-check\n"
+        f"venv/bin/python tools/restore_backup.py backups/{backup['name']} --output backups/restore-check --replace\n"
         "cp backups/restore-check/data/novaguard.sqlite3 data/novaguard.sqlite3\n"
         "cp backups/restore-check/data/*.json data/ 2>/dev/null || true\n"
         "cp backups/restore-check/.update_state.json . 2>/dev/null || true\n"

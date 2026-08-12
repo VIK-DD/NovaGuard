@@ -1,6 +1,12 @@
 # NovaGuard Backup And Restore
 
-NovaGuard creates local zip backups in `backups/` at 07:00 and 19:00 Europe/Chisinau by default, and keeps the newest archives on disk. These backups include the SQLite database, remaining JSON feature state, update state and GitHub watcher state. Voice report state lives in SQLite.
+NovaGuard creates authenticated, encrypted `.zip.ngbackup` archives in `backups/` at 07:00 and 19:00 Europe/Chisinau by default, and keeps the newest archives on disk. These backups include the SQLite database, remaining JSON feature state, update state and GitHub watcher state. Voice report state lives in SQLite.
+
+The archive key comes only from `BACKUP_ENCRYPTION_KEY`. Generate it once with
+`openssl rand -base64 48`, keep the exact value in a password manager and put
+it in `.env` on each recovery host. Losing this key makes every archive created
+with it unrecoverable. Do not reuse the Discord token, OAuth secret or web
+session secret as the backup key.
 
 > Lost the host entirely — deleted, reclaimed or locked out? This page assumes
 > the server still exists. See [DISASTER-RECOVERY.md](DISASTER-RECOVERY.md) for
@@ -26,14 +32,16 @@ Use these in Discord before touching files:
 ## Manual Restore
 
 Only do this when the bot is stopped and you know which archive you want.
+The helper rejects legacy plaintext ZIPs by default. During a one-time migration
+of a trusted old archive, add `--allow-plaintext`, restore it locally, then
+immediately create a new encrypted backup and securely remove the old copy.
 
 ```bash
 cd ~/NovaGuard
 pm2 stop 0
 mkdir -p data-before-restore
 cp -a data/. data-before-restore/
-rm -rf backups/restore-check
-unzip backups/novaguard-full-YYYY-MM-DD_HH-MM-SS-auto.zip -d backups/restore-check
+venv/bin/python tools/restore_backup.py backups/novaguard-full-YYYY-MM-DD_HH-MM-SS-auto.zip.ngbackup --output backups/restore-check --replace
 cp backups/restore-check/data/novaguard.sqlite3 data/novaguard.sqlite3
 cp backups/restore-check/data/*.json data/ 2>/dev/null || true
 cp backups/restore-check/.update_state.json . 2>/dev/null || true
@@ -48,7 +56,8 @@ If something looks wrong, stop the bot again and restore `data-before-restore/`.
 
 Local backups protect against bad commands and corrupted files, but they do not
 protect against a dead server. Configure `rclone` once, then NovaGuard uploads
-each verified backup zip to Google Drive automatically.
+each verified encrypted archive to Google Drive automatically. NovaGuard
+refuses to upload legacy plaintext ZIP files.
 
 Recommended Google Drive setup on the VPS:
 
@@ -75,6 +84,7 @@ BACKUP_REMOTE_FULL_KEEP_DAYS=90
 BACKUP_REMOTE_GUILD_KEEP_DAYS=60
 BACKUP_REMOTE_RETENTION_ENABLED=true
 BACKUP_REMOTE_TIMEOUT_SECONDS=300
+BACKUP_ENCRYPTION_KEY=<the-random-value-kept-in-your-password-manager>
 ```
 
 Then restart the bot and create one manual backup:
@@ -97,7 +107,7 @@ In Discord, run:
 `/backup status` reports whether the latest local backup was also uploaded
 off-site, shows a health score, and includes the latest remote check state.
 `/backup remote` runs a live `rclone size` check against the last uploaded file.
-If the local zip is created but Google Drive upload, remote verification or
+If the local encrypted archive is created but Google Drive upload, remote verification or
 retention fails, the bot sends an admin error digest.
 
 Google Drive layout:
@@ -108,14 +118,14 @@ NovaGuard/
     full/
       2026/
         08/
-          novaguard-full-2026-08-01_07-00-00-auto.zip
-          novaguard-full-2026-08-01_19-00-00-auto.zip
+          novaguard-full-2026-08-01_07-00-00-auto.zip.ngbackup
+          novaguard-full-2026-08-01_19-00-00-auto.zip.ngbackup
     guilds/
       MadCats-RPG-B-HOOD-1328794007748476939/
         2026/
           08/
-            2026-08-01_07-00-00.json
-            2026-08-01_19-00-00.json
+            2026-08-01_07-00-00.json.ngbackup
+            2026-08-01_19-00-00.json.ngbackup
 ```
 
 Use `full/` for disaster recovery. Use `guilds/` when you need to inspect or
@@ -125,6 +135,8 @@ Alternatives still work:
 
 - `rclone` to OneDrive, Dropbox or Cloudflare R2.
 - `scp`/`rsync` to a Mac, NAS or another machine over Tailscale.
-- A scheduled cron job that copies only new zip files.
+- A scheduled cron job that copies only new `.ngbackup` files.
 
-Do not push backup zips to a public GitHub repo. They can contain server and user state.
+Do not push backups to GitHub or send them through Discord. Encryption limits
+the impact of storage exposure, but the archives still contain private server
+and user state and must remain access-controlled.

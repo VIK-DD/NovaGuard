@@ -5,15 +5,24 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import zipfile
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import BASE_DIR, GITHUB_STATE_FILE, UPDATE_STATE_FILE
 from .database import DB_PATH, VOICE_STORE_FILES, init_database, load_voice_store
+from .secure_files import (
+    SecureFileError,
+    decrypt_file,
+    encrypt_file,
+    encryption_configured,
+    is_encrypted_file,
+)
 from .storage import DATA_DIR
 
 BACKUP_DIR = BASE_DIR / "backups"
@@ -21,7 +30,12 @@ OFFSITE_STATE_FILENAME = "offsite_state.json"
 MAX_BACKUPS = 10
 MIN_BACKUP_BYTES = 200
 RESTORE_CHECK_DIR = BACKUP_DIR / "restore-check"
-BACKUP_PATTERNS = ("novaguard-backup-*.zip", "novaguard-full-*.zip")
+BACKUP_PATTERNS = (
+    "novaguard-backup-*.zip.ngbackup",
+    "novaguard-full-*.zip.ngbackup",
+    "novaguard-backup-*.zip",
+    "novaguard-full-*.zip",
+)
 DEFAULT_BACKUP_SCHEDULE = ((7, 0), (19, 0))
 
 
@@ -54,6 +68,7 @@ def remote_backup_config():
         "retention_enabled": env_bool("BACKUP_REMOTE_RETENTION_ENABLED", True),
         "rclone_bin": os.getenv("BACKUP_RCLONE_BIN", "rclone").strip() or "rclone",
         "timeout_seconds": max(env_int("BACKUP_REMOTE_TIMEOUT_SECONDS", 300), 30),
+        "encrypted": encryption_configured(),
     }
 
 
@@ -263,7 +278,7 @@ def guild_export_relative_path(guild_id, guild_name, created_at=None):
     config = remote_backup_config()
     created_at = created_at or datetime.now(UTC)
     folder = f"{sanitize_remote_segment(guild_name, 'guild')}-{guild_id}"
-    filename = f"{backup_timestamp(created_at)}.json"
+    filename = f"{backup_timestamp(created_at)}.json.ngbackup"
     parts = [config["guild_prefix"], folder, created_at.astimezone(UTC).strftime("%Y"), created_at.astimezone(UTC).strftime("%m"), filename]
     return "/".join(part for part in parts if part)
 
@@ -358,11 +373,19 @@ def upload_file_to_remote(source_path, remote_relative_path=None):
 
 
 def upload_backup_to_remote(backup_path, created_at=None):
+    if not is_encrypted_file(backup_path):
+        config = remote_backup_config()
+        result = _empty_remote_result(Path(backup_path).name)
+        result["configured"] = config["configured"]
+        result["message"] = "Plaintext backup upload refused; create an encrypted archive first."
+        return result
     return upload_file_to_remote(backup_path, remote_full_backup_path(backup_path, created_at))
 
 
 def upload_json_to_remote(payload, remote_relative_path):
     config = remote_backup_config()
+    if not str(remote_relative_path).endswith(".ngbackup"):
+        remote_relative_path = f"{remote_relative_path}.ngbackup"
     name = Path(remote_relative_path).name
     result = _empty_remote_result(name, remote_relative_path=remote_relative_path)
     if not config["configured"]:
@@ -372,9 +395,12 @@ def upload_json_to_remote(payload, remote_relative_path):
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="novaguard-guild-export-", dir=BACKUP_DIR) as temp_dir:
-        export_path = Path(temp_dir) / name
-        export_path.write_bytes(json.dumps(payload, indent=2, ensure_ascii=True).encode("utf-8"))
-        return upload_file_to_remote(export_path, remote_relative_path)
+        clear_path = Path(temp_dir) / name.removesuffix(".ngbackup")
+        encrypted_path = Path(temp_dir) / name
+        clear_path.write_bytes(json.dumps(payload, indent=2, ensure_ascii=True).encode("utf-8"))
+        os.chmod(clear_path, 0o600)
+        encrypt_file(clear_path, encrypted_path)
+        return upload_file_to_remote(encrypted_path, remote_relative_path)
 
 
 def check_remote_file(remote_path):
@@ -465,29 +491,23 @@ def prune_remote_backups():
         return summary
 
     targets = [
-        (config["full_prefix"], "*.zip", config["full_keep_days"]),
-        (config["guild_prefix"], "*.json", config["guild_keep_days"]),
+        (config["full_prefix"], ("*.ngbackup", "*.zip"), config["full_keep_days"]),
+        (config["guild_prefix"], ("*.ngbackup", "*.json"), config["guild_keep_days"]),
     ]
     all_ok = True
-    for prefix, pattern, keep_days in targets:
+    for prefix, patterns, keep_days in targets:
         if not prefix:
             continue
         remote_path = remote_join(config["destination"], prefix)
+        include_args = [item for pattern in patterns for item in ("--include", pattern)]
         completed = _run_rclone(
-            [
-                "delete",
-                remote_path,
-                "--min-age",
-                f"{keep_days}d",
-                "--include",
-                pattern,
-            ],
+            ["delete", remote_path, "--min-age", f"{keep_days}d", *include_args],
             action=f"retention {prefix}",
         )
         nothing_to_prune = _is_missing_remote_dir(completed)
         target = {
             "prefix": prefix,
-            "pattern": pattern,
+            "patterns": list(patterns),
             "keep_days": keep_days,
             "remote_path": remote_path,
             "ok": completed["ok"] or nothing_to_prune,
@@ -507,10 +527,65 @@ def prune_remote_backups():
 def _safe_extract(zip_file, target_dir):
     target_dir = Path(target_dir).resolve()
     for member in zip_file.infolist():
+        if stat.S_ISLNK(member.external_attr >> 16):
+            raise ValueError(f"Backup contains a symbolic link: {member.filename}")
         member_path = (target_dir / member.filename).resolve()
         if target_dir not in member_path.parents and member_path != target_dir:
             raise ValueError(f"Unsafe backup path: {member.filename}")
     zip_file.extractall(target_dir)
+
+
+def _restrict_tree_permissions(target_dir):
+    target_dir = Path(target_dir)
+    for path in target_dir.rglob("*"):
+        try:
+            os.chmod(path, 0o700 if path.is_dir() else 0o600)
+        except OSError:
+            pass
+    try:
+        os.chmod(target_dir, 0o700)
+    except OSError:
+        pass
+
+
+@contextmanager
+def readable_backup_path(backup_path):
+    """Yield a ZIP path, decrypting modern archives into a short-lived temp dir."""
+    backup_path = Path(backup_path)
+    if not is_encrypted_file(backup_path):
+        yield backup_path
+        return
+
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="novaguard-backup-decrypt-", dir=BACKUP_DIR) as temp_dir:
+        clear_path = Path(temp_dir) / backup_path.name.removesuffix(".ngbackup")
+        decrypt_file(backup_path, clear_path)
+        yield clear_path
+
+
+def extract_backup(backup_path, target_dir, *, replace=False):
+    """Decrypt and safely extract an archive for an explicit restore operation."""
+    target_dir = Path(target_dir).resolve()
+    allowed_roots = (BACKUP_DIR.resolve(), Path(tempfile.gettempdir()).resolve())
+    if target_dir in allowed_roots or not any(root in target_dir.parents for root in allowed_roots):
+        raise ValueError("Restore target must be a child of the backup directory or system temp")
+    if target_dir.exists() and any(target_dir.iterdir()):
+        if not replace:
+            raise ValueError(f"Restore target is not empty: {target_dir}")
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(target_dir, 0o700)
+    try:
+        with readable_backup_path(backup_path) as clear_path, zipfile.ZipFile(clear_path) as zip_file:
+            bad_member = zip_file.testzip()
+            if bad_member:
+                raise ValueError(f"Corrupt zip member: {bad_member}")
+            _safe_extract(zip_file, target_dir)
+        _restrict_tree_permissions(target_dir)
+    except Exception:
+        shutil.rmtree(target_dir, ignore_errors=True)
+        raise
+    return target_dir
 
 
 def _sqlite_integrity_from_zip(zip_file, archive_name):
@@ -518,7 +593,7 @@ def _sqlite_integrity_from_zip(zip_file, archive_name):
     with tempfile.TemporaryDirectory(prefix="novaguard-backup-check-", dir=BACKUP_DIR) as temp_dir:
         db_copy = Path(temp_dir) / "novaguard.sqlite3"
         db_copy.write_bytes(zip_file.read(archive_name))
-        with sqlite3.connect(db_copy) as connection:
+        with closing(sqlite3.connect(db_copy)) as connection:
             result = connection.execute("PRAGMA integrity_check").fetchone()
     return result[0] if result else "no result"
 
@@ -537,6 +612,7 @@ def inspect_backup(backup_path, *, extract=False):
         "extract_path": None,
         "warnings": [],
         "errors": [],
+        "encrypted": is_encrypted_file(backup_path),
         "ok": False,
     }
 
@@ -548,7 +624,7 @@ def inspect_backup(backup_path, *, extract=False):
         report["warnings"].append(f"Backup is unusually small ({report['size_text']}).")
 
     try:
-        with zipfile.ZipFile(backup_path) as zip_file:
+        with readable_backup_path(backup_path) as clear_path, zipfile.ZipFile(clear_path) as zip_file:
             bad_member = zip_file.testzip()
             if bad_member:
                 report["errors"].append(f"Corrupt zip member: {bad_member}")
@@ -574,16 +650,19 @@ def inspect_backup(backup_path, *, extract=False):
             else:
                 report["warnings"].append("SQLite database is not included yet.")
 
-            if extract:
-                if RESTORE_CHECK_DIR.exists():
-                    shutil.rmtree(RESTORE_CHECK_DIR)
-                RESTORE_CHECK_DIR.mkdir(parents=True, exist_ok=True)
-                _safe_extract(zip_file, RESTORE_CHECK_DIR)
-                report["extract_path"] = str(RESTORE_CHECK_DIR)
     except zipfile.BadZipFile as error:
         report["errors"].append(f"Invalid zip file: {error}")
-    except (OSError, sqlite3.Error, ValueError) as error:
+    except (OSError, SecureFileError, sqlite3.Error, ValueError) as error:
         report["errors"].append(str(error))
+
+    if not report["encrypted"]:
+        report["warnings"].append("Legacy plaintext archive; rotate it out after migration.")
+    if extract and not report["errors"]:
+        try:
+            extract_backup(backup_path, RESTORE_CHECK_DIR, replace=True)
+            report["extract_path"] = str(RESTORE_CHECK_DIR)
+        except (OSError, SecureFileError, sqlite3.Error, ValueError) as error:
+            report["errors"].append(str(error))
 
     report["ok"] = not report["errors"]
     return report
@@ -593,14 +672,16 @@ def create_backup(label="auto"):
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     created_at = datetime.now(UTC)
     safe_label = "".join(char for char in label.lower() if char.isalnum() or char in {"-", "_"}) or "backup"
-    backup_path = BACKUP_DIR / f"novaguard-full-{backup_timestamp(created_at)}-{safe_label}.zip"
-    temp_db = BACKUP_DIR / f".novaguard-backup-{backup_timestamp(created_at)}.sqlite3"
+    stem = f"novaguard-full-{backup_timestamp(created_at)}-{safe_label}.zip"
+    backup_path = BACKUP_DIR / f"{stem}.ngbackup"
     for store in VOICE_STORE_FILES:
         load_voice_store(store, {})
 
     included = []
-    try:
-        with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as zip_file:
+    with tempfile.TemporaryDirectory(prefix="novaguard-backup-build-", dir=BACKUP_DIR) as temp_dir:
+        clear_zip = Path(temp_dir) / stem
+        temp_db = Path(temp_dir) / "novaguard.sqlite3"
+        with zipfile.ZipFile(clear_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as zip_file:
             if DB_PATH.exists():
                 backup_sqlite_to(temp_db)
                 zip_file.write(temp_db, "data/novaguard.sqlite3")
@@ -625,12 +706,12 @@ def create_backup(label="auto"):
                 "created_at": created_at.isoformat(),
                 "label": safe_label,
                 "included": included,
+                "outer_encryption": "AES-256-GCM / Scrypt",
             }
             zip_file.writestr(".backup_manifest.json", json.dumps(manifest, indent=2, ensure_ascii=True))
             included.append(".backup_manifest.json")
-    finally:
-        if temp_db.exists():
-            temp_db.unlink()
+        os.chmod(clear_zip, 0o600)
+        encrypt_file(clear_zip, backup_path)
 
     prune_old_backups()
     integrity = inspect_backup(backup_path)

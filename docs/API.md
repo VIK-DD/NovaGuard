@@ -282,7 +282,7 @@ reports and newest update-feed entries.
     "recent_reports": [ { "id": "…", "channel_id": "…", "channel_name": "staff",
       "started_at": "…", "ended_at": "…", "sent_at": "…",
       "duration_seconds": 10800, "unique_members": 7, "peak_members": 5 } ] },
-  "backup": { "available": true, "latest_name": "novaguard-backup-…zip",
+  "backup": { "available": true, "latest_name": "novaguard-backup-…zip.ngbackup",
     "latest_size": 812440, "latest_size_text": "793.4 KB", "latest_at": "…",
     "ok": true, "warnings": [], "errors": [],
     "offsite": { "configured": true, "matches_backup": true,
@@ -323,7 +323,7 @@ actions:
 ```json
 { "ok": true, "action": "backup_check",
   "message": "Latest backup passed the restore check.",
-  "backup": { "name": "novaguard-backup-…zip", "size_text": "793.4 KB",
+  "backup": { "name": "novaguard-backup-…zip.ngbackup", "size_text": "793.4 KB",
     "ok": true, "warnings": [], "errors": [] } }
 ```
 

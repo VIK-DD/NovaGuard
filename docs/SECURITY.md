@@ -134,9 +134,12 @@ Then in `.env`: `WEB_COOKIE_SECURE=true`, `WEB_TRUST_PROXY=true`, and
   re-login (expected, safe).
 
 ## 4. Backups (off the SD card)
-SD cards fail. Copy the newest `data/backups/*.zip` off the Pi on a schedule
-(another host, or posted to a private Discord channel). This preserves economy,
-levels, config, sessions, and the audit trail.
+SD cards fail. Set a unique `BACKUP_ENCRYPTION_KEY` (32+ random characters),
+keep it in a password manager, and copy only authenticated `.ngbackup` files
+off the host on a schedule. NovaGuard encrypts both full archives and per-guild
+exports with AES-256-GCM and refuses to upload plaintext ZIP files. Never post
+backups in Discord or commit them to Git; access to the storage destination and
+the encryption key must be separated where practical.
 
 ## 5. Verification
 - `python tests/test_webserver.py` → 30 checks (auth, CORS, CSRF, encryption,
