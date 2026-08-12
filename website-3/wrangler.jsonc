@@ -4,6 +4,9 @@
   "main": "./worker/index.js",
   "compatibility_date": "2026-07-19",
   "preview_urls": false,
+  "secrets": {
+    "required": ["AUTH_PASSWORD"]
+  },
   // Keep enough production telemetry to diagnose edge/API failures without
   // retaining every static-asset request. Traces are automatic once enabled.
   "observability": {

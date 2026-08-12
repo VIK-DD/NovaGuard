@@ -345,7 +345,8 @@ endpoints from the embedded web server. To make them reachable by the website:
 
 1. Publish the Pi's `http://localhost:8300` through an HTTPS Cloudflare Tunnel,
    for example at `https://api.novaguard.fun`.
-2. On the Pi, set `WEB_ENABLED=true`, `WEB_COOKIE_SECURE=true`,
+2. On the host, bind only to loopback with `WEB_HOST=127.0.0.1`, then set
+   `WEB_ENABLED=true`, `WEB_COOKIE_SECURE=true`,
    `WEB_TRUST_PROXY=true`, and add the website origin to `WEB_CORS_ORIGIN`:
    `WEB_CORS_ORIGIN=https://novaguard.fun`.
 3. Set `WEB_OAUTH_REDIRECT=https://api.novaguard.fun/api/v1/auth/callback` and
@@ -360,6 +361,18 @@ endpoints from the embedded web server. To make them reachable by the website:
 
 Keep port `8300` closed to the public internet; Cloudflare Tunnel should be the
 only public path to the API.
+
+Before opening the site publicly, complete `LEGAL_OPERATOR_NAME`,
+`LEGAL_OPERATOR_ADDRESS`, `LEGAL_OPERATOR_COUNTRY` and
+`PRIVACY_CONTACT_EMAIL`, generate separate random values for
+`BACKUP_ENCRYPTION_KEY` and `WEB_TOKEN_KEY`, then run:
+
+```bash
+chmod 600 .env data/novaguard.sqlite3 .privacy_deletions.json
+venv/bin/python tools/production_check.py --strict
+```
+
+Do not launch while it prints `NOT READY`.
 
 ## 4. Project layout
 

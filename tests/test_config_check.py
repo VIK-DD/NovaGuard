@@ -142,6 +142,47 @@ class WebServerTests(unittest.TestCase):
 
         self.assertEqual(names(found) & {"WEB_TOKEN_KEY", "WEB_COOKIE_SECURE"}, set())
 
+    def test_a_hardened_public_dashboard_has_no_web_findings(self):
+        found = findings_for(
+            {
+                "WEB_ENABLED": "true",
+                "DISCORD_CLIENT_ID": "123",
+                "DISCORD_CLIENT_SECRET": "discord-client-secret",
+                "WEB_TOKEN_KEY": "dedicated-dashboard-token-key-2026-xxxxxxxx",
+                "WEB_COOKIE_SECURE": "true",
+                "WEB_OAUTH_REDIRECT": "https://api.novaguard.fun/api/v1/auth/callback",
+                "WEB_AFTER_LOGIN": "https://novaguard.fun/dashboard/",
+                "WEB_CORS_ORIGIN": "https://novaguard.fun",
+                "WEB_TRUST_PROXY": "true",
+                "WEB_HOST": "127.0.0.1",
+            }
+        )
+
+        web_names = {
+            "DISCORD_CLIENT_ID",
+            "DISCORD_CLIENT_SECRET",
+            "WEB_TOKEN_KEY",
+            "WEB_COOKIE_SECURE",
+            "WEB_OAUTH_REDIRECT",
+            "WEB_AFTER_LOGIN",
+            "WEB_CORS_ORIGIN",
+            "WEB_TRUST_PROXY",
+            "WEB_HOST",
+        }
+        self.assertEqual(names(found, WARN) & web_names, set())
+        self.assertEqual(names(found, CRITICAL) & web_names, set())
+
+    def test_wildcard_or_path_cors_origins_are_critical(self):
+        for origin in ("*", "https://novaguard.fun/dashboard", "http://novaguard.fun"):
+            with self.subTest(origin=origin):
+                found = findings_for(
+                    {
+                        "WEB_ENABLED": "true",
+                        "WEB_CORS_ORIGIN": origin,
+                    }
+                )
+                self.assertIn("WEB_CORS_ORIGIN", names(found, CRITICAL))
+
 
 class ReportTests(unittest.TestCase):
     def test_the_report_puts_the_worst_findings_first(self):

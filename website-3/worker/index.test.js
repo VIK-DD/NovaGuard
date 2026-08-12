@@ -41,6 +41,27 @@ afterEach(() => {
 });
 
 describe("production observability", () => {
+  it("adds security headers to assets, redirects and errors", async () => {
+    const asset = await worker.fetch(new Request("https://novaguard.fun/"), env);
+    const redirect = await worker.fetch(
+      new Request("https://novaguard.fun/dashboard/"),
+      env,
+    );
+    const error = await worker.fetch(
+      new Request("https://novaguard.fun/api/auth/login", { method: "POST" }),
+      { ...env, AUTH_PASSWORD: "" },
+    );
+
+    for (const response of [asset, redirect, error]) {
+      expect(response.headers.get("Strict-Transport-Security")).toContain("max-age=31536000");
+      expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+      expect(response.headers.get("Permissions-Policy")).toContain("camera=()");
+      expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    }
+  });
+
   it("emits structured upstream failures without secrets", async () => {
     vi.stubGlobal(
       "fetch",

@@ -31,10 +31,33 @@ const STATUS_EDGE_CACHE_HEADERS = {
   "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
   "X-Content-Type-Options": "nosniff",
 };
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https://cdn.discordapp.com https://*.discordapp.com https://*.discordapp.net; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://api.novaguard.fun",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Resource-Policy": "same-site",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  "Referrer-Policy": "no-referrer",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "X-XSS-Protection": "0",
+};
 
 function errorMessage(error) {
   const message = error instanceof Error ? error.message : "Unknown error";
   return message.replace(/\s+/g, " ").slice(0, 240);
+}
+
+function hardenResponse(response) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    if (!headers.has(name)) headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function logWorkerEvent(level, event, details = {}) {
@@ -645,7 +668,7 @@ async function handleRequest(request, env, ctx) {
 export default {
   async fetch(request, env, ctx) {
     try {
-      return await handleRequest(request, env, ctx);
+      return hardenResponse(await handleRequest(request, env, ctx));
     } catch (error) {
       const url = new URL(request.url);
       logWorkerEvent("error", "worker_request_failed", {
@@ -654,7 +677,7 @@ export default {
         ray: request.headers.get("cf-ray") || undefined,
         error: errorMessage(error),
       });
-      return Response.json(
+      return hardenResponse(Response.json(
         { error: "The website edge is temporarily unavailable.", code: "edge_error" },
         {
           status: 500,
@@ -663,7 +686,7 @@ export default {
             "X-Content-Type-Options": "nosniff",
           },
         },
-      );
+      ));
     }
   },
 };

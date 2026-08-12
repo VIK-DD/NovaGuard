@@ -197,18 +197,28 @@ _DB_LOCK = threading.Lock()
 _STATE_SECRET = (CLIENT_SECRET or secrets.token_urlsafe(32)).encode("utf-8")
 
 
-def _build_cipher():
-    """Derive a Fernet cipher from the client secret, or None if we can't."""
-    if Fernet is None:
-        return None
-    secret = CLIENT_SECRET or os.getenv("WEB_TOKEN_KEY", "").strip()
-    if not secret:
+def _cipher_from_secret(secret):
+    """Derive a domain-separated Fernet key without storing the raw secret."""
+    if Fernet is None or not secret:
         return None
     key = base64.urlsafe_b64encode(hashlib.sha256(("novaguard-token::" + secret).encode()).digest())
     return Fernet(key)
 
 
-_CIPHER = _build_cipher()
+def _build_ciphers():
+    """Prefer the dedicated key but retain read-only legacy compatibility."""
+    dedicated_secret = os.getenv("WEB_TOKEN_KEY", "").strip()
+    primary = _cipher_from_secret(dedicated_secret or CLIENT_SECRET)
+    legacy = None
+    if dedicated_secret and CLIENT_SECRET and dedicated_secret != CLIENT_SECRET:
+        # Earlier NovaGuard versions always used the Discord client secret even
+        # when WEB_TOKEN_KEY was configured. Keep it only for decrypting those
+        # rows; every subsequent write is encrypted with the dedicated key.
+        legacy = _cipher_from_secret(CLIENT_SECRET)
+    return primary, legacy
+
+
+_CIPHER, _LEGACY_CIPHER = _build_ciphers()
 
 
 def _encrypt_token(value):
@@ -222,10 +232,15 @@ def _decrypt_token(value):
         return value  # legacy plaintext (or None) — return unchanged
     if _CIPHER is None:
         return None  # encrypted but we lost the key ⇒ treat as unusable
-    try:
-        return _CIPHER.decrypt(value[len(TOKEN_PREFIX):].encode("ascii")).decode("utf-8")
-    except InvalidToken:
-        return None
+    token = value[len(TOKEN_PREFIX):].encode("ascii")
+    for cipher in (_CIPHER, _LEGACY_CIPHER):
+        if cipher is None:
+            continue
+        try:
+            return cipher.decrypt(token).decode("utf-8")
+        except InvalidToken:
+            continue
+    return None
 
 
 # ── SQL layer (runs in threads via asyncio.to_thread) ────────────────

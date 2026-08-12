@@ -13,6 +13,7 @@ ever printed, never their values.
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 CRITICAL = "CRITICAL"
 WARN = "WARN"
@@ -52,6 +53,29 @@ def _enabled(env, name, default=False):
     if not raw:
         return bool(default)
     return raw not in {"0", "false", "no", "off"}
+
+
+def _public_https_url(value):
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _exact_origin(value):
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and not parsed.path.rstrip("/")
+        and not parsed.query
+        and not parsed.fragment
+        and "*" not in value
+    )
 
 
 def check_config(env=None, *, file_exists=None):
@@ -155,12 +179,36 @@ def check_config(env=None, *, file_exists=None):
         )
 
     if _enabled(env, "WEB_ENABLED"):
-        if not _value(env, "WEB_TOKEN_KEY") and not _value(env, "DISCORD_CLIENT_SECRET"):
+        client_id = _value(env, "DISCORD_CLIENT_ID")
+        client_secret = _value(env, "DISCORD_CLIENT_SECRET")
+        token_key = _value(env, "WEB_TOKEN_KEY")
+        if not client_id:
+            findings.append(
+                Finding(CRITICAL, "DISCORD_CLIENT_ID", "missing while the dashboard is enabled.")
+            )
+        if not client_secret:
+            findings.append(
+                Finding(CRITICAL, "DISCORD_CLIENT_SECRET", "missing while the dashboard is enabled.")
+            )
+        if not token_key:
             findings.append(
                 Finding(
                     WARN,
                     "WEB_TOKEN_KEY",
-                    "empty while the web server is on - dashboard sessions cannot be signed.",
+                    "empty - OAuth token encryption falls back to the Discord client secret. "
+                    "Set a separate 32+ character key for independent rotation.",
+                )
+            )
+        elif len(token_key.encode("utf-8")) < 32:
+            findings.append(
+                Finding(WARN, "WEB_TOKEN_KEY", "shorter than 32 characters - replace it with a random key.")
+            )
+        elif token_key in {client_secret, backup_key}:
+            findings.append(
+                Finding(
+                    WARN,
+                    "WEB_TOKEN_KEY",
+                    "reuses another secret - use a dedicated value so credentials can rotate independently.",
                 )
             )
         if not _enabled(env, "WEB_COOKIE_SECURE"):
@@ -169,6 +217,54 @@ def check_config(env=None, *, file_exists=None):
                     WARN,
                     "WEB_COOKIE_SECURE",
                     "off while the web server is on - dashboard cookies travel unprotected over plain HTTP.",
+                )
+            )
+        oauth_redirect = _value(env, "WEB_OAUTH_REDIRECT")
+        if not _public_https_url(oauth_redirect):
+            findings.append(
+                Finding(
+                    WARN,
+                    "WEB_OAUTH_REDIRECT",
+                    "is not an absolute HTTPS production callback URL.",
+                )
+            )
+        after_login = _value(env, "WEB_AFTER_LOGIN")
+        if not _public_https_url(after_login):
+            findings.append(
+                Finding(
+                    WARN,
+                    "WEB_AFTER_LOGIN",
+                    "is not an absolute HTTPS dashboard URL; OAuth may land on the API instead.",
+                )
+            )
+        origins = [item.strip().rstrip("/") for item in _value(env, "WEB_CORS_ORIGIN").split(",") if item.strip()]
+        if not origins:
+            findings.append(
+                Finding(WARN, "WEB_CORS_ORIGIN", "empty - a separately hosted dashboard cannot call the API.")
+            )
+        elif any(not _exact_origin(origin) for origin in origins):
+            findings.append(
+                Finding(
+                    CRITICAL,
+                    "WEB_CORS_ORIGIN",
+                    "must contain only exact HTTPS origins without wildcards, paths, queries or fragments.",
+                )
+            )
+        if not _enabled(env, "WEB_TRUST_PROXY"):
+            findings.append(
+                Finding(
+                    WARN,
+                    "WEB_TRUST_PROXY",
+                    "off - behind Cloudflare, audit and rate limits will not use the real visitor IP.",
+                )
+            )
+        web_host = _value(env, "WEB_HOST") or "0.0.0.0"
+        if web_host not in {"127.0.0.1", "::1", "localhost"}:
+            findings.append(
+                Finding(
+                    WARN,
+                    "WEB_HOST",
+                    "is not loopback - bind to 127.0.0.1 when Cloudflare Tunnel is the public entry point.",
                 )
             )
 

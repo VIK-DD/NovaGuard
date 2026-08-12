@@ -216,6 +216,10 @@ NovaGuard loads `.env` automatically at startup.
 | `PRIVACY_VOICE_KEEP_MONTHS` | Optional | Retain monthly voice totals; defaults to `13` months |
 | `PRIVACY_ADMIN_AUDIT_KEEP_DAYS` | Optional | Retain privileged-action audit entries; defaults to `365` days |
 | `PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS` | Optional | Retain dashboard audit and IP records; defaults to `90` days |
+| `LEGAL_OPERATOR_NAME` | Launch required | Legal name of the person/entity operating NovaGuard |
+| `LEGAL_OPERATOR_ADDRESS` | Launch required | Contact address disclosed in the privacy notice |
+| `LEGAL_OPERATOR_COUNTRY` | Launch required | Operator jurisdiction used by the legal notice |
+| `PRIVACY_CONTACT_EMAIL` | Launch required | Private contact for rights requests and security reports |
 | `BACKUP_REMOTE_TIMEOUT_SECONDS` | Optional | Off-site upload timeout; defaults to `300` |
 | `ANTHROPIC_API_KEY` | Optional | Enables `/ask` |
 | `ANTHROPIC_MODEL` | Optional | Claude model override |
@@ -233,6 +237,18 @@ NovaGuard is designed so admins can do most setup **inside Discord**, not by edi
 3. Choose the right channel from the dropdown
 4. Use `/config view` to review everything
 5. Use `/doctor` to verify health, permissions and integrations
+
+Before a public deployment, run the fail-closed host audit:
+
+```bash
+venv/bin/python tools/production_check.py --strict
+```
+
+It verifies launch configuration, legal contact fields, private file modes,
+SQLite integrity, the authenticated deletion ledger, backup freshness and the
+confirmed off-site copy. `NOT READY` means the host should not be launched yet.
+See [docs/INCIDENT-RESPONSE.md](docs/INCIDENT-RESPONSE.md) before handling a
+suspected credential or personal-data incident.
 
 The bot stores server config, levels, economy and voice report state in
 `data/novaguard.sqlite3`, while keeping optional `.env` fallback values for your
