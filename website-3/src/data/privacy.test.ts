@@ -46,12 +46,22 @@ describe("privacy inventory", () => {
   it("stays aligned with the cookie names implemented by the API and edge worker", () => {
     const api = readFileSync(resolve(process.cwd(), "../core/webserver.py"), "utf8");
     const worker = readFileSync(resolve(process.cwd(), "worker/index.js"), "utf8");
-    const legacyPolicy = readFileSync(resolve(process.cwd(), "../docs/privacy.html"), "utf8");
     const runtime = `${api}\n${worker}`;
 
     for (const cookie of ESSENTIAL_COOKIES) {
       expect(runtime).toContain(`"${cookie.name}"`);
-      expect(legacyPolicy).toContain(`<code>${cookie.name}</code>`);
     }
+  });
+
+  it("keeps one canonical privacy and terms source", () => {
+    const legacyPrivacy = readFileSync(resolve(process.cwd(), "../docs/privacy.html"), "utf8");
+    const legacyTerms = readFileSync(resolve(process.cwd(), "../docs/terms.html"), "utf8");
+
+    expect(legacyPrivacy).toContain('rel="canonical" href="https://novaguard.fun/privacy"');
+    expect(legacyPrivacy).toContain("url=https://novaguard.fun/privacy");
+    expect(legacyTerms).toContain('rel="canonical" href="https://novaguard.fun/terms"');
+    expect(legacyTerms).toContain("url=https://novaguard.fun/terms");
+    expect(legacyPrivacy).not.toContain("third-party analytics");
+    expect(legacyTerms).not.toContain("Disclaimer and Liability");
   });
 });
