@@ -151,6 +151,17 @@ export default function Shell({ children }: { children: ReactNode }) {
         </div>
       </header>
       {children}
+      <footer className="mx-auto flex max-w-5xl flex-wrap gap-x-4 gap-y-2 border-t border-line px-4 py-6 text-xs text-ink-faint sm:px-6">
+        <a href="/privacy" className="transition-colors hover:text-ink">
+          Privacy &amp; cookies
+        </a>
+        <a href="/privacy#your-choices" className="transition-colors hover:text-ink">
+          Export or erase data
+        </a>
+        <a href="/terms" className="transition-colors hover:text-ink">
+          Terms
+        </a>
+      </footer>
       {confirmingSignOut && (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 py-8"

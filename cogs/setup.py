@@ -45,6 +45,13 @@ RECOMMENDED_KEYS = (
     "welcome_channel",
 )
 
+SETUP_PRIVACY_NOTICE = (
+    "Review `/privacy policy` and tell members which optional features you enable. "
+    "Server Logs can repost deleted/edited message excerpts inside Discord; `/ask` sends only "
+    "the submitted question to Anthropic when AI is available. Every member can use "
+    "`/privacy export` or `/privacy delete`."
+)
+
 
 def mention_channel(guild, channel_id):
     if not channel_id:
@@ -122,6 +129,7 @@ def build_setup_embed(guild):
         ),
         inline=False,
     )
+    embed.add_field(name="Privacy before enabling features", value=SETUP_PRIVACY_NOTICE, inline=False)
     brand_footer(embed, "Server setup")
     return embed
 

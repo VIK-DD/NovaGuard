@@ -91,8 +91,8 @@ class AI(commands.Cog):
         self._day_count += 1
         return True
 
-    @app_commands.command(name="ask", description="Ask Claude AI anything")
-    @app_commands.describe(question="What do you want to know?")
+    @app_commands.command(name="ask", description="Send a question to Anthropic's Claude AI")
+    @app_commands.describe(question="Question to send to Anthropic (maximum 2,000 characters)")
     @app_commands.checks.cooldown(1, 15.0)
     @app_commands.guild_only()
     async def ask(self, interaction: discord.Interaction, question: str):
