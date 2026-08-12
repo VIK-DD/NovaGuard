@@ -18,7 +18,11 @@ const steps = [
   },
   {
     title: "Review member-facing data use",
-    body: "Read /privacy policy and tell members which optional features are active. Server Logs can repost edited or deleted excerpts inside Discord; /ask sends only the submitted question to Anthropic when AI is enabled.",
+    body: "Read the Privacy Policy and post the Server Admin Notice after adapting it to the optional features you enable. Server Logs can repost edited or deleted excerpts inside Discord; /ask sends only the submitted question to Anthropic when AI is enabled.",
+    links: [
+      { href: "/privacy", label: "Read Privacy Policy" },
+      { href: "/server-admin-notice", label: "Open Server Admin Notice" },
+    ],
   },
   {
     title: "Press Mark Complete",
@@ -65,6 +69,18 @@ const steps = [
                   >
                     Add to Discord
                   </a>
+                )}
+                {"links" in step && (
+                  <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+                    {step.links.map((link) => (
+                      <a
+                        href={link.href}
+                        class="text-sm text-primary underline underline-offset-4 hover:text-primary/80"
+                      >
+                        {link.label}
+                      </a>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

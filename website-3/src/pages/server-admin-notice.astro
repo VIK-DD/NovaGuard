@@ -1,0 +1,161 @@
+---
+import Base from "../layouts/Base.astro";
+import Footer from "../components/Footer.astro";
+import Nav from "../components/Nav.astro";
+import { LEGAL_OPERATOR } from "../data/legal";
+
+const featureNotices = [
+  {
+    title: "Moderation and server logs",
+    body: "AutoMod inspects messages as they are sent. If you enable Server Logs, edited or deleted message excerpts can be reposted to the private Discord channel you choose. Limit access to that channel and tell members before enabling it.",
+  },
+  {
+    title: "Levels, economy and voice statistics",
+    body: "These optional features keep feature state such as XP, message counts, balances or monthly voice minutes. Turn them on only when useful, and say which features your community uses.",
+  },
+  {
+    title: "AI-assisted answers",
+    body: "When /ask is enabled, NovaGuard sends only the question submitted with that command to Anthropic to generate a response. Tell members not to put sensitive information in AI prompts; AI output needs human judgement.",
+  },
+  {
+    title: "Tickets, reminders, giveaways and integrations",
+    body: "These tools process the information needed to deliver the requested feature. A GitHub integration reads the public repository data you configure. Keep permissions and staff-only channels proportionate.",
+  },
+] as const;
+
+const memberNotice = `## NovaGuard privacy notice
+
+This server uses NovaGuard for the optional features listed below. We enable only the features needed for this community and limit staff-only channels to authorised moderators.
+
+**Enabled here:** [replace this with your enabled features]
+**What this may process:** Discord IDs and the data needed for the enabled feature. Server Logs can repost edited or deleted message excerpts in a private log channel. Levels, economy and voice statistics keep their own feature records. When /ask is enabled, the question is sent to Anthropic for an AI response.
+**Your controls:** use /privacy export to receive your NovaGuard records, or /privacy delete to request their erasure. For a community-specific question or moderation appeal, contact this server's moderators first.
+**NovaGuard policy:** https://novaguard.fun/privacy
+**Contact:** ${LEGAL_OPERATOR.privacyEmail}`;
+---
+
+<Base
+  title="Server Admin Notice — NovaGuard"
+  description="A clear, ready-to-paste privacy notice and feature checklist for Discord server administrators using NovaGuard."
+>
+  <Nav />
+  <main class="mx-auto max-w-5xl px-5 py-12 sm:px-6 sm:py-20">
+    <p class="text-xs tracking-[0.25em] text-primary uppercase">For server administrators</p>
+    <h1 class="font-display mt-4 max-w-3xl text-3xl leading-tight sm:text-5xl">
+      Tell members what NovaGuard does in your server.
+    </h1>
+    <p class="mt-5 max-w-2xl leading-relaxed text-ink-muted">
+      You choose NovaGuard's optional modules, staff permissions and log channels. Before enabling a
+      feature that affects members, give them a short, specific notice. This page gives you a
+      practical starting point; it does not replace any notice your organisation or local law needs.
+    </p>
+
+    <section class="mt-12 grid gap-4 md:grid-cols-3" aria-label="Administrator checklist">
+      <article class="rounded-lg border border-line bg-card p-5">
+        <p class="font-mono text-xs tracking-[0.18em] text-primary uppercase">01 · Choose</p>
+        <h2 class="font-display mt-3 text-lg font-semibold">Enable only what is needed</h2>
+        <p class="mt-2 text-sm leading-relaxed text-ink-muted">
+          Every channel and optional module can stay off. Avoid enabling logging or behavioural
+          features just in case.
+        </p>
+      </article>
+      <article class="rounded-lg border border-line bg-card p-5">
+        <p class="font-mono text-xs tracking-[0.18em] text-primary uppercase">02 · Restrict</p>
+        <h2 class="font-display mt-3 text-lg font-semibold">Keep staff data private</h2>
+        <p class="mt-2 text-sm leading-relaxed text-ink-muted">
+          Lock log, ticket and moderation channels to the people who genuinely need access. Review
+          role permissions whenever your team changes.
+        </p>
+      </article>
+      <article class="rounded-lg border border-line bg-card p-5">
+        <p class="font-mono text-xs tracking-[0.18em] text-primary uppercase">03 · Explain</p>
+        <h2 class="font-display mt-3 text-lg font-semibold">Give members a clear route</h2>
+        <p class="mt-2 text-sm leading-relaxed text-ink-muted">
+          Share the notice below in rules or onboarding, name a moderator contact and keep a human
+          appeal path for moderation decisions.
+        </p>
+      </article>
+    </section>
+
+    <section class="mt-16 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">Copy and adapt</p>
+      <div class="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 class="font-display text-2xl">Member-facing notice</h2>
+          <p class="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
+            Replace the bracketed line with the modules you actually enabled, then post this in a
+            visible rules, onboarding or privacy channel.
+          </p>
+        </div>
+        <button
+          type="button"
+          data-copy-member-notice
+          class="ng-pressable inline-flex h-10 items-center justify-center rounded-[6px] border border-line bg-card px-4 text-sm font-medium text-ink transition-colors hover:border-line-strong"
+        >
+          Copy notice
+        </button>
+      </div>
+      <pre
+        data-member-notice
+        class="mt-5 overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-bg-subtle p-5 font-mono text-xs leading-6 text-ink-muted sm:text-sm"
+      >{memberNotice}</pre>
+      <p data-copy-member-notice-status class="mt-3 text-sm text-ink-faint" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="mt-16 border-t border-line pt-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">Feature checklist</p>
+      <h2 class="font-display mt-3 text-2xl">What to tell members, by module</h2>
+      <div class="mt-6 divide-y divide-line border-t border-line">
+        {
+          featureNotices.map((feature) => (
+            <article class="grid gap-2 py-5 sm:grid-cols-[15rem_1fr] sm:gap-8">
+              <h3 class="font-display text-lg font-semibold">{feature.title}</h3>
+              <p class="text-sm leading-relaxed text-ink-muted">{feature.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="mt-16 rounded-lg border border-line bg-card p-6 sm:p-8">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">Rights and responsibility</p>
+      <h2 class="font-display mt-3 text-2xl">NovaGuard controls and your community process</h2>
+      <div class="mt-4 max-w-3xl space-y-4 leading-relaxed text-ink-muted">
+        <p>
+          Members can use <code>/privacy export</code> for a copy of their NovaGuard records and
+          <code>/privacy delete</code> to request their erasure. Server administrators can use
+          <code>/privacy server-export</code> and <code>/privacy server-delete</code> for
+          server-scoped records. Do not ask a member to post an export publicly.
+        </p>
+        <p>
+          You remain responsible for your server rules, moderator actions and any additional legal
+          duties that apply to your community. Do not use NovaGuard to make legally significant
+          automated decisions or to infer sensitive traits about members.
+        </p>
+        <p>
+          Read the full <a href="/privacy" class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary">Privacy Policy</a>
+          and <a href="/terms" class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary">Terms of Service</a>.
+          For NovaGuard processing questions, contact
+          <a href={`mailto:${LEGAL_OPERATOR.privacyEmail}`} class="text-ink underline decoration-line-strong underline-offset-4 hover:text-primary">{LEGAL_OPERATOR.privacyEmail}</a>.
+        </p>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</Base>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>("[data-copy-member-notice]");
+  const notice = document.querySelector<HTMLElement>("[data-member-notice]");
+  const status = document.querySelector<HTMLElement>("[data-copy-member-notice-status]");
+
+  button?.addEventListener("click", async () => {
+    if (!notice || !status) return;
+    try {
+      await navigator.clipboard.writeText(notice.textContent?.trim() ?? "");
+      status.textContent = "Notice copied. Replace the enabled-features line before posting it.";
+    } catch {
+      status.textContent = "Copy is unavailable in this browser. Select the notice above and copy it manually.";
+    }
+  });
+</script>
