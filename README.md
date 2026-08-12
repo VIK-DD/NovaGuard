@@ -363,6 +363,11 @@ SETUP.md                operational setup guide
 requirements.txt        Python dependencies
 ```
 
+Production operators should also maintain the privacy accountability record in
+[`docs/PRIVACY-OPERATIONS.md`](docs/PRIVACY-OPERATIONS.md) and use
+[`docs/INCIDENT-RESPONSE.md`](docs/INCIDENT-RESPONSE.md) for suspected data or
+credential incidents.
+
 ---
 
 ## Roadmap
