@@ -66,11 +66,6 @@ export const BROWSER_STORAGE = [
     lifetime: "Until browser storage is cleared",
     purpose: "Keeps the same theme preference on the standalone maintenance page for older visits.",
   },
-  {
-    name: "ng-status-snapshot-v1",
-    lifetime: "Ignored after 10 minutes",
-    purpose: "Reuses the latest public service-health snapshot so status remains useful during a brief network failure.",
-  },
 ] as const;
 
 export const RETENTION_ROWS = [

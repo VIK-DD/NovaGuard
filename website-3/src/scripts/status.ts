@@ -2,8 +2,6 @@ import archive from "../data/updates-archive.json";
 import { currentRelease } from "../data/releases";
 
 const OK_GREEN = "#3d8a57";
-const STATUS_CACHE_KEY = "ng-status-snapshot-v1";
-const STATUS_CACHE_TTL_MS = 10 * 60_000;
 
 // The baked release is an offline fallback. A healthy status snapshot replaces
 // it with the canonical release calculated by the bot from its live update
@@ -112,28 +110,6 @@ const isSnapshot = (value: unknown): value is StatusSnapshot => {
   );
 };
 
-const readCachedSnapshot = () => {
-  try {
-    const snapshot: unknown = JSON.parse(
-      sessionStorage.getItem(STATUS_CACHE_KEY) || localStorage.getItem(STATUS_CACHE_KEY) || "null",
-    );
-    if (!isSnapshot(snapshot)) return null;
-    const age = Date.now() - snapshot.fetched_at;
-    return age >= -5_000 && age <= STATUS_CACHE_TTL_MS ? { ...snapshot, stale: true } : null;
-  } catch {
-    return null;
-  }
-};
-
-const cacheSnapshot = (snapshot: StatusSnapshot) => {
-  try {
-    const freshSnapshot = { ...snapshot, stale: false };
-    const payload = JSON.stringify(freshSnapshot);
-    sessionStorage.setItem(STATUS_CACHE_KEY, payload);
-    localStorage.setItem(STATUS_CACHE_KEY, payload);
-  } catch {}
-};
-
 const stampChecked = (prefix = "Last checked") => {
   const node = el("[data-status-checked]");
   if (!node) return;
@@ -176,14 +152,6 @@ function init() {
   let uptimeTimer = 0;
   let hasSnapshot = false;
 
-  const cachedSnapshot = readCachedSnapshot();
-  if (cachedSnapshot) {
-    uptimeBase = applySnapshot(cachedSnapshot);
-    fetchedAt = Date.now();
-    hasSnapshot = true;
-    stampChecked("Refreshing live data · cached at");
-  }
-
   const poll = async () => {
     if (stopped || document.hidden) return;
     let refreshFailed = false;
@@ -195,7 +163,6 @@ function init() {
       uptimeBase = applySnapshot(snapshot);
       fetchedAt = Date.now();
       hasSnapshot = true;
-      cacheSnapshot(snapshot);
     } catch (error) {
       if (stopped || (error instanceof DOMException && error.name === "AbortError")) return;
       refreshFailed = true;

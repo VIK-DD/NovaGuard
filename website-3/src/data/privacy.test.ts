@@ -33,8 +33,14 @@ describe("privacy inventory", () => {
     expect(BROWSER_STORAGE.map((row) => row.name)).toEqual([
       "ng-theme",
       "ng-maintenance-theme",
-      "ng-status-snapshot-v1",
     ]);
+  });
+
+  it("does not persist public status data in browser storage", () => {
+    const base = readFileSync(resolve(process.cwd(), "src/layouts/Base.astro"), "utf8");
+    const status = readFileSync(resolve(process.cwd(), "src/scripts/status.ts"), "utf8");
+
+    expect(`${base}\n${status}`).not.toContain("ng-status-snapshot-v1");
   });
 
   it("stays aligned with the cookie names implemented by the API and edge worker", () => {
