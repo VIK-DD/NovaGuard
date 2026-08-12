@@ -7,13 +7,14 @@ from contextlib import AsyncExitStack
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from core.privacy import (
     erase_guild_data,
     erase_user_data,
     export_guild_data,
     export_user_data,
+    run_retention_cleanup,
     scrub_user_state,
 )
 from core.theme import Palette, brand_footer, make_embed
@@ -129,6 +130,26 @@ class Privacy(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_load(self):
+        self.retention_loop.start()
+
+    async def cog_unload(self):
+        self.retention_loop.cancel()
+
+    @tasks.loop(hours=24)
+    async def retention_loop(self):
+        # JSON stores are intentionally small and SQLite cleanup is indexed;
+        # keeping this synchronous prevents a warning/giveaway write from
+        # racing the daily load-filter-save cycle.
+        report = run_retention_cleanup()
+        removed = sum(report["counts"].values())
+        if removed:
+            print(f"Privacy retention cleanup removed {removed} expired record(s).")
+
+    @retention_loop.before_loop
+    async def before_retention_loop(self):
+        await self.bot.wait_until_ready()
 
     @privacy.command(name="policy", description="See what NovaGuard stores and why")
     async def privacy_policy(self, interaction: discord.Interaction):

@@ -8,7 +8,9 @@ voice, moderation and dashboard records behind.
 from __future__ import annotations
 
 import copy
+import os
 import threading
+from datetime import UTC, datetime, timedelta
 
 from . import database, storage
 
@@ -24,6 +26,15 @@ _REFERENCE_ID_FIELDS = {
     "moderator_id",
     "opener_id",
     "winner_id",
+}
+
+RETENTION_DEFAULTS = {
+    "PRIVACY_TICKET_KEEP_DAYS": 180,
+    "PRIVACY_WARNING_KEEP_DAYS": 365,
+    "PRIVACY_GIVEAWAY_KEEP_DAYS": 90,
+    "PRIVACY_VOICE_KEEP_MONTHS": 13,
+    "PRIVACY_ADMIN_AUDIT_KEEP_DAYS": 365,
+    "PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS": 90,
 }
 
 
@@ -62,6 +73,36 @@ def _decode_columns(rows, *columns):
                 row[column] = database.decode_value(row[column])
         decoded.append(row)
     return decoded
+
+
+def _retention_value(env, name):
+    try:
+        value = int(str(env.get(name, RETENTION_DEFAULTS[name])).strip())
+    except (TypeError, ValueError):
+        return RETENTION_DEFAULTS[name]
+    return max(1, min(value, 3650))
+
+
+def retention_policy(env=None):
+    """Return bounded retention settings without trusting malformed env input."""
+    env = os.environ if env is None else env
+    return {name: _retention_value(env, name) for name in RETENTION_DEFAULTS}
+
+
+def _parse_time(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _month_cutoff(now, keep_months):
+    month_number = now.year * 12 + now.month - (keep_months - 1)
+    year, zero_based_month = divmod(month_number - 1, 12)
+    return f"{year:04d}-{zero_based_month + 1:02d}"
 
 
 def _collect_user_references(value, user_id, path="$", matches=None):
@@ -556,3 +597,103 @@ def erase_guild_data(guild_id):
 
     storage.invalidate_guild_settings_cache(guild_id)
     return {"guild_id": guild_id, "erased_at": database.utc_now(), "counts": counts}
+
+
+def run_retention_cleanup(*, now=None, env=None):
+    """Delete expired operational records according to the public policy.
+
+    Cumulative XP and economy balances intentionally have no time-based expiry:
+    they remain useful while a server keeps the feature enabled, and the
+    explicit user/guild erasure paths remove them on request.
+    """
+    now = now or datetime.now(UTC)
+    now = now.astimezone(UTC) if now.tzinfo else now.replace(tzinfo=UTC)
+    policy = retention_policy(env)
+    counts = {}
+
+    cutoffs = {
+        "tickets": now - timedelta(days=policy["PRIVACY_TICKET_KEEP_DAYS"]),
+        "admin_audit": now - timedelta(days=policy["PRIVACY_ADMIN_AUDIT_KEEP_DAYS"]),
+        "dashboard_audit": now - timedelta(
+            days=policy["PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS"]
+        ),
+    }
+    voice_cutoff = _month_cutoff(now, policy["PRIVACY_VOICE_KEEP_MONTHS"])
+
+    database.init_database()
+    with _LOCK, database._LOCK, database.connect() as connection:
+        counts["tickets"] = connection.execute(
+            "DELETE FROM ticket_records WHERE closed_at IS NOT NULL AND closed_at < ?",
+            (cutoffs["tickets"].isoformat(),),
+        ).rowcount
+        counts["voice_months"] = connection.execute(
+            "DELETE FROM voice_minutes WHERE month < ?", (voice_cutoff,)
+        ).rowcount
+        counts["admin_audit"] = connection.execute(
+            "DELETE FROM admin_audit WHERE created_at < ?",
+            (cutoffs["admin_audit"].isoformat(),),
+        ).rowcount
+        if _table_exists(connection, "web_sessions"):
+            counts["dashboard_sessions"] = connection.execute(
+                "DELETE FROM web_sessions WHERE expires_at < ?", (now.timestamp(),)
+            ).rowcount
+        if _table_exists(connection, "web_audit"):
+            counts["dashboard_audit"] = connection.execute(
+                "DELETE FROM web_audit WHERE created_at < ?",
+                (cutoffs["dashboard_audit"].isoformat(),),
+            ).rowcount
+        connection.commit()
+
+    warning_cutoff = now - timedelta(days=policy["PRIVACY_WARNING_KEEP_DAYS"])
+    warnings = _load_json("warns", {})
+    warning_count = 0
+    if isinstance(warnings, dict):
+        for guild_id in list(warnings):
+            members = warnings.get(guild_id)
+            if not isinstance(members, dict):
+                warnings.pop(guild_id, None)
+                warning_count += 1
+                continue
+            for user_id in list(members):
+                entries = members.get(user_id)
+                if not isinstance(entries, list):
+                    members.pop(user_id, None)
+                    warning_count += 1
+                    continue
+                kept = [
+                    entry for entry in entries
+                    if isinstance(entry, dict)
+                    and (created_at := _parse_time(entry.get("created_at"))) is not None
+                    and created_at >= warning_cutoff
+                ]
+                warning_count += len(entries) - len(kept)
+                if kept:
+                    members[user_id] = kept
+                else:
+                    members.pop(user_id, None)
+            if not members:
+                warnings.pop(guild_id, None)
+        _save_json("warns", warnings)
+    counts["warnings"] = warning_count
+
+    giveaway_cutoff = now - timedelta(days=policy["PRIVACY_GIVEAWAY_KEEP_DAYS"])
+    giveaways = _load_json("giveaways", [])
+    if isinstance(giveaways, list):
+        kept = []
+        for entry in giveaways:
+            if not isinstance(entry, dict):
+                continue
+            ended_at = _parse_time(entry.get("ends_at"))
+            expired = bool(entry.get("ended")) and (ended_at is None or ended_at < giveaway_cutoff)
+            if not expired:
+                kept.append(entry)
+        counts["giveaways"] = len(giveaways) - len(kept)
+        _save_json("giveaways", kept)
+    else:
+        counts["giveaways"] = 0
+
+    return {
+        "cleaned_at": now.isoformat(),
+        "policy": policy,
+        "counts": counts,
+    }

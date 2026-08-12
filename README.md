@@ -209,6 +209,12 @@ NovaGuard loads `.env` automatically at startup.
 | `BACKUP_REMOTE_FULL_KEEP_DAYS` | Optional | How long to keep full zips on remote storage; defaults to `90` |
 | `BACKUP_REMOTE_GUILD_KEEP_DAYS` | Optional | How long to keep per-server JSON exports on remote storage; defaults to `60` |
 | `BACKUP_REMOTE_RETENTION_ENABLED` | Optional | Prune old remote files after uploads; defaults to `true` |
+| `PRIVACY_TICKET_KEEP_DAYS` | Optional | Retain closed ticket metadata; defaults to `180` days |
+| `PRIVACY_WARNING_KEEP_DAYS` | Optional | Retain moderation warnings; defaults to `365` days |
+| `PRIVACY_GIVEAWAY_KEEP_DAYS` | Optional | Retain completed giveaway records; defaults to `90` days |
+| `PRIVACY_VOICE_KEEP_MONTHS` | Optional | Retain monthly voice totals; defaults to `13` months |
+| `PRIVACY_ADMIN_AUDIT_KEEP_DAYS` | Optional | Retain privileged-action audit entries; defaults to `365` days |
+| `PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS` | Optional | Retain dashboard audit and IP records; defaults to `90` days |
 | `BACKUP_REMOTE_TIMEOUT_SECONDS` | Optional | Off-site upload timeout; defaults to `300` |
 | `ANTHROPIC_API_KEY` | Optional | Enables `/ask` |
 | `ANTHROPIC_MODEL` | Optional | Claude model override |
