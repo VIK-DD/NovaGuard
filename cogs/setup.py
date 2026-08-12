@@ -22,7 +22,7 @@ from core.backups import (
 )
 from cogs.admin import require_admin
 from core.config import github_config
-from core.database import export_guild_data
+from core.privacy import export_guild_data
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, respond
@@ -163,7 +163,7 @@ def build_config_embed(guild):
 
 
 def export_config_file(guild):
-    """A server owner's own backup: their settings, levels and wallets.
+    """A server administrator's complete guild-scoped privacy export.
 
     The /backup group archives every guild at once and is the bot owner's,
     so this is how a single server takes its own data out - scoped by
@@ -706,8 +706,8 @@ class Setup(commands.Cog):
     async def config_export(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
         embed = make_embed(
-            "📦 Config export ready",
-            "This file contains server setup settings only. It does not include bot tokens or API keys.",
+            "📦 Server export ready",
+            "This file contains all live NovaGuard data scoped to this server. It never includes bot tokens or API keys.",
             color=Palette.SUCCESS,
         )
         brand_footer(embed, "Config export")

@@ -14,6 +14,13 @@
     "commands": ["/ping", "/uptime", "/status", "/botinfo", "/help", "/latest", "/updates"]
   },
   {
+    "emoji": "🔏",
+    "name": "Privacy",
+    "blurb": "Private access, export and deletion controls for members and server owners.",
+    "audience": "everyone",
+    "commands": ["/privacy policy", "/privacy export", "/privacy delete", "/privacy server-export", "/privacy server-delete"]
+  },
+  {
     "emoji": "🩺",
     "name": "Server diagnostics",
     "blurb": "Detailed checks and changelog previews for server managers.",

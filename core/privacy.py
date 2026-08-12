@@ -139,6 +139,12 @@ def _scrub_user_references(value, user_id):
     return value, 0, False
 
 
+def scrub_user_state(value, user_id):
+    """Public runtime-cache counterpart to the persisted-state scrubber."""
+    cleaned, removed, _ = _scrub_user_references(value, _id(user_id))
+    return cleaned, removed
+
+
 def _voice_payloads(connection):
     if not _table_exists(connection, "voice_state"):
         return {}
@@ -158,8 +164,16 @@ def _export_json_user_data(user_id):
                 continue
             own = members.get(user_id)
             if isinstance(own, list):
-                warnings_as_subject.append({"guild_id": _id(guild_id), "warnings": own})
-            for subject_id, entries in members.items():
+                warnings_as_subject.append(
+                    {
+                        "guild_id": _id(guild_id),
+                        "warnings": [
+                            {key: value for key, value in entry.items() if key != "moderator_id"}
+                            for entry in own if isinstance(entry, dict)
+                        ],
+                    }
+                )
+            for entries in members.values():
                 if not isinstance(entries, list):
                     continue
                 issued = [
@@ -168,7 +182,13 @@ def _export_json_user_data(user_id):
                 ]
                 if issued:
                     warnings_as_moderator.append(
-                        {"guild_id": _id(guild_id), "subject_id": _id(subject_id), "warnings": issued}
+                        {
+                            "guild_id": _id(guild_id),
+                            "warnings": [
+                                {key: value for key, value in entry.items() if key != "moderator_id"}
+                                for entry in issued
+                            ],
+                        }
                     )
 
     reminders = [
@@ -179,12 +199,29 @@ def _export_json_user_data(user_id):
     for entry in _load_json("giveaways", []):
         if not isinstance(entry, dict):
             continue
-        member_lists = (entry.get("entrants", []), entry.get("winner_ids", []))
-        if _id(entry.get("host_id")) == user_id or any(
-            any(_id(member_id) == user_id for member_id in values)
-            for values in member_lists if isinstance(values, list)
-        ):
-            giveaways.append(entry)
+        hosted = _id(entry.get("host_id")) == user_id
+        entered = any(_id(member_id) == user_id for member_id in entry.get("entrants", []))
+        won = any(_id(member_id) == user_id for member_id in entry.get("winner_ids", []))
+        if hosted or entered or won:
+            giveaways.append(
+                {
+                    key: copy.deepcopy(entry[key])
+                    for key in (
+                        "guild_id",
+                        "message_id",
+                        "channel_id",
+                        "prize",
+                        "winners",
+                        "ends_at",
+                        "ended",
+                    )
+                    if key in entry
+                }
+                | {
+                    "relationship": {"hosted": hosted, "entered": entered, "won": won},
+                    "entrant_count": len(entry.get("entrants", [])),
+                }
+            )
 
     return {
         "warnings_received": warnings_as_subject,
@@ -213,18 +250,39 @@ def export_user_data(user_id):
             "extras",
         )
         voice = _rows(connection, "SELECT * FROM voice_minutes WHERE user_id = ?", (user_id,))
-        tickets = _rows(
+        ticket_rows = _rows(
             connection,
             "SELECT * FROM ticket_records WHERE opener_id = ? OR closed_by = ?",
             (user_id, user_id),
         )
+        tickets = []
+        for row in ticket_rows:
+            if _id(row.get("opener_id")) == user_id:
+                tickets.append(
+                    {key: value for key, value in row.items() if key != "closed_by"}
+                    | {"relationship": "opened"}
+                )
+            else:
+                tickets.append(
+                    {
+                        key: row[key]
+                        for key in (
+                            "thread_id",
+                            "guild_id",
+                            "parent_channel_id",
+                            "created_at",
+                            "closed_at",
+                        )
+                    }
+                    | {"relationship": "closed"}
+                )
         role_panels = _decode_columns(
             _rows(connection, "SELECT * FROM role_panels WHERE created_by = ?", (user_id,)),
             "role_ids",
         )
         admin_audit = _rows(
             connection,
-            "SELECT created_at, actor_id, actor_name, action, target, outcome, detail"
+            "SELECT created_at, actor_id, actor_name, action, outcome"
             " FROM admin_audit WHERE actor_id = ? ORDER BY id",
             (user_id,),
         )

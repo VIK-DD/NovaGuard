@@ -250,6 +250,7 @@ class Utility(commands.Cog):
                 {
                     "id": uuid.uuid4().hex[:8],
                     "user_id": interaction.user.id,
+                    "guild_id": interaction.guild_id,
                     "channel_id": interaction.channel_id,
                     "message": message,
                     "due_at": due_at.isoformat(),

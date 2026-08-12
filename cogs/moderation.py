@@ -253,8 +253,11 @@ class Moderation(commands.Cog):
         lines = []
         for index, entry in enumerate(user_warns[-10:], start=max(len(user_warns) - 10, 0) + 1):
             when = datetime.fromisoformat(entry["created_at"])
+            moderator = (
+                f"<@{entry['moderator_id']}>" if entry.get("moderator_id") else "Deleted moderator"
+            )
             lines.append(
-                f"`#{index}` {discord.utils.format_dt(when, 'R')} by <@{entry['moderator_id']}>\n> {truncate(entry['reason'], 100)}"
+                f"`#{index}` {discord.utils.format_dt(when, 'R')} by {moderator}\n> {truncate(entry['reason'], 100)}"
             )
 
         embed = make_embed(

@@ -31,6 +31,7 @@ def _music_cog():
 
 COGS = (
     "setup",
+    "privacy",
     "system",
     "developer",
     "utility",

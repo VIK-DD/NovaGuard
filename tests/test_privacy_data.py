@@ -148,6 +148,9 @@ class PrivacyDataTests(unittest.TestCase):
         self.assertIn("voice_sessions", exported["voice_state"])
         self.assertNotIn("secret-token", blob)
         self.assertNotIn("secret-hash", blob)
+        self.assertNotIn('"opener_id": "99"', blob)
+        self.assertNotIn('"moderator_id": 99', blob)
+        self.assertNotIn('"entrants"', blob)
 
     def test_user_erasure_removes_subject_and_anonymises_references(self):
         report = privacy.erase_user_data(42)
