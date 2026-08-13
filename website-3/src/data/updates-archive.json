@@ -1,5 +1,19 @@
 [
   {
+    "created_at": "2026-08-12T21:15:32.759683+00:00",
+    "significant": false,
+    "build": 53,
+    "added_lines": 12,
+    "removed_lines": 6,
+    "changed_files": 1,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/privacy policy`"
+    ],
+    "release": "2.3",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
     "created_at": "2026-08-12T20:36:05.330422+00:00",
     "significant": true,
     "build": 52,
