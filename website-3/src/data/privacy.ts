@@ -109,6 +109,11 @@ export const RETENTION_ROWS = [
     period: "While needed for the selected feature, or until reset/erasure is requested",
   },
   {
+    data: "Server configuration and community feature state after NovaGuard is removed from a server",
+    period:
+      "Erased 30 days after removal, so an accidental removal stays recoverable; adding NovaGuard back within that window keeps the data. A server owner who wants immediate erasure uses /privacy server-delete",
+  },
+  {
     data: "Ordinary message content and /ask questions in NovaGuard storage",
     period: "Not stored as message/question history; Anthropic states standard API inputs and outputs are normally retained for up to 30 days",
   },

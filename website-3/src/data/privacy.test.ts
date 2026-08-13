@@ -53,6 +53,15 @@ describe("privacy inventory", () => {
     }
   });
 
+  it("discloses that a removed server keeps its data for a bounded window", () => {
+    // The bot waits PRIVACY_GUILD_GRACE_DAYS before erasing a server it was
+    // removed from. A policy that omits the window contradicts the code.
+    const inventory = JSON.stringify(RETENTION_ROWS);
+    expect(inventory).toContain("after NovaGuard is removed");
+    expect(inventory).toContain("Erased 30 days after removal");
+    expect(inventory).toContain("adding NovaGuard back");
+  });
+
   it("documents all persistent browser-storage keys", () => {
     expect(BROWSER_STORAGE.map((row) => row.name)).toEqual([
       "ng-theme",
