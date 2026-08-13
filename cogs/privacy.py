@@ -1,13 +1,16 @@
 """Privacy controls available directly inside Discord."""
 
 import asyncio
+import gzip
 import io
 import json
+import os
 from contextlib import AsyncExitStack
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+from discord.utils import DEFAULT_FILE_SIZE_LIMIT_BYTES
 
 from core.privacy import (
     erase_guild_data,
@@ -42,9 +45,58 @@ PRIVACY_CONTROLS_TEXT = (
 )
 
 
-def _json_file(payload, filename):
-    content = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
-    return discord.File(io.BytesIO(content), filename=filename)
+def _privacy_contact():
+    """The published privacy address, falling back to the policy page."""
+    return (os.environ.get("PRIVACY_CONTACT_EMAIL") or "").strip() or PRIVACY_URL
+
+
+def _attachment_limit(interaction):
+    """Discord's upload ceiling here: this guild's, or the default in a DM.
+
+    An unboosted guild accepts 10 MiB, which a large community's export can
+    genuinely exceed.
+    """
+    guild = getattr(interaction, "guild", None)
+    return guild.filesize_limit if guild is not None else DEFAULT_FILE_SIZE_LIMIT_BYTES
+
+
+def _export_attachment(payload, stem, limit):
+    """Build an export attachment, compressing only when it has to.
+
+    Returns ``(file, note)``.  Both are ``None`` when even the compressed
+    export exceeds what Discord accepts here.  Callers must treat that as
+    "cannot deliver" and never continue: erasing without handing over the final
+    export would destroy the very records the member asked to receive.
+    """
+    raw = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+    if len(raw) <= limit:
+        return discord.File(io.BytesIO(raw), filename=f"{stem}.json"), None
+    # An export is a long run of near-identical records, which gzip shrinks by
+    # roughly a factor of ten — enough to rescue every realistic export.
+    packed = gzip.compress(raw, mtime=0)
+    if len(packed) <= limit:
+        return (
+            discord.File(io.BytesIO(packed), filename=f"{stem}.json.gz"),
+            "This export was too large to send as plain text, so it is attached"
+            " as a `.json.gz` archive. Any unzip tool opens it.",
+        )
+    return None, None
+
+
+def _undeliverable_embed(title):
+    embed = make_embed(
+        title,
+        "The export is too large to send through Discord, even compressed."
+        f" Ask for it at {_privacy_contact()} from an account you control."
+        " Nothing has been erased.",
+        color=Palette.WARNING,
+    )
+    brand_footer(embed, "Privacy export")
+    return embed
+
+
+def _with_note(description, note):
+    return f"{description}\n\n{note}" if note else description
 
 
 def _live_cogs(bot):
@@ -306,18 +358,28 @@ class Privacy(commands.Cog):
         await defer_interaction(interaction, ephemeral=True)
         await flush_live_privacy_state(self.bot)
         payload = await asyncio.to_thread(export_user_data, interaction.user.id)
+        file, note = _export_attachment(
+            payload,
+            f"novaguard-user-{interaction.user.id}",
+            _attachment_limit(interaction),
+        )
+        if file is None:
+            return await respond(
+                interaction,
+                _undeliverable_embed("Export too large to send here"),
+                ephemeral=True,
+            )
         embed = make_embed(
             "📦 Your private export is ready",
-            "The attachment contains NovaGuard records tied to your Discord ID. "
-            "OAuth tokens and session secrets are never included.",
+            _with_note(
+                "The attachment contains NovaGuard records tied to your Discord ID. "
+                "OAuth tokens and session secrets are never included.",
+                note,
+            ),
             color=Palette.SUCCESS,
         )
         brand_footer(embed, "Personal data export")
-        await interaction.followup.send(
-            embed=embed,
-            file=_json_file(payload, f"novaguard-user-{interaction.user.id}.json"),
-            ephemeral=True,
-        )
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
 
     @privacy.command(name="delete", description="Export, then erase data tied to your Discord ID")
     @app_commands.describe(confirmation=f"Type {USER_DELETE_CONFIRMATION} exactly")
@@ -334,20 +396,31 @@ class Privacy(commands.Cog):
 
         await flush_live_privacy_state(self.bot)
         payload = await asyncio.to_thread(export_user_data, interaction.user.id)
+        # Build the attachment before erasing. Erasing first and failing to send
+        # would destroy the final export the member is entitled to receive, with
+        # no way to produce it again.
+        file, note = _export_attachment(
+            payload,
+            f"novaguard-user-{interaction.user.id}-final",
+            _attachment_limit(interaction),
+        )
+        if file is None:
+            return await respond(
+                interaction, _undeliverable_embed("Nothing was erased"), ephemeral=True
+            )
         report = await erase_live_user_data(self.bot, interaction.user.id)
         removed = sum(report["counts"].values())
         embed = make_embed(
             "🧹 Your NovaGuard data was erased",
-            f"Removed or anonymised `{removed}` live record reference(s). "
-            "Your final pre-deletion export is attached. New voluntary use of NovaGuard may create new records.",
+            _with_note(
+                f"Removed or anonymised `{removed}` live record reference(s). "
+                "Your final pre-deletion export is attached. New voluntary use of NovaGuard may create new records.",
+                note,
+            ),
             color=Palette.SUCCESS,
         )
         brand_footer(embed, "Personal data deletion")
-        await interaction.followup.send(
-            embed=embed,
-            file=_json_file(payload, f"novaguard-user-{interaction.user.id}-final.json"),
-            ephemeral=True,
-        )
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
 
     @privacy.command(name="server-export", description="Export all NovaGuard data for this server")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -357,17 +430,27 @@ class Privacy(commands.Cog):
         await flush_live_privacy_state(self.bot)
         payload = await asyncio.to_thread(export_guild_data, interaction.guild_id)
         payload["guild_name"] = interaction.guild.name
+        file, note = _export_attachment(
+            payload,
+            f"novaguard-server-{interaction.guild_id}",
+            _attachment_limit(interaction),
+        )
+        if file is None:
+            return await respond(
+                interaction,
+                _undeliverable_embed("Export too large to send here"),
+                ephemeral=True,
+            )
         embed = make_embed(
             "📦 Server privacy export ready",
-            "This administrator-only attachment contains all live NovaGuard state scoped to this server.",
+            _with_note(
+                "This administrator-only attachment contains all live NovaGuard state scoped to this server.",
+                note,
+            ),
             color=Palette.SUCCESS,
         )
         brand_footer(embed, "Server data export")
-        await interaction.followup.send(
-            embed=embed,
-            file=_json_file(payload, f"novaguard-server-{interaction.guild_id}.json"),
-            ephemeral=True,
-        )
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
 
     @privacy.command(
         name="server-delete",
@@ -398,19 +481,29 @@ class Privacy(commands.Cog):
         await flush_live_privacy_state(self.bot)
         payload = await asyncio.to_thread(export_guild_data, interaction.guild_id)
         payload["guild_name"] = interaction.guild.name
+        # As with the personal deletion: prove the export can be delivered
+        # before destroying the only copy of what it describes.
+        file, note = _export_attachment(
+            payload,
+            f"novaguard-server-{interaction.guild_id}-final",
+            _attachment_limit(interaction),
+        )
+        if file is None:
+            return await respond(
+                interaction, _undeliverable_embed("Nothing was erased"), ephemeral=True
+            )
         report = await erase_live_guild_data(self.bot, interaction.guild_id)
         removed = sum(report["counts"].values())
         embed = make_embed(
             "🧹 Server data erased",
-            f"Removed `{removed}` live record(s). The final export is attached and NovaGuard will now leave the server.",
+            _with_note(
+                f"Removed `{removed}` live record(s). The final export is attached and NovaGuard will now leave the server.",
+                note,
+            ),
             color=Palette.SUCCESS,
         )
         brand_footer(embed, "Server data deletion")
-        await interaction.followup.send(
-            embed=embed,
-            file=_json_file(payload, f"novaguard-server-{interaction.guild_id}-final.json"),
-            ephemeral=True,
-        )
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
         # Leaving fires on_guild_remove, which would otherwise schedule the
         # erasure that just happened. This was an authenticated request.
         self._erased_on_request.add(interaction.guild_id)
