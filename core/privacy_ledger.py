@@ -325,6 +325,9 @@ def _scrub_sqlite(db_path, guild_matches, user_matches):
             "ticket_records",
             "role_panels",
             "web_audit",
+            # A snapshot taken while a server sat inside its grace window still
+            # holds that marker; the server may have been erased for real since.
+            "pending_guild_deletions",
         ):
             removed = _delete_matches(connection, table, "guild_id", guild_matches)
             if removed:

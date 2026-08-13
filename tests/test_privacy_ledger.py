@@ -59,6 +59,9 @@ class PrivacyLedgerTests(unittest.TestCase):
                     sid_hash TEXT, user_id TEXT, guilds_json TEXT
                 );
                 CREATE TABLE web_audit (id INTEGER, guild_id TEXT, user_id TEXT);
+                CREATE TABLE pending_guild_deletions (
+                    guild_id TEXT PRIMARY KEY, scheduled_at TEXT, deadline TEXT
+                );
 
                 INSERT INTO level_records VALUES ('111', '42', 500), ('222', '99', 800);
                 INSERT INTO economy_wallets VALUES ('111', '42', 50), ('222', '99', 80);
@@ -70,6 +73,9 @@ class PrivacyLedgerTests(unittest.TestCase):
                 INSERT INTO web_sessions VALUES ('mine', '42', '{"111": {}, "222": {}}');
                 INSERT INTO web_sessions VALUES ('other', '99', '{"111": {}, "222": {}}');
                 INSERT INTO web_audit VALUES (1, '111', '99'), (2, '222', '42'), (3, '222', '99');
+                INSERT INTO pending_guild_deletions VALUES
+                    ('111', '2026-08-10T00:00:00+00:00', '2026-09-09T00:00:00+00:00'),
+                    ('222', '2026-08-10T00:00:00+00:00', '2026-09-09T00:00:00+00:00');
                 """
             )
             connection.execute(
@@ -136,6 +142,30 @@ class PrivacyLedgerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(PrivacyLedgerError, "integrity check failed"):
             load_deletion_ledger(self.ledger, require=True)
+
+    def test_restoring_a_snapshot_cannot_revive_a_marker_for_an_erased_guild(self):
+        # A snapshot taken while a server was inside its grace window still
+        # holds that marker. If the server was erased for real afterwards, the
+        # restored marker would describe a deletion that already happened.
+        record_deletion(
+            "guild", "111", path=self.ledger,
+            deleted_at="2026-08-12T02:00:00+00:00",
+        )
+        restore, database = self._restore_tree()
+
+        apply_deletion_ledger(
+            restore,
+            ledger_path=self.ledger,
+            snapshot_created_at="2026-08-11T00:00:00+00:00",
+        )
+
+        with closing(sqlite3.connect(database)) as connection:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT guild_id FROM pending_guild_deletions"
+                ).fetchall(),
+                [("222",)],
+            )
 
     def test_old_snapshot_is_scrubbed_without_touching_other_subjects(self):
         record_deletion(
