@@ -90,21 +90,23 @@ visible in logs without new code.
 ```python
 GRACE_DAYS_KEY = "PRIVACY_GUILD_GRACE_DAYS"
 
+def grace_days(env=None) -> int
 def schedule_guild_deletion(guild_id, *, now=None, env=None) -> dict
 def cancel_guild_deletion(guild_id) -> bool
 def pending_guild_deletions() -> list[dict]
 def due_guild_deletions(*, now=None) -> list[str]
-def clear_guild_deletion(guild_id) -> bool
 ```
+
+An earlier draft of this design also listed `clear_guild_deletion`, to be
+called after a real erasure while `cancel_guild_deletion` handled a returning
+server. Both would have had identical bodies. Two functions that differ only in
+name are worse than one, and the distinction that mattered — why the row went
+away — belongs in the caller's log line, which is where it now lives.
 
 `schedule_guild_deletion` returns the stored row. Re-scheduling an already
 pending guild leaves the original deadline untouched — a second removal must not
 extend the window, or a repeated kick/re-add cycle could keep data alive
 indefinitely.
-
-`cancel_guild_deletion` and `clear_guild_deletion` both delete the row; they are
-separate names because they mean different things at the call site (the guild
-came back, versus the guild was erased) and the log lines differ.
 
 `now` and `env` are injectable on every function that reads them, so tests never
 depend on wall-clock time or process environment.
