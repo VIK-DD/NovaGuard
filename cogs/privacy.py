@@ -17,7 +17,14 @@ from core.privacy import (
     run_retention_cleanup,
     scrub_user_state,
 )
+from core.guild_grace import (
+    cancel_guild_deletion,
+    due_guild_deletions,
+    pending_guild_deletions,
+    schedule_guild_deletion,
+)
 from core.privacy_ledger import ensure_deletion_ledger, sync_deletion_ledger
+from core.storage import all_guild_settings
 from core.error_digest import send_error_digest
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
@@ -130,6 +137,69 @@ async def erase_live_guild_data(bot, guild_id):
     return report
 
 
+async def reconcile_guild_deletions(bot):
+    """Line pending deletions up with the servers NovaGuard is actually in.
+
+    ``on_guild_remove`` does not fire while the bot is offline, so a server it
+    was removed from during downtime would otherwise keep its data with nothing
+    scheduled to remove it.  The opposite direction matters just as much:
+    clearing the marker for a server the bot is in means a marker created from
+    a partial gateway guild list corrects itself on the next healthy connect.
+    """
+    present = {str(guild.id) for guild in bot.guilds}
+    stored = await asyncio.to_thread(all_guild_settings)
+    pending = {
+        entry["guild_id"] for entry in await asyncio.to_thread(pending_guild_deletions)
+    }
+
+    scheduled = []
+    for guild_id in stored:
+        if guild_id in present or guild_id in pending:
+            continue
+        row = await asyncio.to_thread(schedule_guild_deletion, guild_id)
+        scheduled.append(guild_id)
+        print(
+            f"Server {guild_id} was removed while NovaGuard was offline;"
+            f" its data is scheduled for erasure on {row['deadline']}."
+        )
+
+    cancelled = []
+    for guild_id in sorted(pending & present):
+        if await asyncio.to_thread(cancel_guild_deletion, guild_id):
+            cancelled.append(guild_id)
+            print(
+                f"NovaGuard is in server {guild_id} again;"
+                " its scheduled data erasure was cancelled."
+            )
+    return {"scheduled": scheduled, "cancelled": cancelled}
+
+
+async def process_due_guild_deletions(bot, *, now=None):
+    """Erase the servers whose grace window has closed."""
+    erased = []
+    for guild_id in await asyncio.to_thread(due_guild_deletions, now=now):
+        try:
+            await erase_live_guild_data(bot, guild_id)
+        except Exception as error:
+            # One unlucky server must not strand every server queued behind it,
+            # and its marker stays so the next run retries rather than leaving
+            # the data behind with nothing scheduled to remove it.
+            await send_error_digest(
+                bot,
+                "Scheduled Guild Erasure Failed",
+                error,
+                context=(
+                    f"Server {guild_id} passed its grace window but could not be"
+                    " erased. It stays scheduled and will be retried."
+                ),
+            )
+            continue
+        await asyncio.to_thread(cancel_guild_deletion, guild_id)
+        erased.append(guild_id)
+        print(f"Grace window closed for server {guild_id}; its data was erased.")
+    return erased
+
+
 async def _sync_privacy_ledger(bot, report):
     if not report.get("deletion_ledger"):
         return
@@ -175,6 +245,10 @@ class Privacy(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        # Guilds erased on an authenticated request, so the on_guild_remove that
+        # follows guild.leave() does not downgrade a deliberate deletion into a
+        # pending one. Both run on the event loop, so there is no race.
+        self._erased_on_request = set()
 
     async def cog_load(self):
         await asyncio.to_thread(ensure_deletion_ledger)
@@ -185,6 +259,11 @@ class Privacy(commands.Cog):
 
     @tasks.loop(hours=24)
     async def retention_loop(self):
+        # Reconcile before erasing, not after: a bot added back on the last day
+        # of a grace window must have its marker cleared before the deletion
+        # pass reads it, or the window would close on a server that came back.
+        await reconcile_guild_deletions(self.bot)
+        await process_due_guild_deletions(self.bot)
         # JSON stores are intentionally small and SQLite cleanup is indexed;
         # keeping this synchronous prevents a warning/giveaway write from
         # racing the daily load-filter-save cycle.
@@ -332,11 +411,32 @@ class Privacy(commands.Cog):
             file=_json_file(payload, f"novaguard-server-{interaction.guild_id}-final.json"),
             ephemeral=True,
         )
+        # Leaving fires on_guild_remove, which would otherwise schedule the
+        # erasure that just happened. This was an authenticated request.
+        self._erased_on_request.add(interaction.guild_id)
         await interaction.guild.leave()
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
-        await erase_live_guild_data(self.bot, guild.id)
+        # Removal is not an authenticated deletion request: an accidental kick
+        # and a deliberate cleanup arrive as exactly this event. Erasure waits
+        # so the accident stays recoverable.
+        if guild.id in self._erased_on_request:
+            self._erased_on_request.discard(guild.id)
+            return
+        row = await asyncio.to_thread(schedule_guild_deletion, guild.id)
+        print(
+            f"NovaGuard was removed from server {guild.id};"
+            f" its data is scheduled for erasure on {row['deadline']}."
+        )
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild):
+        if await asyncio.to_thread(cancel_guild_deletion, guild.id):
+            print(
+                f"NovaGuard was added back to server {guild.id};"
+                " its scheduled data erasure was cancelled."
+            )
 
 
 async def setup(bot):
