@@ -68,7 +68,7 @@ Before enabling or materially changing one of these modules in a community:
 | Activity | People and data | Purpose | Working legal-basis assessment | Recipient/location | Live retention |
 | --- | --- | --- | --- | --- | --- |
 | Discord OAuth and dashboard | Administrator Discord ID, display name, avatar, manageable servers, encrypted OAuth tokens, hashed session ID | Authenticate and show only manageable servers | Requested service/contract; security is legitimate interest | Discord; Oracle-hosted NovaGuard API; Cloudflare website | OAuth state 10 minutes; session and token up to 7 days or logout |
-| Configuration and administration | Guild/channel/role IDs, settings, acting administrator ID, setting changes | Run requested server features and maintain accountability | Requested service/contract; legitimate interests in reliable and secure operation | Oracle host; Discord for resulting actions | Configuration while needed; privileged bot audit 365 days; dashboard audit/IP 90 days |
+| Configuration and administration | Guild/channel/role IDs, settings, acting administrator ID, setting changes | Run requested server features and maintain accountability | Requested service/contract; legitimate interests in reliable and secure operation | Oracle host; Discord for resulting actions | Configuration while needed; privileged bot audit 365 days; dashboard audit/IP 90 days; server data 30 days after removal |
 | AutoMod and message XP | Discord ID and message content inspected in real time; XP/message totals | Apply configured moderation rules and award XP for meaningful participation | Server administrator's documented purpose and applicable lawful basis | Discord event stream; Oracle process memory and totals storage | Ordinary content is not archived by NovaGuard; XP totals while feature is active or until deletion |
 | Edited/deleted message logging | Message author/channel identifiers and excerpt | Send the event to the log channel selected by the server administrator | Server administrator's documented purpose and applicable lawful basis | Reposted inside Discord; not retained as a separate NovaGuard archive | Controlled by Discord/server retention after reposting |
 | Levels, economy and voice | Discord/guild IDs, XP, message count, balances, rewards, voice seconds and session/report metadata | Community progression and requested statistics | Requested feature; legitimate interests identified by the server administrator | Oracle host; results displayed in Discord/dashboard | Active totals while needed; voice history 13 months by default |
@@ -117,7 +117,14 @@ Developer Policy before implementation:
    migration tools reapply that ledger so an old backup cannot resurrect erased
    data. The ledger contains no raw Discord ID and is stored outside full
    backups, with an encrypted off-site recovery copy.
-7. If a record must be retained for a legal claim or security obligation,
+7. Removing NovaGuard from a server is not treated as a deletion request. An
+   accidental kick and a deliberate cleanup arrive as the same event, and
+   erasure is irreversible, so the server's data is erased 30 days after
+   removal and adding the bot back within that window cancels it. A server
+   owner who wants immediate erasure uses `/privacy server-delete`, which is
+   authenticated and does not wait. `PRIVACY_GUILD_GRACE_DAYS` configures the
+   window; state the deployed value in the public policy.
+8. If a record must be retained for a legal claim or security obligation,
    isolate it, restrict use, document the reason and erase it when that purpose
    ends.
 

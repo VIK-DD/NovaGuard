@@ -232,6 +232,19 @@ def init_database():
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_audit_time ON admin_audit (created_at DESC)"
         )
+        # Servers NovaGuard has been removed from keep their data for a grace
+        # window before erasure, so an accidental kick stays recoverable. The
+        # primary key makes two contradictory deadlines for one server
+        # impossible, however many times it is removed and added back.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_guild_deletions (
+                guild_id TEXT PRIMARY KEY,
+                scheduled_at TEXT NOT NULL,
+                deadline TEXT NOT NULL
+            )
+            """
+        )
         _add_missing_columns(connection)
         connection.commit()
     _INITIALIZED = True

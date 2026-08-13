@@ -36,6 +36,10 @@ RETENTION_DEFAULTS = {
     "PRIVACY_VOICE_KEEP_MONTHS": 13,
     "PRIVACY_ADMIN_AUDIT_KEEP_DAYS": 365,
     "PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS": 90,
+    # How long a server keeps its data after NovaGuard is removed from it.
+    # Removal is not an authenticated deletion request — an accidental kick
+    # looks identical — so erasure waits, and adding the bot back cancels it.
+    "PRIVACY_GUILD_GRACE_DAYS": 30,
 }
 _PENDING_DELETION_AT = "9999-12-31T23:59:59.999999+00:00"
 
