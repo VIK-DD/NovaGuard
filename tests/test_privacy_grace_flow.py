@@ -98,6 +98,20 @@ class GuildGraceFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(_pending(), [])
 
+    async def test_an_empty_guild_list_schedules_nothing(self):
+        # A gateway that hands back no guilds is a failed connect, not proof
+        # that every server removed NovaGuard at once. Marking them all would
+        # self-correct on the next healthy connect, but the loop should never
+        # depend on that recovery in the first place.
+        bot = FakeBot()
+
+        with mock.patch.object(
+            privacy_cog, "all_guild_settings", return_value={"111": {}, "222": {}}
+        ):
+            await privacy_cog.reconcile_guild_deletions(bot)
+
+        self.assertEqual(_pending(), [])
+
     async def test_only_a_closed_window_erases(self):
         guild_grace.schedule_guild_deletion(
             "expired", now=self.now - timedelta(days=31), env={}

@@ -199,6 +199,13 @@ async def reconcile_guild_deletions(bot):
     a partial gateway guild list corrects itself on the next healthy connect.
     """
     present = {str(guild.id) for guild in bot.guilds}
+    if not present:
+        # A gateway handing back no guilds is a failed connect, not every
+        # server leaving at once. Marking them all would self-correct on the
+        # next healthy connect, but scheduling the erasure of every community
+        # NovaGuard has is not a state worth entering to recover from.
+        print("Skipping deletion reconciliation: NovaGuard sees no servers.")
+        return {"scheduled": [], "cancelled": []}
     stored = await asyncio.to_thread(all_guild_settings)
     pending = {
         entry["guild_id"] for entry in await asyncio.to_thread(pending_guild_deletions)
