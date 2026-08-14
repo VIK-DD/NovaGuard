@@ -22,22 +22,8 @@ const copyrightYears =
       <p class="mt-4 text-xs tracking-wide text-ink-faint">
         &copy; {copyrightYears} NovaGuard &middot; Developed by VIK &amp; CloudMedia
       </p>
-      <a
-        data-heartbeat
-        href="/status"
-        hidden
-        class="mt-3 inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-2.5 py-1 text-xs text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
-      >
-        <span class="h-1.5 w-1.5 rounded-full bg-good"></span>
-        <span data-heartbeat-text></span>
-      </a>
     </div>
-    <div class="grid gap-5 sm:grid-cols-2 lg:min-w-72">
-      <nav aria-label="Resources" class="grid gap-2 text-ink-muted">
-        <p class="text-xs tracking-[0.18em] text-ink-faint uppercase">Resources</p>
-        <a href="https://github.com/VIK-DD/NovaGuard" class="transition-colors hover:text-ink">GitHub</a>
-        <a href="/status" class="transition-colors hover:text-ink">System status</a>
-      </nav>
+    <div class="grid gap-5 lg:min-w-56">
       <nav aria-label="Legal" class="grid gap-2 text-ink-muted">
         <p class="text-xs tracking-[0.18em] text-ink-faint uppercase">Legal</p>
         <a href="/privacy" class="transition-colors hover:text-ink">Privacy &amp; cookies</a>
@@ -47,41 +33,3 @@ const copyrightYears =
     </div>
   </div>
 </footer>
-<script is:inline>
-  const link = document.querySelector("[data-heartbeat]");
-  const text = document.querySelector("[data-heartbeat-text]");
-  const loadHeartbeat = async () => {
-    if (!link || !text || window.location.pathname.startsWith("/status")) return;
-
-    try {
-      const getLiveStats = window.__ngGetLiveStats;
-      if (typeof getLiveStats !== "function") return;
-      const s = await getLiveStats();
-      const release = s.release_label ?? `${s.version} ${s.phase_label ?? "Open Beta"}`;
-      text.textContent = `Bot online · v${release} · ${s.guilds} servers`;
-      link.hidden = false;
-    } catch {}
-  };
-
-  const footer = document.querySelector("[data-site-footer]");
-  const scheduleHeartbeat = () => {
-    if (typeof window.requestIdleCallback === "function") {
-      window.requestIdleCallback(() => void loadHeartbeat(), { timeout: 1200 });
-    } else {
-      window.setTimeout(() => void loadHeartbeat(), 0);
-    }
-  };
-  if (footer && "IntersectionObserver" in window) {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        observer.disconnect();
-        scheduleHeartbeat();
-      },
-      { rootMargin: "200px 0px" },
-    );
-    observer.observe(footer);
-  } else {
-    scheduleHeartbeat();
-  }
-</script>

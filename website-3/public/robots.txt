@@ -1,0 +1,13 @@
+# NovaGuard — https://novaguard.fun
+#
+# The site is not publicly launched. Every page except this one and the
+# Coming Soon face at / answers a signed-out request with a redirect to the
+# password gate, so a crawler following them would index a login screen.
+#
+# At launch, replace the Disallow below with only the paths that should stay
+# out of an index (/dashboard/, /login, /preview, /maintenance) and let the
+# rest through.
+
+User-agent: *
+Allow: /$
+Disallow: /

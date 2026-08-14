@@ -164,6 +164,12 @@ function isPublicPath(pathname) {
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname.startsWith("/coming-soon/") ||
+    // Crawlers fetch this before anything else and never authenticate. Behind
+    // the gate it would answer a redirect to the login page, which says
+    // nothing about what may be indexed. Deliberately absent from
+    // isAlwaysOpenPath: during maintenance a 503 here is the right signal,
+    // because a 5xx on robots.txt makes crawlers pause the whole site.
+    pathname === "/robots.txt" ||
     pathname.startsWith("/_astro/") ||
     pathname.startsWith("/assets/") ||
     pathname === "/favicon.png" ||

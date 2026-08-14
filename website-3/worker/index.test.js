@@ -157,6 +157,21 @@ describe("password session", () => {
     await expect(response.text()).resolves.toBe("/home/");
   });
 
+  it("answers robots.txt without a session, and hardens it like any other page", async () => {
+    // A crawler never authenticates. Behind the gate this redirected to the
+    // login page, so the only crawl policy the site published was Cloudflare's
+    // generated default, served at the edge with none of these headers.
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/robots.txt"),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Strict-Transport-Security")).toContain("max-age=");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+  });
+
   it("combines public bot status into one short-lived snapshot", async () => {
     const upstream = vi.fn(async (request) => {
       const pathname = new URL(typeof request === "string" ? request : request.url).pathname;
