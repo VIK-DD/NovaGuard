@@ -40,6 +40,26 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
     <link rel="apple-touch-icon" href="/assets/novaguard-icon-96.png" />
     <link rel="preload" href={hankenLatin} as="font" type="font/woff2" crossorigin />
     <link rel="preload" href={outfitLatin} as="font" type="font/woff2" crossorigin />
+    <style
+      is:global
+      set:html={`
+        @font-face {
+          font-family: "Hanken Grotesk Variable";
+          font-style: normal;
+          font-weight: 100 900;
+          font-display: swap;
+          src: url("${hankenLatin}") format("woff2-variations");
+        }
+
+        @font-face {
+          font-family: "Outfit Variable";
+          font-style: normal;
+          font-weight: 100 900;
+          font-display: swap;
+          src: url("${outfitLatin}") format("woff2-variations");
+        }
+      `}
+    />
     {preconnectApi && apiOrigin && <link rel="preconnect" href={apiOrigin} crossorigin />}
     <script is:inline>
       // Dark-first: apply the stored/preferred theme before first paint (no flash).
