@@ -27,6 +27,7 @@ from core.guild_grace import (
     schedule_guild_deletion,
 )
 from core.privacy_ledger import ensure_deletion_ledger, sync_deletion_ledger
+from core.privacy_requests import record_privacy_request
 from core.storage import all_guild_settings
 from core.error_digest import send_error_digest
 from core.theme import Palette, brand_footer, make_embed
@@ -97,6 +98,21 @@ def _undeliverable_embed(title):
 
 def _with_note(description, note):
     return f"{description}\n\n{note}" if note else description
+
+
+async def _record_request(kind, subject_id, *, outcome="served"):
+    """Note that a rights request was answered, without ever blocking it.
+
+    The log exists to demonstrate compliance. Letting a failure to write that
+    proof stop the answer would deny someone their data to protect a record
+    about giving it to them.
+    """
+    try:
+        await asyncio.to_thread(
+            record_privacy_request, kind, subject_id, outcome=outcome
+        )
+    except Exception as error:
+        print(f"Could not record privacy request evidence ({kind}): {error}")
 
 
 def _live_cogs(bot):
@@ -371,11 +387,13 @@ class Privacy(commands.Cog):
             _attachment_limit(interaction),
         )
         if file is None:
+            await _record_request("user_export", interaction.user.id, outcome="undeliverable")
             return await respond(
                 interaction,
                 _undeliverable_embed("Export too large to send here"),
                 ephemeral=True,
             )
+        await _record_request("user_export", interaction.user.id)
         embed = make_embed(
             "📦 Your private export is ready",
             _with_note(
@@ -412,9 +430,13 @@ class Privacy(commands.Cog):
             _attachment_limit(interaction),
         )
         if file is None:
+            await _record_request("user_delete", interaction.user.id, outcome="undeliverable")
             return await respond(
                 interaction, _undeliverable_embed("Nothing was erased"), ephemeral=True
             )
+        # Recorded before the erasure, because afterwards the subject digest is
+        # the only trace left that the request was ever made.
+        await _record_request("user_delete", interaction.user.id)
         report = await erase_live_user_data(self.bot, interaction.user.id)
         removed = sum(report["counts"].values())
         embed = make_embed(
@@ -443,11 +465,13 @@ class Privacy(commands.Cog):
             _attachment_limit(interaction),
         )
         if file is None:
+            await _record_request("guild_export", interaction.guild_id, outcome="undeliverable")
             return await respond(
                 interaction,
                 _undeliverable_embed("Export too large to send here"),
                 ephemeral=True,
             )
+        await _record_request("guild_export", interaction.guild_id)
         embed = make_embed(
             "📦 Server privacy export ready",
             _with_note(
@@ -496,9 +520,11 @@ class Privacy(commands.Cog):
             _attachment_limit(interaction),
         )
         if file is None:
+            await _record_request("guild_delete", interaction.guild_id, outcome="undeliverable")
             return await respond(
                 interaction, _undeliverable_embed("Nothing was erased"), ephemeral=True
             )
+        await _record_request("guild_delete", interaction.guild_id)
         report = await erase_live_guild_data(self.bot, interaction.guild_id)
         removed = sum(report["counts"].values())
         embed = make_embed(

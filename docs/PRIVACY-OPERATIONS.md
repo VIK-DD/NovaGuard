@@ -77,6 +77,8 @@ Before enabling or materially changing one of these modules in a community:
 | GitHub integration | Public repository, release and commit metadata; configured destination channel | Publish repository updates selected by the administrator | Requested service and legitimate interest | GitHub, Oracle host and Discord | Current configuration plus limited delivery state while enabled |
 | Security, diagnostics and backups | IP address, Discord actor ID, timestamps, action metadata, errors; encrypted service state; keyed deletion tokens without raw Discord IDs | Detect abuse, investigate incidents, recover safely and prevent erased data from returning | Legitimate interests; legal obligation where applicable | Oracle host, Cloudflare, configured encrypted rclone destination | Dashboard audit/IP 90 days; local newest 10 backups; remote full/guild backups 90/60 days by default; deletion ledger for service lifetime |
 
+| Rights-request proof | Keyed digest of the requesting Discord ID, request kind, outcome and timestamp — no raw ID | Demonstrate under Article 5(2) that an access or erasure request was answered | Legal obligation; accountability is not optional | Oracle host only; never sent anywhere | rights-request proof 365 days |
+
 The final public policy must state the operator's actual legal bases and
 jurisdiction. “Legitimate interest” is not a label-only shortcut: record the
 purpose, necessity and balancing assessment for each use that relies on it.

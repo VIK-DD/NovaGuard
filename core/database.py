@@ -232,6 +232,24 @@ def init_database():
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_audit_time ON admin_audit (created_at DESC)"
         )
+        # Evidence that a rights request was answered, holding no raw Discord
+        # id. Accountability needs proof the request was served; it does not
+        # need a readable list of who exercised a privacy right.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS privacy_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                subject_digest TEXT NOT NULL,
+                outcome TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_privacy_requests_time"
+            " ON privacy_requests (created_at)"
+        )
         # Servers NovaGuard has been removed from keep their data for a grace
         # window before erasure, so an accidental kick stays recoverable. The
         # primary key makes two contradictory deadlines for one server

@@ -36,6 +36,9 @@ RETENTION_DEFAULTS = {
     "PRIVACY_VOICE_KEEP_MONTHS": 13,
     "PRIVACY_ADMIN_AUDIT_KEEP_DAYS": 365,
     "PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS": 90,
+    # How long the pseudonymous proof that a rights request was answered is
+    # kept. Evidence that never expires becomes a record of its own.
+    "PRIVACY_REQUEST_LOG_KEEP_DAYS": 365,
     # How long a server keeps its data after NovaGuard is removed from it.
     # Removal is not an authenticated deletion request — an accidental kick
     # looks identical — so erasure waits, and adding the bot back cancels it.
@@ -668,6 +671,9 @@ def run_retention_cleanup(*, now=None, env=None):
         "dashboard_audit": now - timedelta(
             days=policy["PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS"]
         ),
+        "privacy_requests": now - timedelta(
+            days=policy["PRIVACY_REQUEST_LOG_KEEP_DAYS"]
+        ),
     }
     voice_cutoff = _month_cutoff(now, policy["PRIVACY_VOICE_KEEP_MONTHS"])
 
@@ -692,6 +698,11 @@ def run_retention_cleanup(*, now=None, env=None):
             counts["dashboard_audit"] = connection.execute(
                 "DELETE FROM web_audit WHERE created_at < ?",
                 (cutoffs["dashboard_audit"].isoformat(),),
+            ).rowcount
+        if _table_exists(connection, "privacy_requests"):
+            counts["privacy_requests"] = connection.execute(
+                "DELETE FROM privacy_requests WHERE created_at < ?",
+                (cutoffs["privacy_requests"].isoformat(),),
             ).rowcount
         connection.commit()
 

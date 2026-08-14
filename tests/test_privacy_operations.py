@@ -23,6 +23,7 @@ class PrivacyOperationsTests(unittest.TestCase):
             "PRIVACY_ADMIN_AUDIT_KEEP_DAYS": "privileged bot audit 365 days",
             "PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS": "dashboard audit/IP 90 days",
             "PRIVACY_GUILD_GRACE_DAYS": "server data 30 days after removal",
+            "PRIVACY_REQUEST_LOG_KEEP_DAYS": "rights-request proof 365 days",
         }
         self.assertEqual(set(expected_periods), set(RETENTION_DEFAULTS))
         for env_name, disclosure in expected_periods.items():
