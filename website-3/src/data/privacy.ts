@@ -29,8 +29,8 @@ export const DATA_CATEGORIES = [
   },
   {
     name: "Security and operations",
-    data: "Dashboard IP address, Discord user ID, action, changed setting and timestamp; limited website request/error metadata at Cloudflare.",
-    use: "Prevent abuse, diagnose failures and provide an accountable dashboard audit trail.",
+    data: "Dashboard IP address, Discord user ID, action, changed setting and timestamp; limited website request/error metadata at Cloudflare. When you use a privacy command, the request type, outcome and time are recorded with a keyed digest of your ID rather than the ID itself.",
+    use: "Prevent abuse, diagnose failures, provide an accountable dashboard audit trail, and be able to show that a rights request was answered.",
     basis: "Legitimate interests in security, fraud prevention, accountability and service reliability; legal obligations where applicable.",
   },
 ] as const;
@@ -116,6 +116,10 @@ export const RETENTION_ROWS = [
   {
     data: "Ordinary message content and /ask questions in NovaGuard storage",
     period: "Not stored as message/question history; Anthropic states standard API inputs and outputs are normally retained for up to 30 days",
+  },
+  {
+    data: "Proof that a rights request was answered — request type, outcome, time and a keyed digest of the requesting ID, with no raw Discord ID",
+    period: "365 days",
   },
   {
     data: "Signed pseudonymous deletion tokens",

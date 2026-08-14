@@ -31,6 +31,36 @@ class PrivacyOperationsTests(unittest.TestCase):
                 self.assertIn(disclosure, self.register)
                 self.assertIn(str(RETENTION_DEFAULTS[env_name]), disclosure)
 
+    def test_published_policy_discloses_every_enforced_retention(self):
+        # The internal register and the public policy are separate files in
+        # separate languages, so documenting one has twice silently left the
+        # other contradicting the code. This ties them together.
+        published = (
+            ROOT / "website-3" / "src" / "data" / "privacy.ts"
+        ).read_text(encoding="utf-8")
+
+        for env_name, period in (
+            ("PRIVACY_TICKET_KEEP_DAYS", "180 days"),
+            ("PRIVACY_WARNING_KEEP_DAYS", "365 days"),
+            ("PRIVACY_GIVEAWAY_KEEP_DAYS", "90 days"),
+            ("PRIVACY_VOICE_KEEP_MONTHS", "13 months"),
+            ("PRIVACY_DASHBOARD_AUDIT_KEEP_DAYS", "90 days"),
+            ("PRIVACY_ADMIN_AUDIT_KEEP_DAYS", "365 days"),
+            ("PRIVACY_GUILD_GRACE_DAYS", "30 days after removal"),
+            ("PRIVACY_REQUEST_LOG_KEEP_DAYS", "365 days"),
+        ):
+            with self.subTest(env_name=env_name):
+                self.assertIn(str(RETENTION_DEFAULTS[env_name]), period)
+                self.assertIn(period, published)
+
+    def test_published_policy_names_the_rights_request_log(self):
+        published = (
+            ROOT / "website-3" / "src" / "data" / "privacy.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("rights request", published.lower())
+        self.assertIn("no raw Discord ID", published)
+
     def test_register_covers_processors_rights_and_deletion_safety(self):
         for required in (
             "Discord",
