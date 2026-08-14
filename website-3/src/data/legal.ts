@@ -5,8 +5,8 @@ export const LEGAL_COPYRIGHT_START_YEAR = 2019;
 
 export const LEGAL_OPERATOR = {
   name: "Breabin Victor",
-  contactAddress: "breabinvc@gmail.com",
-  privacyEmail: "breabinvc@gmail.com",
+  contactAddress: "support@novaguard.fun",
+  privacyEmail: "support@novaguard.fun",
   country: "Republic of Moldova",
 } as const;
 

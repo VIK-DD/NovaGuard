@@ -16,8 +16,8 @@ describe("public legal identity", () => {
     expect(LEGAL_EFFECTIVE_DATE).toBe("August 12, 2026");
     expect(LEGAL_OPERATOR).toEqual({
       name: "Breabin Victor",
-      contactAddress: "breabinvc@gmail.com",
-      privacyEmail: "breabinvc@gmail.com",
+      contactAddress: "support@novaguard.fun",
+      privacyEmail: "support@novaguard.fun",
       country: "Republic of Moldova",
     });
     expect(LEGAL_INFRASTRUCTURE).toEqual({

@@ -8,7 +8,10 @@ hosting region, retention value or public policy changes.
 ## Confirmed deployment facts
 
 - Individual operator: Breabin Victor, Republic of Moldova.
-- Private privacy/security and contact address: `breabinvc@gmail.com`.
+- Private privacy/security and contact address: `support@novaguard.fun`
+  (Zoho Mail, EU datacenter). The operator's personal address is deliberately
+  not the published contact: replying from a role address keeps a rights
+  request from exposing it.
 - Main runtime and primary operational storage: Oracle Cloud Infrastructure,
   Germany.
 - Encrypted off-site backup destination: Google Drive. The configured account
