@@ -16,6 +16,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core.backups as backups
+from cogs import system as system_cog
 from core.privacy_ledger import ensure_deletion_ledger
 from tools import restore_backup as restore_tool
 
@@ -37,6 +38,8 @@ class BackupIntegrityTests(unittest.TestCase):
                 "BACKUP_REMOTE_RETENTION_ENABLED",
                 "BACKUP_RCLONE_BIN",
                 "BACKUP_REMOTE_TIMEOUT_SECONDS",
+                "BACKUP_RCLONE_DRIVE_PACER_MIN_SLEEP",
+                "BACKUP_RCLONE_DRIVE_PACER_BURST",
                 "BACKUP_SCHEDULE",
                 "BACKUP_TIMEZONE",
                 "BACKUP_ENCRYPTION_KEY",
@@ -219,6 +222,10 @@ class BackupIntegrityTests(unittest.TestCase):
         args = args_file.read_text(encoding="utf-8")
         self.assertIn("copyto", args)
         self.assertIn("gdrive:NovaGuard/backups/full/", args)
+        self.assertIn("--drive-pacer-min-sleep", args)
+        self.assertIn("250ms", args)
+        self.assertIn("--drive-pacer-burst", args)
+        self.assertIn("1", args)
         self.assertEqual(status["latest"]["backup_name"], backup_path.name)
         self.assertTrue(status["matches_backup"])
 
@@ -324,6 +331,37 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertTrue(backups.is_encrypted_file(archive))
         self.assertEqual(list(backups.BACKUP_DIR.glob("novaguard-full-*.zip")), [])
 
+    def test_failed_remote_upload_defers_retention(self):
+        data_dir = self.root / "data"
+        data_dir.mkdir()
+        sqlite_path = self.write_sqlite()
+        os.environ["BACKUP_REMOTE_DEST"] = "gdrive:NovaGuard/backups"
+        failed_remote = {
+            "configured": True,
+            "ok": False,
+            "skipped": False,
+            "backup_name": "backup.zip.ngbackup",
+            "destination": "gdrive:NovaGuard/backups",
+            "remote_path": "gdrive:NovaGuard/backups/full/backup.zip.ngbackup",
+            "message": "quota exceeded",
+        }
+        with (
+            mock.patch.object(backups, "DB_PATH", sqlite_path),
+            mock.patch.object(backups, "DATA_DIR", data_dir),
+            mock.patch.object(backups, "VOICE_STORE_FILES", {}),
+            mock.patch.object(backups, "UPDATE_STATE_FILE", self.root / ".updates.json"),
+            mock.patch.object(backups, "GITHUB_STATE_FILE", self.root / ".github.json"),
+            mock.patch.object(backups, "init_database", return_value=None),
+            mock.patch.object(backups, "upload_backup_to_remote", return_value=failed_remote),
+            mock.patch.object(backups, "prune_remote_backups") as prune_remote,
+        ):
+            result = backups.create_backup("test")
+
+        prune_remote.assert_not_called()
+        self.assertTrue(result["retention"]["ok"])
+        self.assertTrue(result["retention"]["skipped"])
+        self.assertIn("deferred", result["retention"]["message"])
+
     def test_restore_cli_enforces_a_valid_deletion_ledger(self):
         archive = self.write_encrypted_backup()
         ledger = self.root / ".privacy_deletions.json"
@@ -401,6 +439,36 @@ class RemoteRetentionTests(unittest.TestCase):
         ):
             with self.subTest(stderr=stderr):
                 self.assertFalse(backups._is_missing_remote_dir(self._result(False, stderr)))
+
+
+class AutomaticBackupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_remote_failure_defers_guild_exports(self):
+        cog = object.__new__(system_cog.System)
+        cog.bot = mock.Mock(guilds=[mock.Mock(), mock.Mock()])
+        failed_remote = {
+            "configured": True,
+            "ok": False,
+            "destination": "gdrive:NovaGuard",
+            "message": "quota exceeded",
+        }
+        backup = {
+            "name": "novaguard-full-test.zip.ngbackup",
+            "created_at": "2026-08-14T04:00:55+00:00",
+            "remote": failed_remote,
+            "retention": {},
+        }
+        cog._deferred_guild_exports = mock.Mock()
+        cog._upload_guild_exports = mock.AsyncMock()
+
+        with (
+            mock.patch.object(system_cog, "create_backup", return_value=backup),
+            mock.patch.object(system_cog, "send_error_digest", new_callable=mock.AsyncMock) as send_digest,
+        ):
+            await cog._run_automatic_backup()
+
+        send_digest.assert_awaited_once()
+        cog._deferred_guild_exports.assert_called_once()
+        cog._upload_guild_exports.assert_not_awaited()
 
 
 if __name__ == "__main__":

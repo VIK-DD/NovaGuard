@@ -654,6 +654,23 @@ class System(commands.Cog):
         update_remote_backup_state(latest_guild_exports=summary)
         return summary
 
+    def _deferred_guild_exports(self, reason):
+        """Persist a deliberate no-op when Drive has already rejected a backup."""
+        config = remote_backup_config()
+        summary = {
+            "configured": config["configured"],
+            "destination": config["destination"],
+            "uploaded": 0,
+            "failed": 0,
+            "skipped": len(self.bot.guilds),
+            "deferred": True,
+            "exports": [],
+            "message": reason,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        update_remote_backup_state(latest_guild_exports=summary)
+        return summary
+
     async def _run_automatic_backup(self):
         try:
             backup = await asyncio.to_thread(create_backup, "auto")
@@ -686,6 +703,10 @@ class System(commands.Cog):
                             f"to `{remote.get('destination')}`."
                         ),
                     )
+                    self._deferred_guild_exports(
+                        "Guild exports deferred because the full off-site backup upload failed."
+                    )
+                    return
             retention = backup.get("retention") or {}
             if retention.get("configured") and retention.get("enabled") and not retention.get("ok"):
                 await send_error_digest(

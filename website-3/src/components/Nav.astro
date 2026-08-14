@@ -1,6 +1,7 @@
 ---
 import Masthead from "./Masthead.astro";
 import Icon from "./Icon.astro";
+import { publicInviteUrl } from "../lib/publicUrls";
 
 const links = [
   { href: "/commands", label: "Commands" },
@@ -9,6 +10,7 @@ const links = [
   { href: "/status", label: "Status" },
   { href: "/dashboard/", label: "Dashboard" },
 ];
+const inviteHref = publicInviteUrl();
 ---
 
 <Masthead />
@@ -36,8 +38,7 @@ const links = [
         ))
       }
       <a
-        href="/dashboard/"
-        data-invite
+        href={inviteHref}
         class="ng-pressable inline-flex h-11 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3 py-1.5 text-[13px] font-medium whitespace-nowrap text-primary-ink transition-colors hover:bg-primary/90 max-[359px]:hidden sm:h-9 sm:px-3.5"
       >
         Add to Discord
@@ -61,8 +62,7 @@ const links = [
     <div>
       <nav class="flex flex-col gap-0.5 px-4 pt-1 pb-3">
         <a
-          href="/dashboard/"
-          data-invite
+          href={inviteHref}
           class="ng-pressable mb-1 hidden min-h-11 items-center rounded-[6px] bg-primary px-3 text-sm font-medium text-primary-ink max-[359px]:flex"
         >
           Add to Discord

@@ -68,6 +68,11 @@ def remote_backup_config():
         "retention_enabled": env_bool("BACKUP_REMOTE_RETENTION_ENABLED", True),
         "rclone_bin": os.getenv("BACKUP_RCLONE_BIN", "rclone").strip() or "rclone",
         "timeout_seconds": max(env_int("BACKUP_REMOTE_TIMEOUT_SECONDS", 300), 30),
+        # Google Drive's default rclone pacing permits a large initial burst.
+        # Backups are not latency-sensitive, so use a much calmer default to
+        # avoid exhausting a Drive project's shared request quota.
+        "drive_pacer_min_sleep": os.getenv("BACKUP_RCLONE_DRIVE_PACER_MIN_SLEEP", "250ms").strip() or "250ms",
+        "drive_pacer_burst": max(env_int("BACKUP_RCLONE_DRIVE_PACER_BURST", 1), 1),
         "encrypted": encryption_configured(),
     }
 
@@ -310,7 +315,14 @@ def _run_rclone(args, *, action, timeout_seconds=None):
         "stdout": "",
         "stderr": "",
     }
-    command = [config["rclone_bin"], *args]
+    command = [
+        config["rclone_bin"],
+        *args,
+        "--drive-pacer-min-sleep",
+        config["drive_pacer_min_sleep"],
+        "--drive-pacer-burst",
+        str(config["drive_pacer_burst"]),
+    ]
     try:
         completed = subprocess.run(
             command,
@@ -524,6 +536,22 @@ def prune_remote_backups():
     return summary
 
 
+def deferred_remote_retention(message="Remote retention deferred because the full backup upload failed."):
+    """Record an intentional no-op without issuing more remote API calls."""
+    config = remote_backup_config()
+    return {
+        "configured": config["configured"],
+        "enabled": config["retention_enabled"],
+        "ok": True,
+        "skipped": True,
+        "ran_at": datetime.now(UTC).isoformat(),
+        "full_keep_days": config["full_keep_days"],
+        "guild_keep_days": config["guild_keep_days"],
+        "targets": [],
+        "message": message,
+    }
+
+
 def _safe_extract(zip_file, target_dir):
     target_dir = Path(target_dir).resolve()
     for member in zip_file.infolist():
@@ -734,7 +762,16 @@ def create_backup(label="auto"):
             "stdout": "",
             "stderr": "",
         }
-    retention = prune_remote_backups() if remote.get("configured") else {}
+    # A rejected upload commonly means the remote is rate-limited or
+    # temporarily unavailable. Retention would make extra writes/queries to
+    # the same service and turn one recoverable incident into many failures.
+    retention = (
+        prune_remote_backups()
+        if remote.get("configured") and remote.get("ok")
+        else deferred_remote_retention()
+        if remote.get("configured")
+        else {}
+    )
     update_remote_backup_state(
         configured=remote["configured"],
         destination=remote["destination"],

@@ -263,6 +263,21 @@ describe("password session", () => {
     expect(response.headers.get("Set-Cookie")).toContain("Max-Age=7200");
   });
 
+  it("never redirects a successful login to another origin", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        // Browsers normalise a backslash to a slash in a special-scheme URL.
+        body: new URLSearchParams({ password: env.AUTH_PASSWORD, next: "/\\evil.example" }),
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("https://novaguard.fun/dashboard/");
+  });
+
   it("expires access after two hours", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-19T12:00:00Z"));
