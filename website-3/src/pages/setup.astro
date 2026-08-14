@@ -3,9 +3,11 @@ import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
 import { CHANNEL_REFERENCE, SETUP_COMMANDS } from "../data/setup";
+import { publicInviteUrl } from "../lib/publicUrls";
 
 const coreChannels = CHANNEL_REFERENCE.filter((c) => c.group === "core");
 const communityChannels = CHANNEL_REFERENCE.filter((c) => c.group === "community");
+const inviteHref = publicInviteUrl();
 
 const steps = [
   {
@@ -63,8 +65,7 @@ const steps = [
                 <p class="mt-1.5 max-w-lg text-sm leading-relaxed text-ink-muted">{step.body}</p>
                 {i === 0 && (
                   <a
-                    href="/dashboard/"
-                    data-invite
+                    href={inviteHref}
                     class="ng-pressable mt-4 inline-flex h-11 items-center justify-center rounded-[6px] bg-primary px-4 text-sm font-medium text-primary-ink transition-colors hover:bg-primary/90"
                   >
                     Add to Discord

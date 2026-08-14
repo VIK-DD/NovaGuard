@@ -117,18 +117,5 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
   </head>
   <body class="min-h-screen bg-background font-sans text-ink">
     <slot />
-    {
-      apiBase && (
-        <script is:inline define:vars={{ apiBase }}>
-          // Keep public invite buttons pointed at Discord without relying on a
-          // bundled enhancement script. Static content must never be hidden if
-          // a browser blocks or delays JavaScript.
-          const inviteUrl = `${apiBase.replace(/\/+$/, "")}/api/v1/invite`;
-          document.querySelectorAll("[data-invite]").forEach((anchor) => {
-            anchor.href = inviteUrl;
-          });
-        </script>
-      )
-    }
   </body>
 </html>
