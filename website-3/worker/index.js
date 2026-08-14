@@ -5,6 +5,7 @@ const SESSION_COOKIE = "ng_gate";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
 const PREVIEW_COOKIE = "ng_preview";
 const PREVIEW_TTL_SECONDS = 60 * 60 * 12;
+const SAFE_NEXT_ORIGIN = "https://novaguard.invalid";
 const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
 const UPDATES_FEED_TIMEOUT_MS = 8000;
@@ -142,7 +143,20 @@ function readCookie(request, name) {
 }
 
 function safeNext(value) {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard/";
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
+    return "/dashboard/";
+  }
+
+  try {
+    // A backslash is treated as a slash in special-scheme URLs. Checking only
+    // for `//` would therefore allow `/\\outside.example` to turn into an
+    // external redirect when it is passed to `new URL` below.
+    const destination = new URL(value, SAFE_NEXT_ORIGIN);
+    if (destination.origin !== SAFE_NEXT_ORIGIN) return "/dashboard/";
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return "/dashboard/";
+  }
 }
 
 function loginUrl(request, error = false) {
