@@ -1,5 +1,8 @@
 export const LEGAL_EFFECTIVE_DATE = "August 12, 2026";
 
+/** First year of publication. The closing year is derived at build time. */
+export const LEGAL_COPYRIGHT_START_YEAR = 2019;
+
 export const LEGAL_OPERATOR = {
   name: "Breabin Victor",
   contactAddress: "breabinvc@gmail.com",

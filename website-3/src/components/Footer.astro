@@ -1,3 +1,15 @@
+---
+import { LEGAL_COPYRIGHT_START_YEAR } from "../data/legal";
+
+// Derived at build time, not hardcoded: the site rebuilds hourly, so the
+// closing year stays right without anyone remembering it every January.
+const currentYear = new Date().getFullYear();
+const copyrightYears =
+  currentYear > LEGAL_COPYRIGHT_START_YEAR
+    ? `${LEGAL_COPYRIGHT_START_YEAR}–${currentYear}`
+    : `${LEGAL_COPYRIGHT_START_YEAR}`;
+---
+
 <footer data-site-footer class="border-t border-line bg-bg-subtle">
   <div
     class="mx-auto grid max-w-6xl gap-8 px-5 py-9 text-sm sm:px-6 sm:py-11 lg:grid-cols-[1fr_auto]"
@@ -7,7 +19,9 @@
       <p class="mt-2 max-w-md text-sm leading-6 text-ink-muted">
         A quiet control layer for Discord servers: setup, logs, levels, voice reports and updates from one place.
       </p>
-      <p class="mt-4 text-xs tracking-wide text-ink-faint">Developed by VIK &amp; CloudMedia</p>
+      <p class="mt-4 text-xs tracking-wide text-ink-faint">
+        &copy; {copyrightYears} NovaGuard &middot; Developed by VIK &amp; CloudMedia
+      </p>
       <a
         data-heartbeat
         href="/status"
