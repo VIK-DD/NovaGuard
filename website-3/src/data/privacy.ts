@@ -57,7 +57,7 @@ export const ESSENTIAL_COOKIES = [
   {
     name: "ng_preview",
     lifetime: "12 hours at most",
-    purpose: "Lets an authorised tester view the website during one specific maintenance window.",
+    purpose: "Lets an authorized tester view the website during one specific maintenance window.",
     when: "Maintenance preview only",
   },
 ] as const;
@@ -102,7 +102,7 @@ export const RETENTION_ROWS = [
   },
   {
     data: "Reminders",
-    period: "Until delivered, cancelled or erased",
+    period: "Until delivered, canceled or erased",
   },
   {
     data: "Other active server configuration and community feature state",
