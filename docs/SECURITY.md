@@ -75,6 +75,38 @@ JSON API for a web dashboard. The adversaries we design against:
 - GitHub Actions are pinned to commit SHAs; Dependabot keeps deps + Actions
   fresh via weekly PRs.
 
+## Reading a ZAP report against novaguard.fun
+
+Point the scan at the site and the spider will find the **Add to Discord** button
+on `/setup/`. That link goes to `api.novaguard.fun/api/v1/invite`, which redirects
+to `discord.com/oauth2/authorize` — so ZAP walks off our origin and starts
+reporting Discord's headers back to us under our scan.
+
+That is where every Medium alert in the last report came from. Check the URL
+under an alert before touching any code:
+
+| Alert | Reported on | Ours? |
+|-------|-------------|-------|
+| CSP: `script-src unsafe-eval` | `discord.com/oauth2/authorize` | ❌ Discord's CSP |
+| CSP: `style-src unsafe-inline` | `discord.com/oauth2/authorize` | ❌ Discord's CSP |
+| CSP: Failure to Define Directive with No Fallback | `discord.com/oauth2/authorize` | ❌ Discord's CSP |
+| Cross-Domain Misconfiguration ×3 | `discord.com/cdn-cgi/…`, `novaguard.fun/cdn-cgi/…`, `static.cloudflareinsights.com/beacon.min.js` | ❌ Cloudflare's |
+
+Note the middle one: `/cdn-cgi/*` is on our hostname but is served by Cloudflare's
+edge **before** the Worker runs, so nothing in `website-3/worker/` can set headers
+on it. The `beacon.min.js` hit is Cloudflare Web Analytics, injected at the edge —
+it is not in our source either. Turning Web Analytics off in the Cloudflare
+dashboard is the only way to drop that one, and it is a product decision, not a
+vulnerability.
+
+**Scope the scan** so this does not recur every time: in ZAP, put
+`https://novaguard\.fun/.*` in the context and enable *Scan only in scope*. Our
+own responses carry `script-src 'self' 'nonce-…'` with no `unsafe-eval` or
+`unsafe-inline`, and define all four directives that do not fall back to
+`default-src` (`base-uri`, `form-action`, `frame-ancestors`, `object-src`), so
+none of the three CSP rules can fire on a page we serve. See
+`contentSecurityPolicy()` in `website-3/worker/index.js`.
+
 ## Residual / accepted risks
 - **Host compromise of the Pi** is out of scope for app code — mitigate with OS
   updates, SSH key-only auth, and the network posture below.
