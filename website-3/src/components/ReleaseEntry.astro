@@ -81,14 +81,14 @@ const changes = release.changes ?? [];
               </span>
             )
           }
-          <span
-            class="ml-auto flex h-1 w-28 overflow-hidden rounded-full bg-line"
-            role="img"
+          <progress
+            class="release-diff-meter ml-auto"
+            value={added}
+            max={Math.max(added + removed, 1)}
             aria-label={`${added} lines added, ${removed} lines removed`}
           >
-            <span class="h-full bg-good" style={`width:${addedPercent}%`}></span>
-            <span class="h-full flex-1 bg-primary"></span>
-          </span>
+            {addedPercent}% lines added
+          </progress>
         </div>
       )
     }

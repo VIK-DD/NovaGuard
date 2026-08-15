@@ -159,8 +159,7 @@ import dmMono from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2";
         line-height: 1.6;
       }
       /* Filled by the worker from whatever the owner typed into /maintenance.
-         Empty on a direct visit, and an element holding only a comment still
-         counts as :empty, so nothing shows when there is nothing to say. */
+         Empty on a direct visit, so nothing shows when there is nothing to say. */
       .message {
         margin: 1.1rem auto 0;
         max-width: 26rem;
@@ -217,7 +216,7 @@ import dmMono from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2";
         <p class="description">
           The dashboard is paused for a moment while NovaGuard is being updated.
         </p>
-        <p class="message"><!--ng:message--></p>
+        <p class="message" data-ng-maintenance-message></p>
         <p class="credit">Developed by VIK &amp; CloudMedia</p>
       </div>
     </main>

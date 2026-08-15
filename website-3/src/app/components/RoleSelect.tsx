@@ -18,11 +18,14 @@ function RoleSelect({ label, value, roles, error, onChange }: Props) {
       <span className="flex items-center gap-2 text-xs tracking-[0.15em] text-ink-muted uppercase">
         {label}
         {selected && (
-          <span
+          <svg
             aria-hidden="true"
-            className="inline-block h-2.5 w-2.5 rounded-full border border-line"
-            style={{ backgroundColor: selected.color }}
-          />
+            className="h-2.5 w-2.5 rounded-full border border-line"
+            viewBox="0 0 10 10"
+            focusable="false"
+          >
+            <circle cx="5" cy="5" r="5" fill={selected.color} />
+          </svg>
         )}
       </span>
       <select

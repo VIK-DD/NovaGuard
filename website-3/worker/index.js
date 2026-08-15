@@ -33,7 +33,6 @@ const STATUS_EDGE_CACHE_HEADERS = {
   "X-Content-Type-Options": "nosniff",
 };
 const SECURITY_HEADERS = {
-  "Content-Security-Policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https://cdn.discordapp.com https://*.discordapp.com https://*.discordapp.net; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://api.novaguard.fun",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-site",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
@@ -43,6 +42,40 @@ const SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-XSS-Protection": "0",
 };
+
+function contentSecurityPolicy(nonce = "") {
+  const nonceSource = nonce ? ` 'nonce-${nonce}'` : "";
+  return [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "img-src 'self' data: https://cdn.discordapp.com https://*.discordapp.com https://*.discordapp.net",
+    "font-src 'self'",
+    `style-src 'self'${nonceSource}`,
+    "style-src-attr 'none'",
+    `script-src 'self'${nonceSource}`,
+    "connect-src 'self' https://api.novaguard.fun",
+  ].join("; ");
+}
+
+function createCspNonce() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+class NonceElements {
+  constructor(nonce) {
+    this.nonce = nonce;
+  }
+
+  element(element) {
+    element.setAttribute("nonce", this.nonce);
+  }
+}
 
 function errorMessage(error) {
   const message = error instanceof Error ? error.message : "Unknown error";
@@ -54,11 +87,25 @@ function hardenResponse(response) {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     if (!headers.has(name)) headers.set(name, value);
   }
-  return new Response(response.body, {
+  const isHtml = headers.get("Content-Type")?.toLowerCase().includes("text/html");
+  const nonce = isHtml ? createCspNonce() : "";
+  headers.set("Content-Security-Policy", contentSecurityPolicy(nonce));
+  if (isHtml) headers.delete("Content-Length");
+
+  const hardened = new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+
+  // The site keeps a few pre-paint scripts inline so the saved theme never
+  // flashes. A fresh response nonce permits only those exact elements instead
+  // of allowing arbitrary inline code or styles across the whole document.
+  if (!isHtml || typeof HTMLRewriter !== "function") return hardened;
+  return new HTMLRewriter()
+    .on("script", new NonceElements(nonce))
+    .on("style", new NonceElements(nonce))
+    .transform(hardened);
 }
 
 function logWorkerEvent(level, event, details = {}) {
@@ -217,6 +264,18 @@ function assetCacheControl(pathname) {
   // These pages now sit behind the password. A `public` header on an
   // authenticated response could be stored by a shared cache and handed to a
   // visitor with no session, so they are never publicly cacheable.
+  if (
+    pathname === "/login" ||
+    pathname === "/login/" ||
+    pathname === "/preview" ||
+    pathname === "/preview/" ||
+    pathname === "/maintenance" ||
+    pathname === "/maintenance/"
+  ) {
+    // These pages can carry an error flag or serve as a maintenance access
+    // door. No browser or intermediary should retain a previous response.
+    return "no-store";
+  }
   if (
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
@@ -610,7 +669,10 @@ async function serveMaintenancePage(request, env, state) {
   const html = await asset.text();
   // Only the bot owner can set this text, but it is escaped anyway: the page is
   // public, and the cost of being sure is nothing.
-  const body = html.replace("<!--ng:message-->", state.message ? escapeHtml(state.message) : "");
+  const body = html.replace(
+    '<p class="message" data-ng-maintenance-message></p>',
+    state.message ? `<p class="message">${escapeHtml(state.message)}</p>` : '<p class="message"></p>',
+  );
 
   const headers = new Headers(asset.headers);
   // Without no-store a browser keeps showing maintenance after it has ended —

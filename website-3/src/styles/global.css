@@ -147,6 +147,42 @@ button:disabled, [role="switch"][aria-disabled="true"] { cursor: not-allowed; }
 :root[data-theme-switching] { cursor: pointer; }
 select, input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 
+/* Native progress semantics keep dynamic values out of style attributes, so
+   the dashboard remains compatible with a strict `style-src-attr 'none'` CSP. */
+.ng-progress,
+.release-diff-meter {
+  display: block;
+  block-size: 0.5rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  appearance: none;
+  background: hsl(var(--bg-subtle));
+}
+.ng-progress {
+  inline-size: 100%;
+}
+.release-diff-meter {
+  inline-size: 7rem;
+  block-size: 0.25rem;
+}
+.ng-progress::-webkit-progress-bar,
+.release-diff-meter::-webkit-progress-bar {
+  background: hsl(var(--bg-subtle));
+}
+.ng-progress::-webkit-progress-value {
+  background: hsl(var(--primary));
+}
+.release-diff-meter::-webkit-progress-value {
+  background: hsl(var(--good));
+}
+.ng-progress::-moz-progress-bar {
+  background: hsl(var(--primary));
+}
+.release-diff-meter::-moz-progress-bar {
+  background: hsl(var(--good));
+}
+
 /* Controls opt into an ergonomic hit area instead of making every nested
    dashboard button oversized. Small utility buttons keep their visual rhythm. */
 .ng-touch-target {

@@ -111,10 +111,11 @@ function ModuleRow({
 }
 
 function Progress({ value }: { value: number }) {
+  const bounded = Math.min(Math.max(value, 0), 100);
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-bg-subtle">
-      <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(Math.max(value, 0), 100)}%` }} />
-    </div>
+    <progress className="ng-progress" value={bounded} max="100" aria-label={`${bounded}% complete`}>
+      {bounded}%
+    </progress>
   );
 }
 

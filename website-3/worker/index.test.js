@@ -62,6 +62,57 @@ describe("production observability", () => {
     }
   });
 
+  it("uses a strict CSP and never permits inline styles or scripts", async () => {
+    const response = await worker.fetch(new Request("https://novaguard.fun/"), env);
+    const csp = response.headers.get("Content-Security-Policy");
+
+    expect(csp).toContain("style-src 'self'");
+    expect(csp).toContain("style-src-attr 'none'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("unsafe-inline");
+    expect(csp).not.toContain("unsafe-eval");
+  });
+
+  it("gives every document script and style the CSP nonce", async () => {
+    const elements = new Map();
+    class HtmlRewriterDouble {
+      handlers = [];
+
+      on(selector, handler) {
+        this.handlers.push([selector, handler]);
+        return this;
+      }
+
+      transform(response) {
+        for (const [selector, handler] of this.handlers) {
+          const attributes = new Map();
+          handler.element({ setAttribute: (name, value) => attributes.set(name, value) });
+          elements.set(selector, attributes);
+        }
+        return response;
+      }
+    }
+    vi.stubGlobal("HTMLRewriter", HtmlRewriterDouble);
+    const htmlEnv = {
+      ...env,
+      ASSETS: {
+        fetch: async () =>
+          new Response("<style>body{}</style><script>window.ready=true</script>", {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          }),
+      },
+    };
+
+    const response = await worker.fetch(new Request("https://novaguard.fun/"), htmlEnv);
+    const csp = response.headers.get("Content-Security-Policy");
+    const nonce = csp.match(/'nonce-([^']+)'/)?.[1];
+
+    expect(nonce).toBeTruthy();
+    expect(elements.get("script")?.get("nonce")).toBe(nonce);
+    expect(elements.get("style")?.get("nonce")).toBe(nonce);
+    expect(response.headers.get("Content-Length")).toBeNull();
+  });
+
   it("emits structured upstream failures without secrets", async () => {
     vi.stubGlobal(
       "fetch",
@@ -170,6 +221,14 @@ describe("password session", () => {
     expect(response.headers.get("Strict-Transport-Security")).toContain("max-age=");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(response.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+  });
+
+  it("does not cache login and preview access pages", async () => {
+    for (const path of ["/login/", "/preview/"]) {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), env);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
   });
 
   it("combines public bot status into one short-lived snapshot", async () => {
@@ -688,7 +747,7 @@ describe("maintenance sync", () => {
     ASSETS: {
       fetch: async (request) =>
         new URL(request.url).pathname === "/maintenance/"
-          ? new Response('<p class="message"><!--ng:message--></p>', {
+          ? new Response('<p class="message" data-ng-maintenance-message></p>', {
               status: 200,
               headers: { "Content-Type": "text/html" },
             })
