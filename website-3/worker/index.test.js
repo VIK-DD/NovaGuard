@@ -10,12 +10,32 @@ const env = {
   },
 };
 
-function loginRequest() {
-  return new Request("https://novaguard.fun/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ password: env.AUTH_PASSWORD, next: "/dashboard/" }),
-  });
+// Stands in for a token the worker minted on a previous /login/ render. Any
+// value matching the worker's token shape works; what is under test is that the
+// cookie and the form field have to agree.
+const CSRF_TOKEN = "Zm9ybS10b2tlbi1mb3ItdGhlLXdvcmtlci10ZXN0cw";
+
+// A form post the way a browser sends one from a page we served: same-origin,
+// carrying the cookie the worker set and the field it stitched into the form.
+function formPost(path, fields, { origin = "https://novaguard.fun", cookie, token } = {}) {
+  const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  if (origin) headers.Origin = origin;
+  const cookies = [cookie, token === null ? null : `__Host-ng_csrf=${token ?? CSRF_TOKEN}`].filter(
+    Boolean,
+  );
+  if (cookies.length) headers.Cookie = cookies.join("; ");
+
+  const body = new URLSearchParams(fields);
+  if (token !== null && !("csrf_token" in fields)) body.set("csrf_token", token ?? CSRF_TOKEN);
+  return new Request(`https://novaguard.fun${path}`, { method: "POST", headers, body });
+}
+
+function loginRequest(overrides = {}) {
+  return formPost(
+    "/api/auth/login",
+    { password: env.AUTH_PASSWORD, next: "/dashboard/" },
+    overrides,
+  );
 }
 
 // Every /dashboard/* request asks the bot whether maintenance is on, so without
@@ -173,11 +193,7 @@ describe("production observability", () => {
   it("never logs a rejected password value", async () => {
     const attemptedPassword = "wrong-super-secret-value";
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ password: attemptedPassword, next: "/dashboard/" }),
-      }),
+      formPost("/api/auth/login", { password: attemptedPassword, next: "/dashboard/" }),
       env,
     );
 
@@ -344,13 +360,9 @@ describe("password session", () => {
   });
 
   it("never redirects a successful login to another origin", async () => {
+    // Browsers normalise a backslash to a slash in a special-scheme URL.
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        // Browsers normalise a backslash to a slash in a special-scheme URL.
-        body: new URLSearchParams({ password: env.AUTH_PASSWORD, next: "/\\evil.example" }),
-      }),
+      formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: "/\\evil.example" }),
       env,
     );
 
@@ -431,6 +443,117 @@ describe("password session", () => {
       env,
     );
     expect(page.headers.get("Cache-Control")).toBeNull();
+  });
+});
+
+describe("cross-site request forgery", () => {
+  // The site's two forms are static Astro pages, so the token cannot be baked
+  // in at build time. It is stitched into the response by the worker instead.
+  it("stitches a token into every form it serves, and pins it to a cookie", async () => {
+    const formEnv = {
+      ...env,
+      ASSETS: {
+        fetch: async () =>
+          new Response('<form action="/api/auth/login" method="post"></form>', {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+          }),
+      },
+    };
+
+    const page = await worker.fetch(new Request("https://novaguard.fun/login/"), formEnv);
+    const html = await page.text();
+    const field = html.match(/name="csrf_token" value="([^"]+)"/);
+
+    expect(field).not.toBeNull();
+    // Same value in both places is the whole mechanism: an attacker's page can
+    // make a browser send the cookie, but cannot read it to fill in the field.
+    expect(page.headers.get("Set-Cookie")).toContain(`__Host-ng_csrf=${field[1]}`);
+    // `__Host-` is what stops a subdomain writing the cookie, which would let
+    // the attacker choose both halves of the comparison.
+    expect(page.headers.get("Set-Cookie")).toContain("Secure");
+    expect(page.headers.get("Set-Cookie")).toContain("SameSite=Strict");
+    // The body now differs per visitor, so it must not be held anywhere shared.
+    expect(page.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("keeps one token across renders so a second tab does not break the first", async () => {
+    const first = await worker.fetch(new Request("https://novaguard.fun/login/"), env);
+    const token = first.headers.get("Set-Cookie").match(/__Host-ng_csrf=([^;]+)/)[1];
+
+    const second = await worker.fetch(
+      new Request("https://novaguard.fun/login/", {
+        headers: { Cookie: `__Host-ng_csrf=${token}` },
+      }),
+      env,
+    );
+
+    expect(second.headers.get("Set-Cookie")).toContain(`__Host-ng_csrf=${token}`);
+  });
+
+  it("refuses a login posted without a token", async () => {
+    const response = await worker.fetch(loginRequest({ token: null }), env);
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("refuses a login whose token does not match the cookie", async () => {
+    const response = await worker.fetch(
+      formPost("/api/auth/login", {
+        password: env.AUTH_PASSWORD,
+        next: "/dashboard/",
+        csrf_token: "Zm9yZ2VkLXRva2VuLXRoYXQtd2lsbC1ub3QtbWF0Y2gtdGhl",
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("refuses a login posted from another origin", async () => {
+    const response = await worker.fetch(
+      loginRequest({ origin: "https://attacker.example" }),
+      env,
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses a preview code posted from another origin", async () => {
+    const response = await worker.fetch(
+      formPost("/api/preview", { code: "ng_preview_good" }, { origin: "https://attacker.example" }),
+      env,
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  // `<img src="/api/auth/logout">` on any page on the internet used to be enough.
+  it("no longer signs a visitor out on a bare GET", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/auth/logout"),
+      env,
+    );
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("still signs a visitor out when the page asks properly", async () => {
+    const response = await worker.fetch(formPost("/api/auth/logout", {}), env);
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Set-Cookie")).toContain("ng_gate=;");
+  });
+
+  it("never reports the rejection in a way that reveals the expected token", async () => {
+    const response = await worker.fetch(loginRequest({ token: null }), env);
+
+    const body = await response.text();
+    expect(body).not.toContain("csrf");
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain(CSRF_TOKEN);
   });
 });
 
@@ -641,14 +764,7 @@ describe("maintenance sync", () => {
   });
 
   async function previewCookie(testEnv, code = "ng_preview_good") {
-    const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ code }),
-      }),
-      testEnv,
-    );
+    const response = await worker.fetch(formPost("/api/preview", { code }), testEnv);
     const header = response.headers.get("set-cookie");
     return { response, cookie: header ? header.split(";")[0] : null };
   }

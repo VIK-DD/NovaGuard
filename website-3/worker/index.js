@@ -5,6 +5,17 @@ const SESSION_COOKIE = "ng_gate";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
 const PREVIEW_COOKIE = "ng_preview";
 const PREVIEW_TTL_SECONDS = 60 * 60 * 12;
+// The `__Host-` prefix is load-bearing here, not decoration. The check below is
+// a double-submit comparison, so it is only worth anything while this origin is
+// the only thing that can write the cookie. Without the prefix any subdomain of
+// novaguard.fun could set `ng_csrf` for the parent domain and then post a form
+// carrying the value it had just chosen — the exact attack the token exists to
+// stop. The prefix makes the browser refuse a cookie that carries a Domain, or
+// arrives without Secure, or is scoped to anything but `/`.
+const CSRF_COOKIE = "__Host-ng_csrf";
+const CSRF_FIELD = "csrf_token";
+const CSRF_TTL_SECONDS = 60 * 60 * 4;
+const CSRF_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,86}$/;
 const SAFE_NEXT_ORIGIN = "https://novaguard.invalid";
 const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
@@ -420,18 +431,109 @@ async function handleUpdatesFeed(request, env, ctx) {
   }
 }
 
-async function serveAsset(request, env) {
-  const response = await env.ASSETS.fetch(request);
-  const cacheControl = assetCacheControl(new URL(request.url).pathname);
-  if (!response.ok || !cacheControl) return response;
+// The only two pages that post back to the worker. Both are rendered by Astro
+// as static HTML, so the token cannot be baked in at build time — it is stitched
+// into the response on the way out, which is also why these two must never be
+// stored by a shared cache (see assetCacheControl).
+function isFormPage(pathname) {
+  return (
+    pathname === "/login" ||
+    pathname === "/login/" ||
+    pathname === "/preview" ||
+    pathname === "/preview/"
+  );
+}
+
+function createCsrfToken() {
+  return base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+// Reuse the token the visitor already holds rather than minting one per render.
+// A fresh token on every page load would invalidate whichever tab was opened
+// first, so opening the login page twice would break the older tab's submit for
+// no security gain — both tabs are the same person either way.
+function currentCsrfToken(request) {
+  const existing = readCookie(request, CSRF_COOKIE);
+  return existing && CSRF_TOKEN_PATTERN.test(existing) ? existing : createCsrfToken();
+}
+
+function csrfCookie(token) {
+  return `${CSRF_COOKIE}=${token}; Path=/; Max-Age=${CSRF_TTL_SECONDS}; HttpOnly; Secure; SameSite=Strict`;
+}
+
+async function withCsrfField(response, token) {
+  const html = await response.text();
+  const body = html.replace(
+    /<form\b[^>]*>/gi,
+    (tag) => `${tag}<input type="hidden" name="${CSRF_FIELD}" value="${escapeHtml(token)}">`,
+  );
 
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", cacheControl);
-  return new Response(response.body, {
+  // The token travels in the body, so the body is now per-visitor.
+  headers.set("Cache-Control", "no-store");
+  headers.delete("Content-Length");
+  headers.append("Set-Cookie", csrfCookie(token));
+  return new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+// Second, independent check. The token proves the form came from a page we
+// rendered; this proves the request itself was sent by one of our own pages.
+// Either alone would do, and a browser that drops one still fails the other.
+function isSameOriginRequest(request) {
+  const target = new URL(request.url).origin;
+  const origin = request.headers.get("Origin");
+  if (origin) return origin === target;
+
+  // Origin is absent on some same-origin form posts from older browsers, where
+  // Referer is what does get sent. Neither header at all means the request did
+  // not come from a page in a browsing context, so it is refused.
+  const referer = request.headers.get("Referer");
+  if (!referer) return false;
+  try {
+    return new URL(referer).origin === target;
+  } catch {
+    return false;
+  }
+}
+
+async function hasValidCsrf(request, form) {
+  const cookieToken = readCookie(request, CSRF_COOKIE);
+  const formToken = String(form.get(CSRF_FIELD) || "");
+  if (!cookieToken || !formToken || !CSRF_TOKEN_PATTERN.test(cookieToken)) return false;
+  return timingSafeEqual(cookieToken, formToken);
+}
+
+function csrfRejection(event) {
+  logWorkerEvent("warn", event);
+  return new Response("This form expired. Reload the page and try again.", {
+    status: 403,
+    headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+
+async function serveAsset(request, env) {
+  const response = await env.ASSETS.fetch(request);
+  const pathname = new URL(request.url).pathname;
+  const cacheControl = assetCacheControl(pathname);
+  if (!response.ok) return response;
+
+  let served = response;
+  if (cacheControl) {
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", cacheControl);
+    served = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  if (!isFormPage(pathname)) return served;
+  return withCsrfField(served, currentCsrfToken(request));
 }
 
 async function timingSafeEqual(a, b) {
@@ -460,7 +562,17 @@ async function handleLogin(request, env) {
     return Response.redirect(new URL("/login/", request.url), 303);
   }
 
-  const form = await request.formData();
+  // A body that is not form data is a malformed request, not a server fault:
+  // treat it as an empty form and let the check below turn it away.
+  const form = await request.formData().catch(() => new FormData());
+  // Before the password is even looked at. Without this an attacker's page can
+  // make a visitor's browser post the gate password it already knows, or — once
+  // the password leaks to one person — silently open a session in the browser
+  // of anyone who loads the attacker's page.
+  if (!isSameOriginRequest(request) || !(await hasValidCsrf(request, form))) {
+    return csrfRejection("auth_login_csrf_rejected");
+  }
+
   const password = String(form.get("password") || "");
   const next = safeNext(String(form.get("next") || "/dashboard/"));
 
@@ -528,6 +640,10 @@ async function handlePreview(request, env) {
   }
 
   const form = await request.formData().catch(() => new FormData());
+  if (!isSameOriginRequest(request) || !(await hasValidCsrf(request, form))) {
+    return csrfRejection("preview_csrf_rejected");
+  }
+
   const code = String(form.get("code") || "").trim();
   const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
 
@@ -575,7 +691,23 @@ async function handlePreview(request, env) {
   });
 }
 
-function handleLogout(request) {
+async function handleLogout(request) {
+  // Was reachable by GET, which made `<img src="/api/auth/logout">` on any page
+  // on the internet enough to sign a visitor out. Logging someone out is not
+  // destructive, but it is still a state change they did not ask for, and the
+  // same shape of hole is what lets a forced logout precede a forced login.
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", {
+      status: 405,
+      headers: { Allow: "POST", "Cache-Control": "no-store" },
+    });
+  }
+
+  const form = await request.formData().catch(() => new FormData());
+  if (!isSameOriginRequest(request) || !(await hasValidCsrf(request, form))) {
+    return csrfRejection("auth_logout_csrf_rejected");
+  }
+
   return new Response(null, {
     status: 303,
     headers: {

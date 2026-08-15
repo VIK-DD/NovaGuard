@@ -69,11 +69,26 @@ import Base from "../layouts/Base.astro";
 </Base>
 
 <script>
+  // Mirrors safeNext() in worker/index.js. The worker re-checks this on POST,
+  // so a bad value could never redirect anyone off-site — but a `next` the
+  // worker would reject still lands in the DOM here, which is what a scanner
+  // sees and what a future refactor could start trusting. A backslash is the
+  // case a `//` check alone misses: URL parsing treats `/\evil.example` as a
+  // protocol-relative link, so let the parser decide rather than the prefix.
   const params = new URLSearchParams(window.location.search);
   const candidate = params.get("next") || "/home/";
-  const next = candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : "/home/";
+  const safeNext = (value: string) => {
+    if (!value.startsWith("/") || value.startsWith("//")) return "/home/";
+    try {
+      const destination = new URL(value, "https://novaguard.invalid");
+      if (destination.origin !== "https://novaguard.invalid") return "/home/";
+      return `${destination.pathname}${destination.search}${destination.hash}`;
+    } catch {
+      return "/home/";
+    }
+  };
   const nextInput = document.getElementById("next") as HTMLInputElement | null;
-  if (nextInput) nextInput.value = next;
+  if (nextInput) nextInput.value = safeNext(candidate);
 
   if (params.get("error") === "1") {
     const err = document.getElementById("pw-error");
