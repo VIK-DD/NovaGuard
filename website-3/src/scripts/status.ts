@@ -43,7 +43,9 @@ const set = (key: string, value: string) => {
   if (node) node.textContent = value;
 };
 const fmt = (n: number) => new Intl.NumberFormat("en").format(n);
-const statusSnapshotUrl = () => `/api/status-snapshot?t=${Math.floor(Date.now() / 30_000)}`;
+// Bare path on purpose — see the matching note in Base.astro. The fetch sets
+// `cache: "no-store"` and the worker's edge cache key ignores the query string.
+const statusSnapshotUrl = () => "/api/status-snapshot";
 
 const fmtUptime = (total: number) => {
   const d = Math.floor(total / 86400);

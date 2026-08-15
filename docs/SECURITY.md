@@ -99,6 +99,29 @@ it is not in our source either. Turning Web Analytics off in the Cloudflare
 dashboard is the only way to drop that one, and it is a product decision, not a
 vulnerability.
 
+The Low and Informational rows split the same way. What was genuinely ours has
+been fixed; the rest is either another host's or not a defect at all:
+
+| Alert | Whose | Disposition |
+|-------|-------|-------------|
+| Timestamp Disclosure — Unix | ours | **Fixed.** The `/api/status-snapshot?t=…` cache-buster published the visitor's own clock. Both callers already send `cache: "no-store"` and the worker keys its edge cache on the bare path, so the parameter was removed outright. |
+| User Controllable HTML Element Attribute (×2) | ours | **Fixed.** The `?next=` value reaching the login form's hidden input. The client now parses it with `new URL` exactly as the worker's `safeNext()` does. |
+| Information Disclosure — localStorage | ours | **Won't fix.** It is `ng-theme`, a light/dark preference. ZAP flags any `localStorage` write; dropping it buys a theme flash on every page load and no security. |
+| Information Disclosure — sessionStorage | not ours | `ng_mock_session` exists only in the dev mock API and is absent from the production bundle — verify with `grep -r ng_mock_session website-3/dist/`. |
+| Cookie with SameSite Attribute None | Cloudflare | `__cf_bm`. Our cookies are `SameSite=Lax` (session) and `Strict` (CSRF). |
+| Loosely Scoped Cookie | Cloudflare | Same `__cf_bm`, which carries `Domain=.novaguard.fun`. Ours set no `Domain` at all, so they are host-only — the tight scope this rule asks for. |
+| Strict-Transport-Security Not Set | Cloudflare | Raised on `/cdn-cgi/*`. Every response the Worker produces carries HSTS via `SECURITY_HEADERS`. |
+| X-Content-Type-Options Missing | Cloudflare | Same `/cdn-cgi/*` path; we set `nosniff` on everything we serve. |
+| Modern Web Application | — | Not a finding. ZAP raises it on any site that uses JavaScript. |
+| User Agent Fuzzer | — | Output of the fuzzer rule itself, not a vulnerability. |
+| Re-examine Cache-control / Retrieved from Cache | — | Informational. Password-gated pages are already `private, max-age=60` or `no-store`; see `assetCacheControl()`. |
+
+Two rows still need their URL checked before anyone acts on them — expand them in
+ZAP and read the host first. **Private IP Disclosure** matches no address in this
+repo (`grep -rE '10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.' website-3/`), and
+**Sensitive Information in URL** is most likely the `client_id` and `redirect_uri`
+on Discord's own `oauth2/authorize`.
+
 **Scope the scan** so this does not recur every time: in ZAP, put
 `https://novaguard\.fun/.*` in the context and enable *Scan only in scope*. Our
 own responses carry `script-src 'self' 'nonce-…'` with no `unsafe-eval` or

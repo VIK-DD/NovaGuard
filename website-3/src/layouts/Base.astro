@@ -88,7 +88,11 @@ const mockEnabled = import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_API === "
       // Public stats and the status page share one request in memory. Cloudflare
       // already provides stale edge fallback, so the browser does not need to
       // persist operational data in localStorage or sessionStorage.
-      const getNgStatusUrl = () => `/api/status-snapshot?t=${Math.floor(Date.now() / 30000)}`;
+      // No cache-busting timestamp: the request below already sets
+      // `cache: "no-store"`, and the worker keys its edge cache on the bare path,
+      // so the parameter never did anything except publish the visitor's clock
+      // into their own URL bar for a scanner to flag.
+      const getNgStatusUrl = () => "/api/status-snapshot";
       window.__ngGetStatusSnapshot = (refresh = false) => {
         if (refresh) window.__ngStatusRequest = null;
         if (!window.__ngStatusRequest) {
