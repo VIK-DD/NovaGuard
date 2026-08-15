@@ -190,6 +190,27 @@ describe("production observability", () => {
 });
 
 describe("password session", () => {
+  it("can temporarily open private pages for a security scan", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/home/"),
+      { ...env, SECURITY_SCAN_OPEN: "true" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, max-age=60");
+    await expect(response.text()).resolves.toBe("/home/");
+  });
+
+  it("keeps private pages closed when the security scan switch is off", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/home/"),
+      { ...env, SECURITY_SCAN_OPEN: "off" },
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toContain("/login/?next=%2Fhome%2F");
+  });
+
   it("serves the landing page to a session, and never from a shared cache", async () => {
     const login = await worker.fetch(loginRequest(), env);
     const cookie = login.headers.get("set-cookie").split(";")[0];

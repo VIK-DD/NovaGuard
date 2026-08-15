@@ -10,6 +10,7 @@ const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
 const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
+const SECURITY_SCAN_OPEN_VALUES = new Set(["1", "true", "on", "enabled", "open"]);
 const MAINTENANCE_FRESH_MS = 30_000;
 const MAINTENANCE_GRACE_MS = 120_000;
 const MAINTENANCE_TIMEOUT_MS = 2_500;
@@ -258,6 +259,10 @@ function isAlwaysOpenPath(pathname) {
 
 function isMaintenanceEnabled(env) {
   return MAINTENANCE_VALUES.has(String(env.MAINTENANCE_MODE || "").trim().toLowerCase());
+}
+
+function isSecurityScanOpen(env) {
+  return SECURITY_SCAN_OPEN_VALUES.has(String(env.SECURITY_SCAN_OPEN || "").trim().toLowerCase());
 }
 
 function assetCacheControl(pathname) {
@@ -720,6 +725,7 @@ async function handleRequest(request, env, ctx) {
   // and it is fixed and never expires; a preview code is 24 random bytes,
   // rotates every maintenance window, and dies in twelve hours.
   const authenticated =
+    isSecurityScanOpen(env) ||
     previewHolder ||
     (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
   if (!authenticated) return Response.redirect(loginUrl(request), 302);
