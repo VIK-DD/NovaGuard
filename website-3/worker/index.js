@@ -500,6 +500,16 @@ function isSameOriginRequest(request) {
   }
 }
 
+// Privacy-focused browsers can suppress both Origin and Referer on a regular
+// same-origin form POST. Do not mistake that absence for an attacker: the
+// double-submit token remains required and is a stronger proof than either
+// informational header. An explicit foreign Origin is never eligible for this
+// fallback, even when a token happens to be present.
+function hasUnspecifiedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  return !origin || origin === "null";
+}
+
 async function hasValidCsrf(request, form) {
   const cookieToken = readCookie(request, CSRF_COOKIE);
   const formToken = String(form.get(CSRF_FIELD) || "");
@@ -582,10 +592,12 @@ async function handleLogin(request, env) {
   // make a visitor's browser post the gate password it already knows, or — once
   // the password leaks to one person — silently open a session in the browser
   // of anyone who loads the attacker's page.
-  if (!isSameOriginRequest(request)) {
+  const sameOrigin = isSameOriginRequest(request);
+  const validCsrf = await hasValidCsrf(request, form);
+  if (!sameOrigin && !(validCsrf && hasUnspecifiedOrigin(request))) {
     return csrfRejection("auth_login_csrf_rejected");
   }
-  if (!(await hasValidCsrf(request, form))) {
+  if (!validCsrf) {
     const next = safeNext(String(form.get("next") || "/home/"));
     return csrfRetry(request, "auth_login_csrf_rejected", "/login/", { next });
   }
@@ -657,10 +669,12 @@ async function handlePreview(request, env) {
   }
 
   const form = await request.formData().catch(() => new FormData());
-  if (!isSameOriginRequest(request)) {
+  const sameOrigin = isSameOriginRequest(request);
+  const validCsrf = await hasValidCsrf(request, form);
+  if (!sameOrigin && !(validCsrf && hasUnspecifiedOrigin(request))) {
     return csrfRejection("preview_csrf_rejected");
   }
-  if (!(await hasValidCsrf(request, form))) {
+  if (!validCsrf) {
     return csrfRetry(request, "preview_csrf_rejected", "/preview/");
   }
 

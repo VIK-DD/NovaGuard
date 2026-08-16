@@ -527,6 +527,14 @@ describe("cross-site request forgery", () => {
     expect(response.status).toBe(403);
   });
 
+  it("accepts a valid token when a privacy-focused browser omits Origin", async () => {
+    const response = await worker.fetch(loginRequest({ origin: "" }), env);
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("https://novaguard.fun/dashboard/");
+    expect(response.headers.get("Set-Cookie")).toContain("ng_gate=");
+  });
+
   it("refuses a preview code posted from another origin", async () => {
     const response = await worker.fetch(
       formPost("/api/preview", { code: "ng_preview_good" }, { origin: "https://attacker.example" }),
