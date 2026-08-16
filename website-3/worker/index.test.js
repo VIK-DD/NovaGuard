@@ -491,14 +491,17 @@ describe("cross-site request forgery", () => {
     expect(second.headers.get("Set-Cookie")).toContain(`__Host-ng_csrf=${token}`);
   });
 
-  it("refuses a login posted without a token", async () => {
+  it("returns a same-origin login with a stale token to a fresh form", async () => {
     const response = await worker.fetch(loginRequest({ token: null }), env);
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe(
+      "https://novaguard.fun/login/?next=%2Fdashboard%2F&error=csrf",
+    );
     expect(response.headers.get("Set-Cookie")).toBeNull();
   });
 
-  it("refuses a login whose token does not match the cookie", async () => {
+  it("returns a same-origin login whose token does not match the cookie to a fresh form", async () => {
     const response = await worker.fetch(
       formPost("/api/auth/login", {
         password: env.AUTH_PASSWORD,
@@ -508,7 +511,10 @@ describe("cross-site request forgery", () => {
       env,
     );
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe(
+      "https://novaguard.fun/login/?next=%2Fdashboard%2F&error=csrf",
+    );
     expect(response.headers.get("Set-Cookie")).toBeNull();
   });
 
@@ -528,6 +534,16 @@ describe("cross-site request forgery", () => {
     );
 
     expect(response.status).toBe(403);
+  });
+
+  it("returns a same-origin preview form with a stale token to a fresh form", async () => {
+    const response = await worker.fetch(
+      formPost("/api/preview", { code: "ng_preview_good" }, { token: null }),
+      env,
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("https://novaguard.fun/preview/?error=csrf");
   });
 
   // `<img src="/api/auth/logout">` on any page on the internet used to be enough.

@@ -149,8 +149,11 @@ import dmMono from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2";
     </main>
 
     <script is:inline>
-      if (new URLSearchParams(location.search).has("error")) {
-        document.querySelector(".error").hidden = false;
+      const error = new URLSearchParams(location.search).get("error");
+      if (error) {
+        const errorEl = document.querySelector(".error");
+        if (error === "csrf") errorEl.textContent = "The secure form expired. Please try again.";
+        errorEl.hidden = false;
       }
     </script>
   </body>
