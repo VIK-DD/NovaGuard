@@ -292,13 +292,31 @@ function assetCacheControl(pathname) {
     // door. No browser or intermediary should retain a previous response.
     return "no-store";
   }
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    // The signed-in application shell. Nothing about it should outlive the
+    // session that fetched it, in this browser or in anything between.
+    return "no-store";
+  }
   if (
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
     pathname === "/status" ||
     pathname.startsWith("/status/") ||
     pathname === "/updates" ||
-    pathname.startsWith("/updates/")
+    pathname.startsWith("/updates/") ||
+    // The rest of the pages the password gate covers. Without a rule here they
+    // fall through to the asset server's `public, max-age=0, must-revalidate`,
+    // which invites a shared cache to hold a page no anonymous visitor may read.
+    pathname === "/commands" ||
+    pathname.startsWith("/commands/") ||
+    pathname === "/setup" ||
+    pathname.startsWith("/setup/") ||
+    pathname === "/privacy" ||
+    pathname.startsWith("/privacy/") ||
+    pathname === "/terms" ||
+    pathname.startsWith("/terms/") ||
+    pathname === "/server-admin-notice" ||
+    pathname.startsWith("/server-admin-notice/")
   ) {
     // `private` keeps these out of any shared cache, which is what the password
     // gate requires. Letting the visitor's own browser hold them for a minute is

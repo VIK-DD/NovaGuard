@@ -216,6 +216,35 @@ describe("information disclosure in the body", () => {
   });
 });
 
+describe("caching of pages that sit behind authentication", () => {
+  // `public` invites a shared cache — a CDN edge, a corporate proxy — to keep
+  // a copy of a page only a signed-in visitor should have seen. Which paths
+  // are gated is the runner's business; the rule only needs to be told.
+  it("flags a public cache directive on a page that required signing in", () => {
+    const base = clean({ url: "https://novaguard.fun/commands/", requiresAuth: true });
+    base.headers["cache-control"] = "public, max-age=0, must-revalidate";
+    expect(rules(auditResponse(base))).toContain("authenticated-public-cache");
+  });
+
+  it("accepts a private cache directive on the same page", () => {
+    const base = clean({ url: "https://novaguard.fun/commands/", requiresAuth: true });
+    base.headers["cache-control"] = "private, max-age=60";
+    expect(rules(auditResponse(base))).not.toContain("authenticated-public-cache");
+  });
+
+  it("leaves genuinely public pages alone", () => {
+    const base = clean({ url: "https://novaguard.fun/", requiresAuth: false });
+    base.headers["cache-control"] = "public, max-age=0, must-revalidate";
+    expect(rules(auditResponse(base))).not.toContain("authenticated-public-cache");
+  });
+
+  it("says nothing when the runner could not determine whether a page is gated", () => {
+    const base = clean({ url: "https://novaguard.fun/commands/" });
+    base.headers["cache-control"] = "public, max-age=0, must-revalidate";
+    expect(rules(auditResponse(base))).not.toContain("authenticated-public-cache");
+  });
+});
+
 describe("server fingerprinting", () => {
   it("flags x-powered-by", () => {
     expect(rules(auditResponse(withHeader("x-powered-by", "Express")))).toContain("server-banner");

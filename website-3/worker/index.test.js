@@ -245,6 +245,43 @@ describe("password session", () => {
     await expect(response.text()).resolves.toBe("/home/");
   });
 
+  it("never lets a shared cache hold a page the password gate covers", async () => {
+    // Every one of these used to fall through to the asset server's
+    // `public, max-age=0, must-revalidate`. `public` is an invitation to a CDN
+    // edge or a corporate proxy to keep a copy of a page an anonymous visitor
+    // is not allowed to read.
+    const login = await worker.fetch(loginRequest(), env);
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+
+    for (const path of [
+      "/commands/",
+      "/setup/",
+      "/privacy/",
+      "/terms/",
+      "/server-admin-notice/",
+    ]) {
+      const response = await worker.fetch(
+        new Request(`https://novaguard.fun${path}`, { headers: { cookie } }),
+        env,
+      );
+      expect(response.status, path).toBe(200);
+      expect(response.headers.get("Cache-Control"), path).toBe("private, max-age=60");
+      expect(response.headers.get("Cache-Control"), path).not.toContain("public");
+    }
+  });
+
+  it("keeps no copy of the signed-in dashboard shell anywhere", async () => {
+    const login = await worker.fetch(loginRequest(), env);
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/dashboard/", { headers: { cookie } }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("answers robots.txt without a session, and hardens it like any other page", async () => {
     // A crawler never authenticates. Behind the gate this redirected to the
     // login page, so the only crawl policy the site published was Cloudflare's
@@ -442,7 +479,13 @@ describe("password session", () => {
       new Request("https://novaguard.fun/dashboard/", { headers: { Cookie: cookie } }),
       env,
     );
-    expect(page.headers.get("Cache-Control")).toBeNull();
+    // This used to assert `null`, meaning "the worker sets nothing". That is
+    // not the same as "not cached": with no rule of our own, the asset
+    // server's `public, max-age=0, must-revalidate` reached the browser
+    // untouched, and `public` lets a shared cache keep a signed-in page. The
+    // mock asset server sends no header, so the old assertion passed here
+    // while production shipped the problem.
+    expect(page.headers.get("Cache-Control")).toBe("no-store");
   });
 });
 

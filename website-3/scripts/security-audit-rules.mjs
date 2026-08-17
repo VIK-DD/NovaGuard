@@ -208,6 +208,21 @@ export function auditResponse(response) {
     }
   }
 
+  // --- Caching of pages that required signing in ---------------------------
+  // `requiresAuth` is supplied by the runner, which probes each path without a
+  // session first. Left undefined, this rule stays quiet rather than guessing.
+  if (response.requiresAuth === true) {
+    const cacheControl = (headers["cache-control"] || "").toLowerCase();
+    if (/\bpublic\b/.test(cacheControl)) {
+      add(
+        "authenticated-public-cache",
+        "medium",
+        `A page behind the gate is marked '${headers["cache-control"]}'. 'public' lets a` +
+          " shared cache keep a copy of it.",
+      );
+    }
+  }
+
   // --- Server fingerprinting -----------------------------------------------
   if (headers["x-powered-by"]) {
     add("server-banner", "info", `X-Powered-By reveals '${headers["x-powered-by"]}'.`);

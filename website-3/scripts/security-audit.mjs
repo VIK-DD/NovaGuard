@@ -95,6 +95,15 @@ async function request(url, jar, init = {}) {
   };
 }
 
+/** True when the response is the soft-launch gate turning the request away. */
+function isLoginRedirect(response) {
+  return (
+    response.status >= 300 &&
+    response.status < 400 &&
+    /\/login\//.test(response.location || "")
+  );
+}
+
 // --- gate sign-in ----------------------------------------------------------
 
 async function signIn(base, password, jar) {
@@ -178,14 +187,6 @@ async function main() {
   console.log(`  site : ${args.base}`);
   console.log(`  api  : ${args.api}`);
 
-  // Sign in so the audit sees the real pages instead of the login gate.
-  if (args.password) {
-    const result = await signIn(args.base, args.password, jar);
-    console.log(`  gate : ${result.ok ? "signed in" : `NOT signed in — ${result.reason}`}`);
-  } else {
-    console.log("  gate : no password given (set NG_AUDIT_PASSWORD to audit pages behind it)");
-  }
-
   const routes = await discoverRoutes();
   const targets = [
     ...routes.map((r) => `${args.base}${r}`),
@@ -196,10 +197,33 @@ async function main() {
     `${args.api}/api/v1/stats`,
   ];
 
+  // Learn which paths the gate protects, before holding a session. Signing in
+  // first would make every page look public, and a page only a signed-in
+  // visitor may read must not then invite a shared cache to keep a copy.
+  const gated = new Set();
+  for (const target of targets) {
+    try {
+      const probe = await request(target, makeJar(), {});
+      if (isLoginRedirect(probe)) gated.add(target);
+    } catch {
+      /* the audited pass below records an unreachable target properly */
+    }
+  }
+  console.log(`  gated: ${gated.size} of ${targets.length} paths require signing in`);
+
+  // Sign in so the audit sees the real pages instead of the login gate.
+  if (args.password) {
+    const result = await signIn(args.base, args.password, jar);
+    console.log(`  gate : ${result.ok ? "signed in" : `NOT signed in — ${result.reason}`}`);
+  } else {
+    console.log("  gate : no password given (set NG_AUDIT_PASSWORD to audit pages behind it)");
+  }
+
   for (const target of targets) {
     let response;
     try {
       response = await request(target, jar, {});
+      response.requiresAuth = gated.has(target);
     } catch (error) {
       findings.push({
         rule: "unreachable",
@@ -212,11 +236,7 @@ async function main() {
     scanned += 1;
 
     // A redirect to the gate means we are auditing the gate, not the page.
-    if (
-      response.status >= 300 &&
-      response.status < 400 &&
-      /\/login\//.test(response.location || "")
-    ) {
+    if (isLoginRedirect(response)) {
       findings.push({
         rule: "not-audited",
         severity: "info",
