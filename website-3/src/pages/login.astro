@@ -90,9 +90,13 @@ import Base from "../layouts/Base.astro";
   const nextInput = document.getElementById("next") as HTMLInputElement | null;
   if (nextInput) nextInput.value = safeNext(candidate);
 
-  if (params.get("error") === "1") {
+  const loginError = params.get("error");
+  if (loginError === "1" || loginError === "csrf") {
     const err = document.getElementById("pw-error");
     const pw = document.getElementById("password");
+    if (loginError === "csrf" && err) {
+      err.textContent = "The secure form expired. Please try again.";
+    }
     err?.classList.remove("hidden");
     pw?.setAttribute("aria-invalid", "true");
     (pw as HTMLInputElement | null)?.focus();

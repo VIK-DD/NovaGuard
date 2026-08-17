@@ -500,6 +500,16 @@ function isSameOriginRequest(request) {
   }
 }
 
+// Privacy-focused browsers can suppress both Origin and Referer on a regular
+// same-origin form POST. Do not mistake that absence for an attacker: the
+// double-submit token remains required and is a stronger proof than either
+// informational header. An explicit foreign Origin is never eligible for this
+// fallback, even when a token happens to be present.
+function hasUnspecifiedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  return !origin || origin === "null";
+}
+
 async function hasValidCsrf(request, form) {
   const cookieToken = readCookie(request, CSRF_COOKIE);
   const formToken = String(form.get(CSRF_FIELD) || "");
@@ -513,6 +523,19 @@ function csrfRejection(event) {
     status: 403,
     headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
   });
+}
+
+// A same-origin form with a stale token is not an attack; it is most commonly a
+// form restored from browser history or a page that was open while the token
+// expired. Send that visitor back to a fresh form instead of leaving them on a
+// bare API response. Cross-origin posts still get the deliberately unhelpful
+// 403 above, and neither path can create a session.
+function csrfRetry(request, event, pathname, { next } = {}) {
+  logWorkerEvent("warn", event);
+  const url = new URL(pathname, request.url);
+  if (next) url.searchParams.set("next", next);
+  url.searchParams.set("error", "csrf");
+  return Response.redirect(url, 303);
 }
 
 async function serveAsset(request, env) {
@@ -569,8 +592,14 @@ async function handleLogin(request, env) {
   // make a visitor's browser post the gate password it already knows, or — once
   // the password leaks to one person — silently open a session in the browser
   // of anyone who loads the attacker's page.
-  if (!isSameOriginRequest(request) || !(await hasValidCsrf(request, form))) {
+  const sameOrigin = isSameOriginRequest(request);
+  const validCsrf = await hasValidCsrf(request, form);
+  if (!sameOrigin && !(validCsrf && hasUnspecifiedOrigin(request))) {
     return csrfRejection("auth_login_csrf_rejected");
+  }
+  if (!validCsrf) {
+    const next = safeNext(String(form.get("next") || "/home/"));
+    return csrfRetry(request, "auth_login_csrf_rejected", "/login/", { next });
   }
 
   const password = String(form.get("password") || "");
@@ -640,8 +669,13 @@ async function handlePreview(request, env) {
   }
 
   const form = await request.formData().catch(() => new FormData());
-  if (!isSameOriginRequest(request) || !(await hasValidCsrf(request, form))) {
+  const sameOrigin = isSameOriginRequest(request);
+  const validCsrf = await hasValidCsrf(request, form);
+  if (!sameOrigin && !(validCsrf && hasUnspecifiedOrigin(request))) {
     return csrfRejection("preview_csrf_rejected");
+  }
+  if (!validCsrf) {
+    return csrfRetry(request, "preview_csrf_rejected", "/preview/");
   }
 
   const code = String(form.get("code") || "").trim();
