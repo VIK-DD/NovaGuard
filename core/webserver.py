@@ -132,6 +132,12 @@ def after_login_strands_user(after_login=None, cors_origins=None):
     target = AFTER_LOGIN if after_login is None else after_login
     origins = CORS_ORIGINS if cors_origins is None else cors_origins
     return bool(origins) and not target.lower().startswith(("http://", "https://"))
+# This is a pure JSON API: forbid loading or executing any resource at all.
+# base-uri, form-action and frame-ancestors are spelled out because none of
+# them falls back to default-src — omitting one allows anything for it.
+API_CONTENT_SECURITY_POLICY = (
+    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
 COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes", "on"}
 # Cookie SameSite policy. "Lax" works when the dashboard is same-site as the API
 # (including subdomains of one registrable domain). Use "None" for a dashboard on
@@ -717,8 +723,7 @@ class WebServer:
             "X-Frame-Options": "DENY",
             "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",
-            # This is a pure JSON API: forbid loading/executing any resource.
-            "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            "Content-Security-Policy": API_CONTENT_SECURITY_POLICY,
         }
         if COOKIE_SECURE:
             # Served over HTTPS ⇒ tell browsers to never fall back to http

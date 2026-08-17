@@ -9,6 +9,7 @@
     "build:launch": "node scripts/sync-updates-archive.mjs && astro check && astro build",
     "preview": "astro preview",
     "deploy": "npm run build && wrangler deploy",
+    "security:audit": "node scripts/security-audit.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
