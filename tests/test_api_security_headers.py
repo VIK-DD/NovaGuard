@@ -5,7 +5,7 @@ headers, so a policy tightened on one side does not reach the other. These
 checks pin the API side directly.
 """
 
-from core.webserver import API_CONTENT_SECURITY_POLICY
+from core.api_security import API_CONTENT_SECURITY_POLICY
 
 
 def _directives(policy: str) -> dict[str, str]:

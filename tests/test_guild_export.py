@@ -103,7 +103,14 @@ class GuildExportTests(unittest.TestCase):
         self.assertEqual([row["message_id"] for row in payload["giveaways"]], [500])
 
     def test_no_other_guild_leaks_into_the_export(self):
-        blob = repr(self.database.export_guild_data("111"))
+        payload = self.database.export_guild_data("111")
+        # `exported_at` is stamped at export time, so its microseconds are
+        # random digits. Scanning it for "999" failed roughly one run in three
+        # hundred on a timestamp like 21:38:24.095999 — a red build that said
+        # nothing about a leak. It carries no guild data, so drop it before the
+        # scan rather than weakening what the scan looks for.
+        payload.pop("exported_at", None)
+        blob = repr(payload)
 
         self.assertNotIn("other-server", blob)
         self.assertNotIn("999", blob)
