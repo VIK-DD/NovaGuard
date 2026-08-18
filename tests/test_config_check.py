@@ -70,58 +70,11 @@ class SilentFailureTests(unittest.TestCase):
                 found = findings_for({"BACKUP_ENCRYPTION_KEY": value})
                 self.assertIn("BACKUP_ENCRYPTION_KEY", names(found, CRITICAL))
 
-    def test_a_missing_cookies_file_is_warned_about(self):
-        found = findings_for(
-            {"MUSIC_YTDLP_COOKIES_FILE": "/home/ubuntu/cookies.txt"},
-            file_exists=lambda path: False,
-        )
-
-        self.assertIn("MUSIC_YTDLP_COOKIES_FILE", names(found, WARN))
-
-    def test_an_existing_cookies_file_is_not_flagged(self):
-        found = findings_for({"MUSIC_YTDLP_COOKIES_FILE": "/home/ubuntu/cookies.txt"})
-
-        self.assertNotIn("MUSIC_YTDLP_COOKIES_FILE", names(found))
-
-    def test_a_socks_proxy_is_flagged_because_ffmpeg_cannot_use_it(self):
-        found = findings_for({"MUSIC_YTDLP_PROXY": "socks5://proxy.test:1080"})
-
-        self.assertIn("MUSIC_YTDLP_PROXY", names(found, WARN))
-
-    def test_an_http_proxy_is_accepted(self):
-        found = findings_for({"MUSIC_YTDLP_PROXY": "http://user:pass@proxy.test:3128"})
-
-        self.assertNotIn("MUSIC_YTDLP_PROXY", names(found))
-
     def test_a_missing_guild_id_only_warns_about_slow_sync(self):
         found = findings_for({"GUILD_ID": ""})
 
         self.assertIn("GUILD_ID", names(found, WARN))
         self.assertEqual(names(found, CRITICAL), set())
-
-
-class LavalinkBackendTests(unittest.TestCase):
-    def test_the_default_lavalink_password_is_flagged(self):
-        found = findings_for(
-            {"MUSIC_BACKEND": "lavalink", "LAVALINK_PASSWORD": "youshallnotpass"}
-        )
-
-        self.assertIn("LAVALINK_PASSWORD", names(found, WARN))
-
-    def test_a_custom_lavalink_password_passes(self):
-        found = findings_for({"MUSIC_BACKEND": "lavalink", "LAVALINK_PASSWORD": "long-random"})
-
-        self.assertNotIn("LAVALINK_PASSWORD", names(found))
-
-    def test_lavalink_settings_are_ignored_on_the_ytdlp_backend(self):
-        found = findings_for({"MUSIC_BACKEND": "yt-dlp", "LAVALINK_PASSWORD": "youshallnotpass"})
-
-        self.assertNotIn("LAVALINK_PASSWORD", names(found))
-
-    def test_an_unknown_backend_is_flagged(self):
-        found = findings_for({"MUSIC_BACKEND": "sometypo"})
-
-        self.assertIn("MUSIC_BACKEND", names(found, WARN))
 
 
 class WebServerTests(unittest.TestCase):

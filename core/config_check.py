@@ -19,10 +19,6 @@ CRITICAL = "CRITICAL"
 WARN = "WARN"
 OK = "OK"
 
-LAVALINK_BACKENDS = {"lavalink", "lava", "ll"}
-KNOWN_BACKENDS = LAVALINK_BACKENDS | {"yt-dlp", "ytdlp", "yt_dlp", ""}
-DEFAULT_LAVALINK_PASSWORD = "youshallnotpass"
-
 
 class Finding:
     """One check result. ``detail`` says what to do, not just what is wrong."""
@@ -125,58 +121,6 @@ def check_config(env=None, *, file_exists=None):
         )
     else:
         findings.append(Finding(OK, "BACKUP_ENCRYPTION_KEY", "configured for encrypted archives."))
-
-    backend = _value(env, "MUSIC_BACKEND").lower()
-    if backend and backend not in KNOWN_BACKENDS:
-        findings.append(
-            Finding(
-                WARN,
-                "MUSIC_BACKEND",
-                f"unknown value {backend!r} - falling back to the in-process yt-dlp player.",
-            )
-        )
-
-    if backend in LAVALINK_BACKENDS:
-        password = _value(env, "LAVALINK_PASSWORD")
-        if not password or password == DEFAULT_LAVALINK_PASSWORD:
-            findings.append(
-                Finding(
-                    WARN,
-                    "LAVALINK_PASSWORD",
-                    "still the documented default - anyone who can reach the node port can drive playback.",
-                )
-            )
-        try:
-            import wavelink  # noqa: F401
-        except ModuleNotFoundError:
-            findings.append(
-                Finding(
-                    CRITICAL,
-                    "wavelink",
-                    "MUSIC_BACKEND=lavalink but wavelink is not installed. "
-                    "Run: venv/bin/pip install -r requirements.txt",
-                )
-            )
-
-    cookies_file = _value(env, "MUSIC_YTDLP_COOKIES_FILE")
-    if cookies_file and not exists(cookies_file):
-        findings.append(
-            Finding(
-                WARN,
-                "MUSIC_YTDLP_COOKIES_FILE",
-                f"points at {cookies_file} which does not exist - yt-dlp runs without cookies.",
-            )
-        )
-
-    proxy = _value(env, "MUSIC_YTDLP_PROXY")
-    if proxy and not proxy.lower().startswith(("http://", "https://")):
-        findings.append(
-            Finding(
-                WARN,
-                "MUSIC_YTDLP_PROXY",
-                "is not an http(s) URL - FFmpeg cannot stream YouTube through it and playback will 403.",
-            )
-        )
 
     if _enabled(env, "WEB_ENABLED"):
         client_id = _value(env, "DISCORD_CLIENT_ID")

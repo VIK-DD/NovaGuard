@@ -267,7 +267,6 @@ main server.
 | --- | --- |
 | Setup | `/setup`, `/config view`, `/config export`, `/config backup`, `/config reset`, `/backup status`, `/backup remote`, `/backup inspect`, `/backup restore` |
 | Voice reports | `/voice set`, `/voice status`, `/voice test`, `/voice off` |
-| Music | `/play`, `/skip`, `/queue`, `/nowplaying`, `/volume`, `/remove`, `/clear`, `/disconnect` |
 | System | `/ping`, `/uptime`, `/status`, `/botinfo`, `/doctor`, `/help`, `/latest`, `/updates`, `/forceupdate` |
 | Developer | `/github`, `/repo`, `/dev`, `/health`, `/commits`, `/release`, `/ghwatch` |
 | Utility | `/userinfo`, `/serverinfo`, `/avatar`, `/roleinfo`, `/poll`, `/remind`, `/reminders`, `/timestamp`, `/choose`, `/color` |

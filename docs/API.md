@@ -159,10 +159,6 @@ same value on every guild this bot serves, derived from the bot's
       "work_min": 50, "work_max": 150, "work_cooldown_minutes": 60,
       "transfers_enabled": true, "games_enabled": true, "shop_enabled": true,
       "gamble_max_bet": 1000000, "slots_max_bet": 100000
-    },
-    "music": {
-      "enabled": true, "default_volume": 80, "max_volume": 100,
-      "max_queue_tracks": 100, "allow_playlists": true, "allow_filters": true
     }
   },
   "ai_status": {
@@ -175,14 +171,6 @@ same value on every guild this bot serves, derived from the bot's
       "coins": 9400, "daily_streak": 11 } ],
     "shop": [ { "key": "star", "label": "Star", "icon": "⭐",
       "price": 1000, "kind": "trophy", "description": null } ]
-  },
-  "music_status": {
-    "backend": "lavalink", "available": true, "active": true, "paused": false,
-    "voice_channel_id": "…", "voice_channel_name": "Lounge", "volume": 80,
-    "loop": "off", "filter": "off", "current": {
-      "title": "Nova Nights", "url": "https://…", "duration": 218,
-      "source": "YouTube Music"
-    }, "queue_count": 2, "queue": []
   },
   "tickets": {
     "panel_channel_id": "…|null", "panel_message_id": "…|null",
@@ -247,10 +235,6 @@ only the keys present are changed. Returns the same payload as GET on success.
   rewards. Numeric rewards and bets are bounded; `work_min` cannot exceed
   `work_max`. The dashboard reports aggregate circulation, the leaderboard and
   the global shop catalogue, but does not allow unaudited wallet edits.
-- `music` is shared by both yt-dlp and Lavalink. It controls whether new
-  playback may start, the default/maximum volume, queue size, playlist access
-  and Lavalink effects. `music_status` contains only public track metadata and
-  session state; credentials and signed stream URLs are never returned.
 
 ```json
 { "welcome_channel": "123", "autorole": "456",
@@ -315,10 +299,6 @@ actions:
   body: `message_id`.
 - `giveaway_reroll`: draws new winners for an ended giveaway owned by this
   guild and announces them in its original channel. JSON body: `message_id`.
-- `music_control`: accepts `control` as `toggle`, `skip`, `clear` or `stop` and
-  controls only the guild's existing voice session. Starting playback still
-  requires a member's voice context in Discord. The web UI confirms queue
-  clearing and disconnect before it calls this action.
 
 ```json
 { "ok": true, "action": "backup_check",

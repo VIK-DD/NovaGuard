@@ -4,154 +4,279 @@
     "name": "Setup",
     "blurb": "Connect NovaGuard to a server and manage its saved configuration.",
     "audience": "server-admin",
-    "commands": ["/setup", "/config view", "/config export", "/config reset"]
+    "commands": [
+      "/setup",
+      "/config view",
+      "/config export",
+      "/config reset"
+    ]
   },
   {
     "emoji": "⚙️",
     "name": "System",
     "blurb": "Public health, release and help commands.",
     "audience": "everyone",
-    "commands": ["/ping", "/uptime", "/status", "/botinfo", "/help", "/latest", "/updates"]
+    "commands": [
+      "/ping",
+      "/uptime",
+      "/status",
+      "/botinfo",
+      "/help",
+      "/latest",
+      "/updates"
+    ]
   },
   {
     "emoji": "🔏",
     "name": "Privacy",
     "blurb": "Private access, export and deletion controls for members and server owners.",
     "audience": "everyone",
-    "commands": ["/privacy policy", "/privacy export", "/privacy delete", "/privacy server-export", "/privacy server-delete"]
+    "commands": [
+      "/privacy policy",
+      "/privacy export",
+      "/privacy delete",
+      "/privacy server-export",
+      "/privacy server-delete"
+    ]
   },
   {
     "emoji": "🩺",
     "name": "Server diagnostics",
     "blurb": "Detailed checks and changelog previews for server managers.",
     "audience": "server-admin",
-    "commands": ["/doctor", "/forceupdate"]
+    "commands": [
+      "/doctor",
+      "/forceupdate"
+    ]
   },
   {
     "emoji": "🐙",
     "name": "Developer",
     "blurb": "GitHub intelligence delivered into your server.",
     "audience": "everyone",
-    "commands": ["/github", "/repo", "/dev", "/health", "/commits", "/release", "/ghwatch"]
+    "commands": [
+      "/github",
+      "/repo",
+      "/dev",
+      "/health",
+      "/commits",
+      "/release",
+      "/ghwatch"
+    ]
   },
   {
     "emoji": "🧰",
     "name": "Utility",
     "blurb": "Everyday tools for members and staff.",
     "audience": "everyone",
-    "commands": ["/userinfo", "/serverinfo", "/avatar", "/roleinfo", "/poll", "/remind", "/reminders", "/timestamp", "/choose", "/color"]
+    "commands": [
+      "/userinfo",
+      "/serverinfo",
+      "/avatar",
+      "/roleinfo",
+      "/poll",
+      "/remind",
+      "/reminders",
+      "/timestamp",
+      "/choose",
+      "/color"
+    ]
   },
   {
     "emoji": "🎉",
     "name": "Fun",
     "blurb": "Quick games and icebreakers.",
     "audience": "everyone",
-    "commands": ["/8ball", "/coinflip", "/dice", "/rps", "/trivia", "/joke", "/ship", "/vibecheck"]
+    "commands": [
+      "/8ball",
+      "/coinflip",
+      "/dice",
+      "/rps",
+      "/trivia",
+      "/joke",
+      "/ship",
+      "/vibecheck"
+    ]
   },
   {
     "emoji": "🛡️",
     "name": "Moderation",
     "blurb": "Slash-native moderation with warnings kept on record.",
     "audience": "server-admin",
-    "commands": ["/purge", "/kick", "/ban", "/timeout", "/untimeout", "/slowmode", "/announce", "/warn add", "/warn list", "/warn clear"]
+    "commands": [
+      "/purge",
+      "/kick",
+      "/ban",
+      "/timeout",
+      "/untimeout",
+      "/slowmode",
+      "/announce",
+      "/warn add",
+      "/warn list",
+      "/warn clear"
+    ]
   },
   {
     "emoji": "🏆",
     "name": "Levels",
     "blurb": "Automatic XP for chatting, progress cards and leaderboards.",
     "audience": "everyone",
-    "commands": ["/rank", "/leaderboard"]
+    "commands": [
+      "/rank",
+      "/leaderboard"
+    ]
   },
   {
     "emoji": "🧭",
     "name": "Level administration",
     "blurb": "Preview a historical XP rebuild before any data changes.",
     "audience": "server-admin",
-    "commands": ["/levels backfill preview"]
+    "commands": [
+      "/levels backfill preview"
+    ]
   },
   {
     "emoji": "👋",
     "name": "Welcome",
     "blurb": "Join and leave embeds plus auto-role for newcomers.",
     "audience": "server-admin",
-    "commands": ["/welcome set", "/welcome off", "/welcome test"]
+    "commands": [
+      "/welcome set",
+      "/welcome off",
+      "/welcome test"
+    ]
   },
   {
     "emoji": "📋",
     "name": "Logs",
     "blurb": "Deleted and edited messages, joins, leaves, bans and mod actions.",
     "audience": "server-admin",
-    "commands": ["/logs set", "/logs off"]
+    "commands": [
+      "/logs set",
+      "/logs off"
+    ]
   },
   {
     "emoji": "🎭",
     "name": "Roles",
     "blurb": "Persistent button panels where members pick their own roles.",
     "audience": "server-admin",
-    "commands": ["/rolepanel"]
+    "commands": [
+      "/rolepanel"
+    ]
   },
   {
     "emoji": "🎁",
     "name": "Giveaways",
     "blurb": "Button entry, a live counter and automatic winner selection.",
     "audience": "server-admin",
-    "commands": ["/giveaway start", "/giveaway end", "/giveaway reroll"]
+    "commands": [
+      "/giveaway start",
+      "/giveaway end",
+      "/giveaway reroll"
+    ]
   },
   {
     "emoji": "🎫",
     "name": "Tickets",
     "blurb": "A private support thread with the configured staff role.",
     "audience": "server-admin",
-    "commands": ["/ticketpanel"]
+    "commands": [
+      "/ticketpanel"
+    ]
   },
   {
     "emoji": "🤖",
     "name": "AutoMod",
     "blurb": "Invite blocking, anti-spam and a managed blocked-word list.",
     "audience": "server-admin",
-    "commands": ["/automod status", "/automod invites", "/automod spam", "/automod badword add", "/automod badword remove", "/automod badword list"]
+    "commands": [
+      "/automod status",
+      "/automod invites",
+      "/automod spam",
+      "/automod badword add",
+      "/automod badword remove",
+      "/automod badword list"
+    ]
   },
   {
     "emoji": "🎙️",
     "name": "Voice reports",
     "blurb": "Configure, inspect and retry completed voice-session reports.",
     "audience": "server-admin",
-    "commands": ["/voice set", "/voice off", "/voice status", "/voice retry", "/voice pending", "/voice resend last", "/voice test"]
+    "commands": [
+      "/voice set",
+      "/voice off",
+      "/voice status",
+      "/voice retry",
+      "/voice pending",
+      "/voice resend last",
+      "/voice test"
+    ]
   },
   {
     "emoji": "⏱️",
     "name": "Voice hours",
     "blurb": "Monthly voice activity totals and the server leaderboard.",
     "audience": "everyone",
-    "commands": ["/voicehours", "/voicetop"]
+    "commands": [
+      "/voicehours",
+      "/voicetop"
+    ]
   },
   {
     "emoji": "💰",
     "name": "Economy",
     "blurb": "Wallets, rewards, games, collectibles and the server shop.",
     "audience": "everyone",
-    "commands": ["/balance", "/daily", "/work", "/pay", "/gamble", "/slots", "/richest", "/shop", "/buy", "/inventory", "/crate", "/title"]
-  },
-  {
-    "emoji": "🎵",
-    "name": "Music",
-    "blurb": "Playback, queue controls, audio effects and connection diagnostics.",
-    "audience": "everyone",
-    "note": "Shuffle, loop, seek and filter are available when the Lavalink backend is enabled.",
-    "commands": ["/play", "/skip", "/queue", "/nowplaying", "/volume", "/shuffle", "/loop", "/seek", "/soundcheck", "/filter", "/remove", "/clear", "/disconnect"]
+    "commands": [
+      "/balance",
+      "/daily",
+      "/work",
+      "/pay",
+      "/gamble",
+      "/slots",
+      "/richest",
+      "/shop",
+      "/buy",
+      "/inventory",
+      "/crate",
+      "/title"
+    ]
   },
   {
     "emoji": "🧠",
     "name": "AI",
     "blurb": "Claude answers directly in Discord when AI is enabled by the host.",
     "audience": "everyone",
-    "commands": ["/ask"]
+    "commands": [
+      "/ask"
+    ]
   },
   {
     "emoji": "🔐",
     "name": "Owner operations",
     "blurb": "Sensitive host-wide actions protected by owner checks and, where required, the admin key.",
     "audience": "owner",
-    "commands": ["/config backup", "/backup create", "/backup status", "/backup remote", "/backup list", "/backup inspect", "/backup test", "/backup restore", "/levels backfill run", "/maintenance", "/resync", "/grant", "/admin unlock", "/admin lock", "/admin status", "/admin audit", "/guilds", "/leaveguild"]
+    "commands": [
+      "/config backup",
+      "/backup create",
+      "/backup status",
+      "/backup remote",
+      "/backup list",
+      "/backup inspect",
+      "/backup test",
+      "/backup restore",
+      "/levels backfill run",
+      "/maintenance",
+      "/resync",
+      "/grant",
+      "/admin unlock",
+      "/admin lock",
+      "/admin status",
+      "/admin audit",
+      "/guilds",
+      "/leaveguild"
+    ]
   }
 ]

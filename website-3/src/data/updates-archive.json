@@ -1,5 +1,19 @@
 [
   {
+    "created_at": "2026-08-17T15:08:22.745640+00:00",
+    "significant": false,
+    "build": 57,
+    "added_lines": 18,
+    "removed_lines": 2,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to api security and the web dashboard"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
     "created_at": "2026-08-14T14:30:43.466645+00:00",
     "significant": false,
     "build": 56,

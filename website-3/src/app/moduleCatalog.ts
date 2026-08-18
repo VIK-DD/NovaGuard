@@ -66,13 +66,6 @@ export const CONFIG_MODULES = [
     fields: ["economy"],
   },
   {
-    key: "music",
-    label: "Music",
-    description: "Set playback limits and control the server's active voice session.",
-    icon: "arrows-clockwise",
-    fields: ["music"],
-  },
-  {
     key: "updates",
     label: "Updates",
     description: "Send NovaGuard releases and GitHub activity to Discord.",
@@ -131,8 +124,6 @@ export function isModuleActive(settings: GuildSettings, key: ConfigModuleKey): b
       return settings.ai.enabled;
     case "economy":
       return settings.economy.enabled;
-    case "music":
-      return settings.music.enabled;
     case "updates":
       return Boolean(settings.update_channel || settings.github_event_channel);
   }

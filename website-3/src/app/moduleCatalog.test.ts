@@ -60,14 +60,6 @@ const emptySettings: GuildSettings = {
     gamble_max_bet: 1_000_000,
     slots_max_bet: 100_000,
   },
-  music: {
-    enabled: false,
-    default_volume: 80,
-    max_volume: 100,
-    max_queue_tracks: 100,
-    allow_playlists: true,
-    allow_filters: true,
-  },
 };
 
 describe("configuration module catalog", () => {
@@ -85,7 +77,6 @@ describe("configuration module catalog", () => {
         "goodbye_channel",
         "levels",
         "log_channel",
-        "music",
         "role_panel_channel",
         "ticket_staff_role",
         "ticket_panel_channel",
@@ -110,7 +101,6 @@ describe("configuration module catalog", () => {
       "giveaways",
       "ai",
       "economy",
-      "music",
       "updates",
     ]);
   });
@@ -145,11 +135,9 @@ describe("configuration module catalog", () => {
     configured.giveaway_channel = "456";
     configured.ai.enabled = true;
     configured.economy.enabled = true;
-    configured.music.enabled = true;
     configured.github_event_channel = "101";
 
     expect(CONFIG_MODULES.map((module) => isModuleActive(configured, module.key))).toEqual([
-      true,
       true,
       true,
       true,

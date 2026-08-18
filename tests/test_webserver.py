@@ -435,9 +435,7 @@ async def main():
                 and "voice_report_channel" in data["settings"]
                 and data.get("settings", {}).get("ai", {}).get("answer_mode") == "public"
                 and data.get("settings", {}).get("economy", {}).get("daily_base") == 200
-                and data.get("settings", {}).get("music", {}).get("default_volume") == 80
                 and data.get("economy_status", {}).get("tracked_wallets") == 0
-                and data.get("music_status", {}).get("active") is False
                 and data.get("ai_status", {}).get("available") is False
                 and data.get("tickets", {}).get("open_count") == 0
                 and data.get("role_panels") == [],
@@ -516,12 +514,6 @@ async def main():
                 "work_max": 175,
                 "games_enabled": False,
             },
-            "music": {
-                "default_volume": 65,
-                "max_volume": 85,
-                "max_queue_tracks": 50,
-                "allow_playlists": False,
-            },
         }
         async with http.put(f"{V1}/guilds/{TEST_GUILD_ID}/config", json=good, cookies=cookies) as r:
             data = await r.json()
@@ -543,11 +535,7 @@ async def main():
                 and saved.get("economy", {}).get("daily_base") == 300
                 and saved.get("economy", {}).get("work_min") == 75
                 and saved.get("economy", {}).get("work_max") == 175
-                and saved.get("economy", {}).get("games_enabled") is False
-                and saved.get("music", {}).get("default_volume") == 65
-                and saved.get("music", {}).get("max_volume") == 85
-                and saved.get("music", {}).get("max_queue_tracks") == 50
-                and saved.get("music", {}).get("allow_playlists") is False,
+                and saved.get("economy", {}).get("games_enabled") is False,
             )
 
         async with http.post(
@@ -561,28 +549,6 @@ async def main():
                 r.status == 400
                 and data.get("code") == "validation_failed"
                 and len(data.get("details", [])) == 3,
-            )
-
-        async with http.post(
-            f"{V1}/guilds/{TEST_GUILD_ID}/actions/music_control",
-            json={"control": "play"},
-            cookies=cookies,
-        ) as r:
-            data = await r.json()
-            await check(
-                "music action accepts only safe existing-session controls",
-                r.status == 400 and data.get("code") == "invalid_music_control",
-            )
-
-        async with http.post(
-            f"{V1}/guilds/{TEST_GUILD_ID}/actions/music_control",
-            json={"control": "toggle"},
-            cookies=cookies,
-        ) as r:
-            data = await r.json()
-            await check(
-                "music action reports an unavailable player cleanly",
-                r.status == 503 and data.get("code") == "music_unavailable",
             )
 
         async with http.post(

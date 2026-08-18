@@ -50,14 +50,6 @@ const ECONOMY_KEYS = [
   "gamble_max_bet",
   "slots_max_bet",
 ] as const;
-const MUSIC_KEYS = [
-  "enabled",
-  "default_volume",
-  "max_volume",
-  "max_queue_tracks",
-  "allow_playlists",
-  "allow_filters",
-] as const;
 
 /** Mirrors the server's badwords rules: lowercase, trim, dedupe, truncate to 40 chars, ≤100 words. */
 export function normalizeBadwords(raw: string[]): string[] {
@@ -74,7 +66,7 @@ export function normalizeBadwords(raw: string[]): string[] {
 /** Client-side mirror of the cross-field Levels rules enforced by the API. */
 export function validateSettings(draft: GuildSettings): Record<string, string> {
   const errors: Record<string, string> = {};
-  const { ai, automod, economy, levels, music } = draft;
+  const { ai, automod, economy, levels } = draft;
 
   const wholeNumber = (value: number, min: number, max: number) =>
     Number.isInteger(value) && value >= min && value <= max;
@@ -140,23 +132,6 @@ export function validateSettings(draft: GuildSettings): Record<string, string> {
   if (!errors["economy.work_min"] && !errors["economy.work_max"] && economy.work_min > economy.work_max) {
     errors["economy.work_min"] = "Work minimum cannot be greater than work maximum.";
   }
-  if (!wholeNumber(music.default_volume, 0, 100)) {
-    errors["music.default_volume"] = "Enter a whole number between 0 and 100.";
-  }
-  if (!wholeNumber(music.max_volume, 10, 100)) {
-    errors["music.max_volume"] = "Enter a whole number between 10 and 100.";
-  }
-  if (
-    !errors["music.default_volume"] &&
-    !errors["music.max_volume"] &&
-    music.default_volume > music.max_volume
-  ) {
-    errors["music.default_volume"] = "Default volume cannot be greater than the maximum.";
-  }
-  if (!wholeNumber(music.max_queue_tracks, 1, 500)) {
-    errors["music.max_queue_tracks"] = "Enter a whole number between 1 and 500.";
-  }
-
   return errors;
 }
 
@@ -230,20 +205,6 @@ export function diffSettings(server: GuildSettings, draft: GuildSettings): Setti
     patch.economy = economy;
   }
 
-  const music: NonNullable<SettingsPatch["music"]> = {};
-  for (const key of MUSIC_KEYS) {
-    if (server.music[key] !== draft.music[key]) {
-      (music as Record<string, unknown>)[key] = draft.music[key];
-    }
-  }
-  if (Object.keys(music).length > 0) {
-    if ("default_volume" in music || "max_volume" in music) {
-      music.default_volume = draft.music.default_volume;
-      music.max_volume = draft.music.max_volume;
-    }
-    patch.music = music;
-  }
-
   return patch;
 }
 
@@ -267,14 +228,12 @@ export function mapValidationDetails(details: string[] | undefined): Record<stri
       .sort((a, b) => b.length - a.length),
     ...AI_KEYS.map((k) => `ai.${k}`).sort((a, b) => b.length - a.length),
     ...ECONOMY_KEYS.map((k) => `economy.${k}`).sort((a, b) => b.length - a.length),
-    ...MUSIC_KEYS.map((k) => `music.${k}`).sort((a, b) => b.length - a.length),
     ...ID_KEYS,
     "badwords",
     "automod",
     "levels",
     "ai",
     "economy",
-    "music",
   ];
   for (const message of details) {
     const key = known.find((k) => message.includes(k));

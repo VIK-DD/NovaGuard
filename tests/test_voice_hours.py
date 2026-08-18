@@ -203,7 +203,7 @@ class EligibilityTests(unittest.TestCase):
         self.assertFalse(counts_towards_hours(self.member(), channel_is_afk=True))
 
     def test_bots_do_not_count(self):
-        # The music player sits in voice for hours; it must not top the board.
+        # A bot sitting in voice for hours must not top the board.
         self.assertFalse(counts_towards_hours(self.member(bot=True)))
 
     def test_an_empty_record_is_treated_as_a_plain_member(self):

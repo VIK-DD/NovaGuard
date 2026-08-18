@@ -23,7 +23,7 @@ INVITE_PERMISSION_BITS = MappingProxyType(
         "attach_files": 1 << 15,
         "read_message_history": 1 << 16,
         "mention_everyone": 1 << 17,
-        # Voice and music playback.
+        # Voice presence tracking.
         "connect": 1 << 20,
         "speak": 1 << 21,
         "use_voice_activation": 1 << 25,

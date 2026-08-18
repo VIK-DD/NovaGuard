@@ -148,18 +148,6 @@ def init_database():
         )
         connection.execute(
             """
-            CREATE TABLE IF NOT EXISTS music_cache (
-                key TEXT PRIMARY KEY,
-                payload TEXT NOT NULL,
-                expires_at REAL NOT NULL
-            )
-            """
-        )
-        connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_music_cache_expiry ON music_cache (expires_at)"
-        )
-        connection.execute(
-            """
             CREATE TABLE IF NOT EXISTS ticket_records (
                 thread_id TEXT PRIMARY KEY,
                 guild_id TEXT NOT NULL,
@@ -1070,64 +1058,3 @@ def load_economy_data():
     return data
 
 
-# ── music cache ──────────────────────────────────────────────────────
-#
-# Search results and track metadata, keyed by a normalised query or URL.
-# Purely an optimisation: any entry may vanish without affecting correctness,
-# which is why expiry is checked on read instead of swept on a schedule.
-
-
-def cache_put(key, payload, ttl_seconds):
-    init_database()
-    expires_at = time.time() + ttl_seconds
-    with _LOCK, connect() as connection:
-        connection.execute(
-            """
-            INSERT INTO music_cache (key, payload, expires_at) VALUES (?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET
-                payload = excluded.payload,
-                expires_at = excluded.expires_at
-            """,
-            (str(key), encode_value(payload), expires_at),
-        )
-        connection.commit()
-
-
-def cache_get(key):
-    init_database()
-    with _LOCK, connect() as connection:
-        row = connection.execute(
-            "SELECT payload, expires_at FROM music_cache WHERE key = ?", (str(key),)
-        ).fetchone()
-    if row is None or row["expires_at"] < time.time():
-        return None
-    return decode_value(row["payload"])
-
-
-def cache_prefix_search(prefix, limit):
-    """Live entries whose key starts with ``prefix``, newest expiry first.
-
-    Backs autocomplete, which must answer inside Discord's three seconds and
-    so can never reach for yt-dlp. LIKE wildcards in the user's text are
-    escaped: a query containing ``%`` would otherwise match everything.
-    """
-    init_database()
-    escaped = str(prefix).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    with _LOCK, connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT key, payload FROM music_cache
-            WHERE key LIKE ? ESCAPE '\\' AND expires_at >= ?
-            ORDER BY expires_at DESC LIMIT ?
-            """,
-            (escaped + "%", time.time(), int(limit)),
-        ).fetchall()
-    return [(row["key"], decode_value(row["payload"])) for row in rows]
-
-
-def cache_purge_expired():
-    init_database()
-    with _LOCK, connect() as connection:
-        cursor = connection.execute("DELETE FROM music_cache WHERE expires_at < ?", (time.time(),))
-        connection.commit()
-        return cursor.rowcount
