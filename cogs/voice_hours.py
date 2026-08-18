@@ -13,6 +13,7 @@ crash costs one tick at most instead of an entire evening.
 """
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 
 import discord
@@ -20,6 +21,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.voice import VOICE_REPORT_CHANNEL_KEY
+from core.loop_guard import keep_running
 from core.database import (
     add_voice_seconds,
     voice_member_history,
@@ -48,6 +50,8 @@ from core.voice_hours import (
     voice_payout,
     voice_timezone,
 )
+
+log = logging.getLogger(__name__)
 
 TICK_SECONDS = 300
 # A tick delayed by a slow host must not pay out the whole gap: the members it
@@ -153,6 +157,7 @@ class VoiceHours(commands.Cog):
             levels.award_voice_xp(row["guild"], row["user_id"], xp)
 
     @tasks.loop(seconds=TICK_SECONDS)
+    @keep_running(log, "voice ledger tick")
     async def ledger_tick(self):
         moment = now_utc()
         previous, self.last_tick = self.last_tick, moment
@@ -257,6 +262,7 @@ class VoiceHours(commands.Cog):
         update_guild_settings(guild.id, **{RECAP_LAST_POSTED_KEY: target_month})
 
     @tasks.loop(seconds=RECAP_CHECK_SECONDS)
+    @keep_running(log, "voice recap check")
     async def recap_check(self):
         for guild in self.bot.guilds:
             try:

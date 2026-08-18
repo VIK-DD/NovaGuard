@@ -4,6 +4,7 @@ import asyncio
 import gzip
 import io
 import json
+import logging
 import os
 from contextlib import AsyncExitStack
 
@@ -30,9 +31,12 @@ from core.privacy_ledger import ensure_deletion_ledger, sync_deletion_ledger
 from core.privacy_requests import record_privacy_request
 from core.storage import all_guild_settings
 from core.error_digest import send_error_digest
+from core.loop_guard import keep_running
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
 
+
+log = logging.getLogger(__name__)
 
 PRIVACY_URL = "https://novaguard.fun/privacy"
 PRIVACY_ADMIN_NOTICE_URL = "https://novaguard.fun/server-admin-notice"
@@ -333,6 +337,10 @@ class Privacy(commands.Cog):
         self.retention_loop.cancel()
 
     @tasks.loop(hours=24)
+    # Without this the loop is one bad night from silence: discord.py ends a
+    # failed loop for good, and the deletion deadlines published in the privacy
+    # policy would quietly stop being enforced.
+    @keep_running(log, "privacy retention sweep")
     async def retention_loop(self):
         # Reconcile before erasing, not after: a bot added back on the last day
         # of a grace window must have its marker cleared before the deletion
@@ -345,7 +353,7 @@ class Privacy(commands.Cog):
         report = run_retention_cleanup()
         removed = sum(report["counts"].values())
         if removed:
-            print(f"Privacy retention cleanup removed {removed} expired record(s).")
+            log.info("Privacy retention cleanup removed %d expired record(s).", removed)
         await _sync_current_privacy_ledger(self.bot)
 
     @retention_loop.before_loop

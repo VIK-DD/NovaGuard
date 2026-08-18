@@ -1,5 +1,6 @@
 """🐙 Developer category — GitHub profile cards, repo dashboards, health and the live watcher."""
 
+import logging
 import asyncio
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -9,6 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.loop_guard import keep_running
 from core.config import GITHUB_STATE_FILE, github_config
 from core.github_api import github_api
 from core.guild_config import resolve_configured_channels
@@ -25,6 +27,8 @@ from core.utils import (
     respond,
     truncate,
 )
+
+log = logging.getLogger(__name__)
 
 WATCHED_EVENT_TYPES = {"PushEvent", "PullRequestEvent", "IssuesEvent", "ReleaseEvent"}
 
@@ -638,6 +642,7 @@ class Developer(commands.Cog):
         self.watch_github_activity.cancel()
 
     @tasks.loop(seconds=github_config.poll_seconds)
+    @keep_running(log, "GitHub activity poll")
     async def watch_github_activity(self):
         if not github_config.watch_repos:
             return

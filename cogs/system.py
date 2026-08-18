@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import platform
 import time
@@ -14,6 +15,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core import updates
+from core.loop_guard import keep_running
 from cogs.admin import require_admin
 from core.admin_auth import record_audit
 from core.backups import (
@@ -55,6 +57,8 @@ from core.release_versions import current_project_release
 from core.storage import DATA_DIR, get_guild_settings, load_data
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
+
+log = logging.getLogger(__name__)
 
 LAG_MONITOR_SECONDS = 5
 BACKUP_STARTUP_DELAY_SECONDS = 120
@@ -503,6 +507,7 @@ class System(commands.Cog):
         self.startup_update_task = asyncio.create_task(self.announce_startup_updates_later())
 
     @tasks.loop(seconds=LAG_MONITOR_SECONDS)
+    @keep_running(log, "event loop lag monitor")
     async def monitor_event_loop(self):
         now = time.perf_counter()
         if self.loop_lag_last_tick is None:
@@ -736,6 +741,7 @@ class System(commands.Cog):
             await send_error_digest(self.bot, "Automatic Backup Error", error, context="Scheduled backup failed.")
 
     @tasks.loop(seconds=60)
+    @keep_running(log, "scheduled backup")
     async def backup_loop(self):
         slot = self._scheduled_backup_slot()
         if not slot or slot == self.last_backup_slot or self.backup_running:
@@ -753,6 +759,7 @@ class System(commands.Cog):
         await asyncio.sleep(BACKUP_STARTUP_DELAY_SECONDS)
 
     @tasks.loop(seconds=BACKUP_HEALTH_CHECK_SECONDS)
+    @keep_running(log, "backup health check")
     async def backup_health_loop(self):
         newest_backup, age = self._latest_backup_age()
         if not newest_backup or age is None:
@@ -780,6 +787,7 @@ class System(commands.Cog):
         await asyncio.sleep(BACKUP_STARTUP_DELAY_SECONDS + 60)
 
     @tasks.loop(seconds=stream_status_interval_seconds)
+    @keep_running(log, "presence rotation")
     async def rotate_stream_status(self):
         if self.maintenance_state().get("enabled"):
             return

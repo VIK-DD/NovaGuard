@@ -1,5 +1,6 @@
 """🤖 AutoMod category — invite filter, anti-spam and a blocked-words list."""
 
+import logging
 import re
 import time
 from collections import deque
@@ -9,10 +10,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.loop_guard import keep_running
 from core.automod_settings import is_automod_exempt, resolve_automod
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
+
+log = logging.getLogger(__name__)
+
 
 INVITE_PATTERN = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
 SPAM_BUCKET_TTL_SECONDS = 300
@@ -56,6 +61,7 @@ class AutoMod(commands.Cog):
         self.cleanup_spam_buckets.cancel()
 
     @tasks.loop(minutes=5)
+    @keep_running(log, "spam bucket cleanup")
     async def cleanup_spam_buckets(self):
         cutoff = time.monotonic() - SPAM_BUCKET_TTL_SECONDS
         stale_keys = [

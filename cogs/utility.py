@@ -1,5 +1,6 @@
 """🧰 Utility category — info cards, polls, reminders, timestamps and small power tools."""
 
+import logging
 import asyncio
 import random
 import re
@@ -11,9 +12,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.loop_guard import keep_running
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import format_timedelta, parse_duration, respond, truncate
+
+log = logging.getLogger(__name__)
+
 
 HEX_COLOR_PATTERN = re.compile(r"^#?([0-9a-fA-F]{6})$")
 TIMESTAMP_STYLES = [
@@ -160,6 +165,7 @@ class Utility(commands.Cog):
         self.reminder_loop.cancel()
 
     @tasks.loop(seconds=20)
+    @keep_running(log, "reminder delivery")
     async def reminder_loop(self):
         async with _REMINDERS_LOCK:
             reminders = await asyncio.to_thread(load_data, "reminders", [])

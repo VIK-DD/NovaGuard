@@ -1,5 +1,6 @@
 """🎁 Giveaways category — button-entry giveaways with automatic winner draws."""
 
+import logging
 import asyncio
 import random
 import re
@@ -10,9 +11,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.loop_guard import keep_running
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, parse_duration, respond
+
+log = logging.getLogger(__name__)
+
 
 
 def load_giveaways():
@@ -296,6 +301,7 @@ class Giveaways(commands.Cog):
         return entry, winner_ids, announced
 
     @tasks.loop(seconds=30)
+    @keep_running(log, "giveaway watcher")
     async def giveaway_watcher(self):
         entries = await load_giveaways_async()
         now = datetime.now(UTC)
