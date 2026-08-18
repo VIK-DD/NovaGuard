@@ -72,7 +72,7 @@ def setup_score(settings):
     return done, total
 
 
-def build_setup_embed(guild):
+def build_setup_embed(guild, notice=None):
     settings = get_guild_settings(guild.id)
     done, total = setup_score(settings)
     ratio_text = f"{done}/{total}"
@@ -90,10 +90,15 @@ def build_setup_embed(guild):
         title = "🚀 NovaGuard Setup"
         status = (
             "Every channel here is **optional** — set the ones you want, leave the rest empty. "
-            "Pick an item from the menu then choose a channel, or use the quick buttons. "
-            "To remove a channel, select it and press **Clear selected**. "
-            "Press **Mark Complete** when you're happy (even with none set)."
+            "Choose a setting in the first menu, then pick its channel in the second. "
+            "**Clear** removes the chosen setting, and **Mark complete** finishes "
+            "(even with nothing set)."
         )
+
+    # The panel is one message that rewrites itself, so the result of the last
+    # action belongs at the top of it rather than in a separate reply.
+    if notice:
+        status = f"{notice}\n\n{status}"
 
     embed = make_embed(title, status, color=color)
     embed.add_field(
@@ -563,14 +568,21 @@ def backup_restore_plan_embed(backup, report):
     return embed
 
 
+def plain_label(key):
+    """The menu label without its emoji, for reading inside a sentence."""
+    label, _ = CHANNEL_KEYS[key]
+    head, _, rest = label.partition(" ")
+    return rest if rest and not head.isalnum() else label
+
+
 class SetupTargetSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label=label.replace("🚀 ", "").replace("🐙 ", "").replace("🚨 ", "").replace("📋 ", "").replace("👋 ", "").replace("📤 ", ""), value=key, description=description[:100])
-            for key, (label, description) in CHANNEL_KEYS.items()
+            discord.SelectOption(label=plain_label(key), value=key, description=description[:100])
+            for key, (_label, description) in CHANNEL_KEYS.items()
         ]
         super().__init__(
-            placeholder="1. Choose what you want to configure...",
+            placeholder="1. Choose what to configure…",
             min_values=1,
             max_values=1,
             options=options,
@@ -578,97 +590,114 @@ class SetupTargetSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction):
-        self.view.selected_key = self.values[0]
-        label, _ = CHANNEL_KEYS[self.values[0]]
-        await interaction.response.send_message(
-            f"Selected **{label}**. Now use the channel dropdown below.",
-            ephemeral=True,
+        key = self.values[0]
+        self.view.pending_key = key
+        await self.view.refresh(
+            interaction,
+            f"Now pick a channel for **{plain_label(key)}** in the menu below.",
         )
 
 
 class SetupChannelSelect(discord.ui.ChannelSelect):
     def __init__(self):
         super().__init__(
-            placeholder="2. Pick the channel to save...",
+            placeholder="2. Choose a setting above first…",
             min_values=1,
             max_values=1,
             channel_types=[discord.ChannelType.text],
             row=1,
+            disabled=True,
         )
 
     async def callback(self, interaction):
-        key = getattr(self.view, "selected_key", "update_channel")
+        key = self.view.pending_key
+        if not key:
+            # The old panel defaulted to update_channel here and wrote there
+            # without telling anyone. Refusing is the only honest answer.
+            return await self.view.refresh(
+                interaction, "Choose what to configure first, then pick its channel."
+            )
         channel = self.values[0]
-        update_guild_settings(interaction.guild_id, **{key: channel.id})
-        label, _ = CHANNEL_KEYS[key]
-        await interaction.response.edit_message(embed=build_setup_embed(interaction.guild), view=self.view)
-        await interaction.followup.send(f"Saved **{label}** as {channel.mention}.", ephemeral=True)
+        await self.view.save(interaction, key, channel.id, channel.mention)
 
 
 class SetupView(discord.ui.View):
+    """One message that rewrites itself, holding all of its state in the open.
+
+    Discord clears a select menu whenever the message is edited, so any state
+    kept only in a variable goes invisible the moment the panel updates. That
+    is what made the previous panel write a second channel over the first.
+    Here the pending setting is always mirrored into the channel menu's label
+    and into the embed, and it is cleared the instant a save lands.
+    """
+
     def __init__(self):
         super().__init__(timeout=900)
-        self.selected_key = "update_channel"
-        self.add_item(SetupTargetSelect())
-        self.add_item(SetupChannelSelect())
+        self.pending_key = None
+        self.target_select = SetupTargetSelect()
+        self.channel_select = SetupChannelSelect()
+        self.add_item(self.target_select)
+        self.add_item(self.channel_select)
+        self._sync()
+
+    def _sync(self):
+        """Make the channel menu describe exactly what it is about to set."""
+        if self.pending_key:
+            self.channel_select.placeholder = f"2. Pick the channel for {plain_label(self.pending_key)}…"
+            self.channel_select.disabled = False
+        else:
+            self.channel_select.placeholder = "2. Choose a setting above first…"
+            self.channel_select.disabled = True
+
+    async def refresh(self, interaction, notice=None):
+        self._sync()
+        await interaction.response.edit_message(
+            embed=build_setup_embed(interaction.guild, notice=notice),
+            view=self,
+        )
+
+    async def save(self, interaction, key, channel_id, mention):
+        update_guild_settings(interaction.guild_id, **{key: channel_id})
+        # Cleared before the redraw: a target that outlived its save is what
+        # let the next channel picked silently replace the previous setting.
+        self.pending_key = None
+        await self.refresh(interaction, f"Saved **{plain_label(key)}** to {mention}.")
 
     async def interaction_check(self, interaction):
         if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("Only members with **Manage Server** can use setup.", ephemeral=True)
+            await interaction.response.send_message(
+                "Only members with **Manage Server** can use setup.", ephemeral=True
+            )
             return False
         return True
 
-    async def set_current_channel(self, interaction, key):
-        if not isinstance(interaction.channel, discord.TextChannel):
-            return await interaction.response.send_message("Run setup inside a server text channel.", ephemeral=True)
+    @discord.ui.button(label="Use this channel", emoji="📍", style=discord.ButtonStyle.primary, row=2)
+    async def use_this_channel(self, interaction, button):
+        key = self.pending_key
+        if not key:
+            return await self.refresh(interaction, "Choose what to configure first.")
+        # get_channel returns guild channels only, so a thread or a DM cannot
+        # be saved as somewhere the bot will later post.
+        channel = interaction.guild.get_channel(interaction.channel_id) if interaction.guild else None
+        if channel is None:
+            return await self.refresh(interaction, "Run `/setup` in a normal server text channel to use this.")
+        await self.save(interaction, key, channel.id, channel.mention)
 
-        update_guild_settings(interaction.guild_id, **{key: interaction.channel_id})
-        await interaction.response.edit_message(embed=build_setup_embed(interaction.guild), view=self)
-
-    @discord.ui.button(label="Updates", emoji="🚀", style=discord.ButtonStyle.primary, row=2)
-    async def set_updates(self, interaction, button):
-        await self.set_current_channel(interaction, "update_channel")
-
-    @discord.ui.button(label="GitHub", emoji="🐙", style=discord.ButtonStyle.primary, row=2)
-    async def set_github(self, interaction, button):
-        await self.set_current_channel(interaction, "github_event_channel")
-
-    @discord.ui.button(label="Admin Errors", emoji="🚨", style=discord.ButtonStyle.danger, row=2)
-    async def set_errors(self, interaction, button):
-        await self.set_current_channel(interaction, "error_log_channel")
-
-    @discord.ui.button(label="Server Logs", emoji="📋", style=discord.ButtonStyle.secondary, row=3)
-    async def set_logs(self, interaction, button):
-        await self.set_current_channel(interaction, "log_channel")
-
-    @discord.ui.button(label="Welcome", emoji="👋", style=discord.ButtonStyle.secondary, row=3)
-    async def set_welcome(self, interaction, button):
-        await self.set_current_channel(interaction, "welcome_channel")
-
-    @discord.ui.button(label="Goodbye", emoji="📤", style=discord.ButtonStyle.secondary, row=3)
-    async def set_goodbye(self, interaction, button):
-        await self.set_current_channel(interaction, "goodbye_channel")
-
-    @discord.ui.button(label="Clear selected", emoji="🗑️", style=discord.ButtonStyle.secondary, row=4)
+    @discord.ui.button(label="Clear", emoji="🗑️", style=discord.ButtonStyle.secondary, row=2)
     async def clear_selected(self, interaction, button):
-        key = getattr(self, "selected_key", None)
-        if not key or key not in CHANNEL_KEYS:
-            return await interaction.response.send_message(
-                "Pick a setting from the top menu first, then press **Clear selected** to unset it.",
-                ephemeral=True,
-            )
+        key = self.pending_key
+        if not key:
+            return await self.refresh(interaction, "Choose the setting you want to clear from the menu above.")
         update_guild_settings(interaction.guild_id, **{key: None})
-        label, _ = CHANNEL_KEYS[key]
-        await interaction.response.edit_message(embed=build_setup_embed(interaction.guild), view=self)
-        await interaction.followup.send(f"Cleared **{label}**. It is now unset.", ephemeral=True)
+        self.pending_key = None
+        await self.refresh(interaction, f"Cleared **{plain_label(key)}**. It is now unset.")
 
-    @discord.ui.button(label="Mark Complete", emoji="✅", style=discord.ButtonStyle.success, row=4)
+    @discord.ui.button(label="Mark complete", emoji="✅", style=discord.ButtonStyle.success, row=2)
     async def mark_complete(self, interaction, button):
         update_guild_settings(interaction.guild_id, setup_completed=True)
-        await interaction.response.edit_message(embed=build_setup_embed(interaction.guild), view=self)
-        await interaction.followup.send(
-            "✅ Setup marked complete. Channels are optional — re-open `/setup` anytime to change them.",
-            ephemeral=True,
+        await self.refresh(
+            interaction,
+            "✅ Setup marked complete. Every channel stays optional — re-open `/setup` anytime.",
         )
 
 
