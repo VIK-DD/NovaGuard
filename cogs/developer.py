@@ -32,6 +32,43 @@ log = logging.getLogger(__name__)
 
 WATCHED_EVENT_TYPES = {"PushEvent", "PullRequestEvent", "IssuesEvent", "ReleaseEvent"}
 
+# What each pull request action implies about the state, for when the payload
+# does not carry one. "synchronize" and friends say nothing about it.
+_ACTION_STATES = {"opened": "Open", "reopened": "Open", "closed": "Closed"}
+
+
+def pull_request_state(pull_request, action):
+    """The State to display, using only what is actually known.
+
+    The events feed trims the pull request down to url, id, number, head and
+    base. Reading `state` off that and defaulting to "open" published a closed
+    pull request as `State: Open`, contradicting the title of the same embed.
+    """
+    if pull_request.get("merged"):
+        return "Merged"
+    state = pull_request.get("state")
+    if state:
+        return str(state).title()
+    return _ACTION_STATES.get(action, "Unknown")
+
+
+async def hydrate_pull_request(repo_name, pull_request):
+    """Fill in the fields the events feed leaves out.
+
+    A payload that already has a title came from somewhere complete and is
+    left alone, so this costs one API call per pull request event and none
+    otherwise. A failed fetch returns what we had: a thinner embed is fine,
+    an inconsistent one is not, and the caller no longer depends on `state`.
+    """
+    if pull_request.get("title") or not pull_request.get("number"):
+        return pull_request
+    try:
+        full = await github_api.fetch_pull_request(repo_name, pull_request["number"])
+    except Exception:
+        log.warning("Could not fetch pull request %s#%s", repo_name, pull_request.get("number"))
+        return pull_request
+    return {**pull_request, **(full or {})}
+
 
 def load_github_state():
     return load_json_file(GITHUB_STATE_FILE, {"events": {}})
@@ -501,11 +538,14 @@ async def build_watcher_embed(repo_name, event):
         )
 
     if event_type == "PullRequestEvent":
-        pull_request = payload.get("pull_request", {})
-        action = payload.get("action", "updated").replace("_", " ")
+        raw_action = payload.get("action", "updated")
+        # The feed hands over a five-key stub; everything readable comes from
+        # the fetch below.
+        pull_request = await hydrate_pull_request(repo_name, payload.get("pull_request", {}))
+        action = raw_action.replace("_", " ")
         merged = pull_request.get("merged")
         color = Palette.SUCCESS if merged else Palette.INFO
-        state = "Merged" if merged else pull_request.get("state", "open").title()
+        state = pull_request_state(pull_request, raw_action)
 
         embed = discord.Embed(
             title=f"🔀 Pull request {action} in {repo_name}",

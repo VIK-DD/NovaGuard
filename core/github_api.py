@@ -104,6 +104,15 @@ class GitHubAPI:
     async def fetch_repo_events(self, full_name, per_page=10):
         return await self.get_json(f"/repos/{full_name}/events", params={"per_page": per_page})
 
+    async def fetch_pull_request(self, full_name, number):
+        """The whole pull request, which the events feed does not include.
+
+        A PullRequestEvent carries only url, id, number, head and base — no
+        title, body or state — so anything that wants to describe the pull
+        request has to ask for it here.
+        """
+        return await self.get_json(f"/repos/{full_name}/pulls/{number}")
+
     async def fetch_repo_commits(self, full_name, per_page=8, sha=None):
         params = {"per_page": per_page}
         if sha:
