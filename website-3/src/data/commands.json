@@ -27,6 +27,15 @@
     ]
   },
   {
+    "emoji": "📡",
+    "name": "Service status",
+    "blurb": "A public status card for the bot, its API and its database, refreshed twice a day.",
+    "audience": "server-admin",
+    "commands": [
+      "/statuspanel"
+    ]
+  },
+  {
     "emoji": "🔏",
     "name": "Privacy",
     "blurb": "Private access, export and deletion controls for members and server owners.",

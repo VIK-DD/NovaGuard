@@ -30,6 +30,7 @@ COGS = (
     "setup",
     "privacy",
     "system",
+    "statuspanel",
     "developer",
     "utility",
     "fun",

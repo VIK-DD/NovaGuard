@@ -34,6 +34,7 @@ CHANNEL_KEYS = {
     "error_log_channel": ("🚨 Admin Errors", "Serious bot error digest embeds"),
     "log_channel": ("📋 Server Logs", "Deleted/edited messages, joins/leaves, bans"),
     "voice_report_channel": ("🎙️ Voice Reports", "Completed voice session attendance and duration reports"),
+    "status_channel": ("📡 Service Status", "Public status card, refreshed twice a day"),
     "welcome_channel": ("👋 Welcome", "New member welcome cards"),
     "goodbye_channel": ("📤 Goodbye", "Leave messages"),
 }
