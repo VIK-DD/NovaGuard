@@ -175,6 +175,16 @@
     ]
   },
   {
+    "emoji": "🤝",
+    "name": "Client recognition",
+    "blurb": "Gives a role to members who manage another server where NovaGuard is set up.",
+    "audience": "server-admin",
+    "commands": [
+      "/clientrole set",
+      "/clientrole off"
+    ]
+  },
+  {
     "emoji": "🎁",
     "name": "Giveaways",
     "blurb": "Button entry, a live counter and automatic winner selection.",

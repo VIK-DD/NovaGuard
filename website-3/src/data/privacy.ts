@@ -16,6 +16,12 @@ export const DATA_CATEGORIES = [
     basis: "Providing the configured service; reliable-operation and community-management interests.",
   },
   {
+    name: "Client recognition across servers",
+    data: "Whether you hold the Manage Server permission on another server NovaGuard is already on. Read live from Discord at the moment of the check and never stored.",
+    use: "Only where a server administrator has enabled it: grants a role marking you as someone who runs NovaGuard, and removes it again if that stops being true. You are told in a direct message both times. NovaGuard looks only at servers it is already a member of, and never at servers it is not on.",
+    basis: "The server administrator's legitimate interest in recognising the operators of other communities; the role is visible to that server's members, so the direct message tells you it was granted and why.",
+  },
+  {
     name: "Community feature state",
     data: "User IDs with XP and message counts, voice minutes, economy balances, warnings, reminders, ticket metadata, giveaway entries and similar feature records.",
     use: "Provide the feature a member or server administrator chose to use.",

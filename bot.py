@@ -39,6 +39,7 @@ COGS = (
     "voice",
     "voice_hours",
     "welcome",
+    "clientrole",
     "logs",
     "roles",
     "giveaways",
