@@ -1,10 +1,13 @@
 """Small shared helpers: time parsing, text shaping, link button views."""
 
+import logging
 import re
 import textwrap
 from datetime import UTC, datetime, timedelta
 
 import discord
+
+log = logging.getLogger(__name__)
 
 DURATION_PATTERN = re.compile(r"(\d+)\s*([smhdw])", re.IGNORECASE)
 UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
@@ -107,7 +110,7 @@ async def defer_interaction(interaction, *, ephemeral=False, thinking=False):
         return False
     except discord.NotFound as error:
         if getattr(error, "code", None) == 10062:
-            print("Interaction acknowledgement skipped: Discord expired the interaction token.")
+            log.warning("Interaction acknowledgement skipped: Discord expired the interaction token.")
             return False
         raise
 
@@ -128,6 +131,6 @@ async def respond(interaction, embed=None, view=None, ephemeral=False, content=N
         return resource if isinstance(resource, discord.Message) else None
     except discord.NotFound as error:
         if getattr(error, "code", None) == 10062:
-            print("Interaction response skipped: Discord expired the interaction token.")
+            log.warning("Interaction response skipped: Discord expired the interaction token.")
             return None
         raise

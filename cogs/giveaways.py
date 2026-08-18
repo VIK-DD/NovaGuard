@@ -313,7 +313,7 @@ class Giveaways(commands.Cog):
             try:
                 due = datetime.fromisoformat(entry["ends_at"]) <= now
             except (KeyError, TypeError, ValueError):
-                print(f"Giveaway entry #{entry.get('message_id')} has an invalid ends_at; skipping")
+                log.warning(f"Giveaway entry #{entry.get('message_id')} has an invalid ends_at; skipping")
                 continue
             if due:
                 await self.finish_giveaway(entry.get("message_id"))

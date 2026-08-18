@@ -24,6 +24,8 @@ from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
 from core.release_versions import current_project_release
 from core.theme import Palette, brand_footer, make_embed
 
+log = logging.getLogger(__name__)
+
 COGS = (
     "setup",
     "privacy",
@@ -155,7 +157,7 @@ class DevBot(commands.Bot):
 
         self.command_sync_task = asyncio.create_task(self.sync_commands_later())
         release = current_project_release()
-        print(
+        log.info(
             f"v{release['version']} {release['phase_label']} • "
             f"loaded {len(COGS)} cogs • command sync scheduled"
         )
@@ -172,14 +174,14 @@ class DevBot(commands.Bot):
         try:
             synced = await asyncio.wait_for(self.tree.sync(), timeout=30)
         except asyncio.TimeoutError:
-            print(f"Command sync skipped: Discord did not respond within 30s • {scope}")
+            log.warning(f"Command sync skipped: Discord did not respond within 30s • {scope}")
             return
         except discord.HTTPException as error:
-            print(f"Command sync skipped: Discord API issue ({error}) • {scope}")
+            log.warning(f"Command sync skipped: Discord API issue ({error}) • {scope}")
             return
 
         release = current_project_release()
-        print(
+        log.info(
             f"v{release['version']} {release['phase_label']} • "
             f"synced {len(synced)} slash commands • {scope}"
         )
@@ -203,7 +205,7 @@ def create_bot():
 
         original = getattr(error, "original", error)
         if isinstance(original, discord.NotFound) and getattr(original, "code", None) == 10062:
-            print("Interaction expired before the bot could respond. This is usually network/Discord latency.")
+            log.warning("Interaction expired before the bot could respond. This is usually network/Discord latency.")
             return
 
         if isinstance(error, app_commands.CommandOnCooldown):
@@ -217,7 +219,7 @@ def create_bot():
         elif isinstance(error, app_commands.CheckFailure):
             embed = make_embed("🔒 Not allowed", "You cannot use this command here.", color=Palette.DANGER)
         else:
-            print(f"Command error: {original!r}")
+            log.warning(f"Command error: {original!r}")
             current_bot = interaction.client
             # Keep a strong reference: a bare create_task can be garbage
             # collected mid-flight and the digest silently never sends.
@@ -249,7 +251,7 @@ def create_bot():
         error = sys.exc_info()[1]
         if error is None:
             return
-        print(f"Unhandled event error in {event_method}: {error!r}")
+        log.warning(f"Unhandled event error in {event_method}: {error!r}")
         await send_error_digest(bot, "Unhandled Event Error", error, context=f"Event: `{event_method}`")
 
     return bot
@@ -297,10 +299,10 @@ def main():
         except Exception as error:
             if not is_transient_startup_error(error):
                 raise
-            print(
+            log.warning(
                 f"Bot connection failed temporarily ({error!r}). "
                 f"Retrying in {RECONNECT_RETRY_SECONDS}s... attempt {attempt}"
-            )
+            , exc_info=True)
             attempt += 1
             time.sleep(RECONNECT_RETRY_SECONDS)
 
@@ -314,10 +316,10 @@ def wait_for_startup_network():
                 with socket.create_connection((host, NETWORK_CHECK_PORT), timeout=5):
                     pass
             if attempt > 1:
-                print("Startup network check passed. Connecting to Discord...")
+                log.info("Startup network check passed. Connecting to Discord...")
             return
         except OSError as error:
-            print(
+            log.warning(
                 f"Startup network check failed ({error}). "
                 f"Retrying in {NETWORK_CHECK_SECONDS}s... attempt {attempt}"
             )

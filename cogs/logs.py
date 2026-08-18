@@ -1,6 +1,7 @@
 """📋 Logs category — a clean audit trail for messages, members and moderation."""
 
 import asyncio
+import logging
 
 import discord
 from discord import app_commands
@@ -9,6 +10,8 @@ from discord.ext import commands
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
+
+log = logging.getLogger(__name__)
 
 
 LOG_SEND_TIMEOUT_SECONDS = 10
@@ -57,7 +60,7 @@ class Logs(commands.Cog):
         try:
             self._queue.put_nowait((guild.id, channel_id, embed))
         except asyncio.QueueFull:
-            print(f"Server log skipped for guild #{guild.id}: log queue is full")
+            log.warning(f"Server log skipped for guild #{guild.id}: log queue is full")
 
     async def _log_worker(self):
         await self.bot.wait_until_ready()
@@ -73,7 +76,7 @@ class Logs(commands.Cog):
                     timeout=LOG_SEND_TIMEOUT_SECONDS,
                 )
             except (discord.HTTPException, asyncio.TimeoutError) as error:
-                print(f"Server log skipped for channel #{channel_id}: {error!r}")
+                log.warning(f"Server log skipped for channel #{channel_id}: {error!r}")
             finally:
                 self._queue.task_done()
 

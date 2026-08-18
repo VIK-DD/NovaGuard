@@ -181,7 +181,7 @@ class Utility(commands.Cog):
                 try:
                     is_due = datetime.fromisoformat(item["due_at"]) <= now
                 except (KeyError, TypeError, ValueError):
-                    print(f"Reminder {item.get('id')} has an invalid due_at; dropping it")
+                    log.warning(f"Reminder {item.get('id')} has an invalid due_at; dropping it")
                     continue
                 (due if is_due else remaining).append(item)
 

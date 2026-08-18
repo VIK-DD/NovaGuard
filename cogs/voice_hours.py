@@ -187,7 +187,7 @@ class VoiceHours(commands.Cog):
         except Exception as error:
             # Losing a tick is a rounding error. Letting the exception out
             # would stop every future tick for the life of the process.
-            print(f"Voice hours tick skipped: {error!r}")
+            log.warning(f"Voice hours tick skipped: {error!r}", exc_info=True)
 
     @ledger_tick.before_loop
     async def before_ledger_tick(self):
@@ -256,7 +256,7 @@ class VoiceHours(commands.Cog):
             except discord.HTTPException as error:
                 # A send failure should not lose the month permanently, only
                 # delay it to the next hourly check.
-                print(f"Voice recap send failed for guild {guild.id}: {error!r}")
+                log.warning(f"Voice recap send failed for guild {guild.id}: {error!r}")
                 return
 
         update_guild_settings(guild.id, **{RECAP_LAST_POSTED_KEY: target_month})
@@ -270,7 +270,7 @@ class VoiceHours(commands.Cog):
             except Exception as error:
                 # One guild's bad state (missing channel, storage hiccup)
                 # must not stop every other guild's recap from being checked.
-                print(f"Voice recap check skipped for guild {guild.id}: {error!r}")
+                log.warning(f"Voice recap check skipped for guild {guild.id}: {error!r}", exc_info=True)
 
     @recap_check.before_loop
     async def before_recap_check(self):

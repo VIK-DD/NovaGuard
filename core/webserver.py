@@ -565,7 +565,7 @@ class WebServer:
 
     async def start(self):
         if not WEB_ENABLED:
-            print("Web API disabled (set WEB_ENABLED=true to serve the dashboard API).")
+            log.warning("Web API disabled (set WEB_ENABLED=true to serve the dashboard API).")
             return
         await asyncio.to_thread(init_web_tables)
         await asyncio.to_thread(db_gc)
@@ -589,13 +589,13 @@ class WebServer:
         await site.start()
         oauth_note = "OAuth ready" if self.oauth_ready else "OAuth NOT configured (login disabled)"
         crypto_note = "tokens encrypted" if _CIPHER else "tokens plaintext (install cryptography)"
-        print(
+        log.info(
             f"Web API listening on {WEB_HOST}:{WEB_PORT}{API_PREFIX} • {oauth_note} • "
             f"sessions in SQLite • {crypto_note} • after login → {AFTER_LOGIN}"
         )
         if after_login_strands_user():
             example = sorted(CORS_ORIGINS)[0]
-            print(
+            log.warning(
                 f"  WARNING: WEB_AFTER_LOGIN={AFTER_LOGIN!r} is a path, so after logging in "
                 f"the browser stays on this API instead of the dashboard. Only the first "
                 f"login is affected, which makes it look intermittent. Set the full URL, "
@@ -1648,7 +1648,7 @@ class WebServer:
                 timeout=8,
             )
         except (discord.HTTPException, asyncio.TimeoutError) as error:
-            log.warning("Dashboard voice test failed for #%s", channel.id, exc_info=True)
+            log.warning("Dashboard voice test failed for #%s", channel.id)
             raise ApiError(
                 502,
                 "Discord did not accept the voice test report in time.",
@@ -1744,7 +1744,7 @@ class WebServer:
                 publish_ticket_panel(channel, previous_message_id), timeout=10
             )
         except (discord.Forbidden, discord.HTTPException, asyncio.TimeoutError) as error:
-            log.warning("Dashboard ticket panel publish failed for #%s", channel.id, exc_info=True)
+            log.warning("Dashboard ticket panel publish failed for #%s", channel.id)
             raise ApiError(
                 502,
                 "Discord did not accept the ticket panel.",
@@ -1831,7 +1831,7 @@ class WebServer:
                 timeout=10,
             )
         except (discord.Forbidden, discord.HTTPException, asyncio.TimeoutError) as error:
-            log.warning("Dashboard role panel publish failed for #%s", channel.id, exc_info=True)
+            log.warning("Dashboard role panel publish failed for #%s", channel.id)
             raise ApiError(
                 502,
                 "Discord did not accept the role panel.",
@@ -1945,7 +1945,7 @@ class WebServer:
             TypeError,
             ValueError,
         ) as error:
-            log.warning("Dashboard giveaway publish failed for #%s", channel.id, exc_info=True)
+            log.warning("Dashboard giveaway publish failed for #%s", channel.id)
             raise ApiError(
                 502,
                 "Discord did not accept the giveaway.",

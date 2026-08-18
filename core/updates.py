@@ -9,6 +9,7 @@ import ast
 import asyncio
 import difflib
 import hashlib
+import logging
 from datetime import UTC, datetime
 
 import aiohttp
@@ -22,6 +23,8 @@ from .theme import Palette
 from .update_feed import MAX_LIMIT as UPDATE_FEED_MAX_LIMIT
 from .update_feed import merged_update_feed
 from .utils import build_link_view, parse_github_datetime
+
+log = logging.getLogger(__name__)
 
 COMMAND_DECORATORS = {"command", "hybrid_command", "context_menu"}
 STATUS_VARIABLE_NAMES = {"stream_statuses", "DEFAULT_STREAM_STATUSES"}
@@ -782,7 +785,7 @@ async def safe_send_embed(channel, embed, view=None):
         await asyncio.wait_for(channel.send(embed=embed, **kwargs), timeout=8)
         return True
     except (discord.HTTPException, aiohttp.ClientError, asyncio.TimeoutError) as error:
-        print(f"Embed send skipped due to temporary network issue: {error}")
+        log.warning(f"Embed send skipped due to temporary network issue: {error}")
         return False
 
 

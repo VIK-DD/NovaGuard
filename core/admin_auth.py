@@ -22,9 +22,12 @@ database or real time passing.
 
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import time
+
+log = logging.getLogger(__name__)
 
 KEY_PREFIX = "ng_admin_"
 KEY_BYTES = 24
@@ -232,7 +235,7 @@ def record_audit(actor_id, action, *, actor_name=None, target=None, outcome="ok"
             connection.commit()
         return True
     except Exception as error:  # pragma: no cover - defensive
-        print(f"Admin audit write failed for {action!r}: {error!r}")
+        log.warning(f"Admin audit write failed for {action!r}: {error!r}", exc_info=True)
         return False
 
 

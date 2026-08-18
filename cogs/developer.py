@@ -1,7 +1,7 @@
 """🐙 Developer category — GitHub profile cards, repo dashboards, health and the live watcher."""
 
-import logging
 import asyncio
+import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
@@ -488,7 +488,7 @@ async def build_watcher_embed(repo_name, event):
             try:
                 comparison = await github_api.fetch_compare(repo_name, base_sha, head_sha)
             except RuntimeError as error:
-                print(f"GitHub watcher compare skipped for {repo_name}: {error}")
+                log.warning(f"GitHub watcher compare skipped for {repo_name}: {error}")
                 comparison = None
             if comparison:
                 commits = comparison.get("commits", [])
@@ -506,7 +506,7 @@ async def build_watcher_embed(repo_name, event):
                     sha=payload.get("ref", "refs/heads/main").split("/")[-1],
                 ) or []
             except RuntimeError as error:
-                print(f"GitHub watcher commit fallback skipped for {repo_name}: {error}")
+                log.warning(f"GitHub watcher commit fallback skipped for {repo_name}: {error}")
                 commits = []
 
         branch_name = payload.get("ref", "refs/heads/main").split("/")[-1]
@@ -695,10 +695,10 @@ class Developer(commands.Cog):
             try:
                 events = await github_api.fetch_repo_events(repo_name, per_page=10)
             except RuntimeError as error:
-                print(f"GitHub watcher skipped {repo_name}: {error}")
+                log.warning(f"GitHub watcher skipped {repo_name}: {error}")
                 continue
             except (asyncio.TimeoutError, aiohttp.ClientError) as error:
-                print(f"GitHub watcher skipped {repo_name}: temporary network issue ({error})")
+                log.warning(f"GitHub watcher skipped {repo_name}: temporary network issue ({error})")
                 continue
 
             if not events:

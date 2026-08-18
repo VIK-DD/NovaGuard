@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import io
+import logging
 from datetime import UTC, datetime, timedelta
 
 import discord
@@ -15,6 +16,8 @@ from core.database import load_voice_store, save_voice_store
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, respond
+
+log = logging.getLogger(__name__)
 
 
 VOICE_REPORT_CHANNEL_KEY = "voice_report_channel"
@@ -510,7 +513,7 @@ class VoiceReports(commands.Cog):
         try:
             await self._persist()
         except Exception as error:
-            print(f"Voice session persist failed: {error!r}")
+            log.warning(f"Voice session persist failed: {error!r}", exc_info=True)
 
     async def _persist_pending(self):
         async with self._pending_lock:
@@ -567,7 +570,7 @@ class VoiceReports(commands.Cog):
         try:
             self._send_queue.put_nowait((guild_id, report_id))
         except asyncio.QueueFull:
-            print(f"Voice session report queued for retry later: send queue is full for #{report_id}")
+            log.warning(f"Voice session report queued for retry later: send queue is full for #{report_id}")
 
     async def _remember_sent_report(self, guild: discord.Guild, voice_channel, session: dict, ended_at: datetime, report_id: str | None = None):
         guild_history = self.report_history.setdefault(str(guild.id), [])
@@ -673,7 +676,7 @@ class VoiceReports(commands.Cog):
                 await self._remember_sent_report(guild, voice_channel, session, ended_at, report_id)
             return True
         except (discord.HTTPException, asyncio.TimeoutError) as error:
-            print(f"Voice session report skipped for #{voice_channel.id}: {error!r}")
+            log.warning(f"Voice session report skipped for #{voice_channel.id}: {error!r}")
             return False
 
     async def _send_pending_report(self, guild: discord.Guild, report_id: str) -> bool:
@@ -708,7 +711,7 @@ class VoiceReports(commands.Cog):
             )
         except Exception as error:
             await self._mark_pending_failed(guild.id, report_id, error)
-            print(f"Voice session report retry failed for #{report.get('channel_id')}: {error!r}")
+            log.warning(f"Voice session report retry failed for #{report.get('channel_id')}: {error!r}", exc_info=True)
             return False
 
         if sent:
@@ -736,7 +739,7 @@ class VoiceReports(commands.Cog):
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                print(f"Voice report retry sweep failed, will retry: {error!r}")
+                log.warning(f"Voice report retry sweep failed, will retry: {error!r}", exc_info=True)
             await asyncio.sleep(REPORT_RETRY_SECONDS)
 
     async def _send_queued_reports(self):
@@ -752,7 +755,7 @@ class VoiceReports(commands.Cog):
                 raise
             except Exception as error:
                 # The report stays in pending_reports; the retry sweep owns it now.
-                print(f"Voice report send failed for #{report_id}, left for retry: {error!r}")
+                log.warning(f"Voice report send failed for #{report_id}, left for retry: {error!r}", exc_info=True)
             finally:
                 self._send_queue.task_done()
 
@@ -1035,7 +1038,7 @@ class VoiceReports(commands.Cog):
                 timeout=8,
             )
         except (discord.HTTPException, asyncio.TimeoutError) as error:
-            print(f"Voice session test report skipped for #{report_channel.id}: {error!r}")
+            log.warning(f"Voice session test report skipped for #{report_channel.id}: {error!r}")
             failure = make_embed(
                 "Could not send the test report",
                 "Check that I can view the channel, send messages and embed links there.",

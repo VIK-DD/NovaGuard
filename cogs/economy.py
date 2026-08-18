@@ -1,6 +1,7 @@
 """💰 Economy category — coins, daily streaks, work, gambling and a trophy shop."""
 
 import asyncio
+import logging
 import random
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -17,6 +18,8 @@ from core.economy_settings import ECONOMY_DEFAULTS, resolve_economy
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import humanize_number, respond
+
+log = logging.getLogger(__name__)
 
 CURRENCY = "🪙"
 DAILY_BASE = ECONOMY_DEFAULTS["daily_base"]
@@ -116,7 +119,7 @@ class Economy(commands.Cog):
         try:
             await self.flush()
         except Exception as error:
-            print(f"Economy flush skipped due to storage issue: {error!r}")
+            log.warning(f"Economy flush skipped due to storage issue: {error!r}", exc_info=True)
 
     async def _settings_or_reject(self, interaction, feature=None):
         config = resolve_economy(get_guild_settings(interaction.guild_id))
@@ -211,7 +214,7 @@ class Economy(commands.Cog):
         try:
             await self.flush()
         except Exception as error:
-            print(f"Economy flush skipped due to storage issue: {error!r}")
+            log.warning(f"Economy flush skipped due to storage issue: {error!r}", exc_info=True)
 
     @app_commands.command(name="balance", description="Check a wallet")
     @app_commands.describe(member="Whose wallet? (defaults to you)")

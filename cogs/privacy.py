@@ -116,7 +116,7 @@ async def _record_request(kind, subject_id, *, outcome="served"):
             record_privacy_request, kind, subject_id, outcome=outcome
         )
     except Exception as error:
-        print(f"Could not record privacy request evidence ({kind}): {error}")
+        log.warning(f"Could not record privacy request evidence ({kind}): {error}", exc_info=True)
 
 
 def _live_cogs(bot):
@@ -224,7 +224,7 @@ async def reconcile_guild_deletions(bot):
         # server leaving at once. Marking them all would self-correct on the
         # next healthy connect, but scheduling the erasure of every community
         # NovaGuard has is not a state worth entering to recover from.
-        print("Skipping deletion reconciliation: NovaGuard sees no servers.")
+        log.info("Skipping deletion reconciliation: NovaGuard sees no servers.")
         return {"scheduled": [], "cancelled": []}
     stored = await asyncio.to_thread(all_guild_settings)
     pending = {
@@ -237,7 +237,7 @@ async def reconcile_guild_deletions(bot):
             continue
         row = await asyncio.to_thread(schedule_guild_deletion, guild_id)
         scheduled.append(guild_id)
-        print(
+        log.info(
             f"Server {guild_id} was removed while NovaGuard was offline;"
             f" its data is scheduled for erasure on {row['deadline']}."
         )
@@ -246,7 +246,7 @@ async def reconcile_guild_deletions(bot):
     for guild_id in sorted(pending & present):
         if await asyncio.to_thread(cancel_guild_deletion, guild_id):
             cancelled.append(guild_id)
-            print(
+            log.info(
                 f"NovaGuard is in server {guild_id} again;"
                 " its scheduled data erasure was cancelled."
             )
@@ -275,7 +275,7 @@ async def process_due_guild_deletions(bot, *, now=None):
             continue
         await asyncio.to_thread(cancel_guild_deletion, guild_id)
         erased.append(guild_id)
-        print(f"Grace window closed for server {guild_id}; its data was erased.")
+        log.info(f"Grace window closed for server {guild_id}; its data was erased.")
     return erased
 
 
@@ -559,7 +559,7 @@ class Privacy(commands.Cog):
             self._erased_on_request.discard(guild.id)
             return
         row = await asyncio.to_thread(schedule_guild_deletion, guild.id)
-        print(
+        log.info(
             f"NovaGuard was removed from server {guild.id};"
             f" its data is scheduled for erasure on {row['deadline']}."
         )
@@ -567,7 +567,7 @@ class Privacy(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
         if await asyncio.to_thread(cancel_guild_deletion, guild.id):
-            print(
+            log.info(
                 f"NovaGuard was added back to server {guild.id};"
                 " its scheduled data erasure was cancelled."
             )

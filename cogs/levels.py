@@ -1,6 +1,7 @@
 """🏆 Levels category — chat XP, level-up celebrations and the server leaderboard."""
 
 import asyncio
+import logging
 import random
 import time
 from collections import Counter
@@ -24,6 +25,8 @@ from core.levels_settings import resolve_levels
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, humanize_number, respond
+
+log = logging.getLogger(__name__)
 
 # XP amount, cooldown and announcement routing are per-guild now; their defaults
 # live in core/levels_settings.LEVELS_DEFAULTS. Keeping a second copy here is how
@@ -310,7 +313,7 @@ class Levels(commands.Cog):
         try:
             await self.flush()
         except Exception as error:
-            print(f"Levels flush skipped due to storage issue: {error!r}")
+            log.warning(f"Levels flush skipped due to storage issue: {error!r}", exc_info=True)
 
     async def scan_historical_messages(self, guild, *, after, before):
         counts = Counter()
@@ -349,7 +352,7 @@ class Levels(commands.Cog):
                 stats["channels_skipped"] += 1
             except discord.HTTPException as error:
                 stats["errors"] += 1
-                print(f"Levels backfill skipped #{channel.id} due to Discord API issue: {error!r}")
+                log.warning(f"Levels backfill skipped #{channel.id} due to Discord API issue: {error!r}")
 
         stats["elapsed_seconds"] = round(time.monotonic() - started, 2)
         return counts, stats
@@ -510,7 +513,7 @@ class Levels(commands.Cog):
         try:
             return economy.xp_multiplier(guild_id, user_id)
         except Exception as error:
-            print(f"XP multiplier lookup skipped: {error!r}")
+            log.warning(f"XP multiplier lookup skipped: {error!r}", exc_info=True)
             return 1.0
 
     def award_voice_xp(self, guild, user_id, amount) -> bool:
@@ -580,7 +583,7 @@ class Levels(commands.Cog):
             try:
                 await self.flush()
             except Exception as error:
-                print(f"Levels immediate flush skipped due to storage issue: {error!r}")
+                log.warning(f"Levels immediate flush skipped due to storage issue: {error!r}", exc_info=True)
             if config["announce"] == "off":
                 return
             position, ranked_count = rank_position(guild_data, message.author.id)

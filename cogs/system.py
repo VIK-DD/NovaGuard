@@ -395,7 +395,7 @@ class System(commands.Cog):
             now = time.perf_counter()
             if now - self.last_presence_error_log_at >= PRESENCE_ERROR_LOG_COOLDOWN_SECONDS:
                 self.last_presence_error_log_at = now
-                print(f"Streaming status update skipped due to temporary connection issue: {error}")
+                log.warning(f"Streaming status update skipped due to temporary connection issue: {error}")
             return False
 
         if advance:
@@ -421,7 +421,7 @@ class System(commands.Cog):
             now = time.perf_counter()
             if now - self.last_presence_error_log_at >= PRESENCE_ERROR_LOG_COOLDOWN_SECONDS:
                 self.last_presence_error_log_at = now
-                print(f"Maintenance status update skipped due to temporary connection issue: {error}")
+                log.warning(f"Maintenance status update skipped due to temporary connection issue: {error}")
             return False
         return True
 
@@ -456,38 +456,38 @@ class System(commands.Cog):
                 sent = await asyncio.wait_for(updates.announce_startup_updates(self.bot), timeout=25)
                 if sent:
                     if attempt == 1:
-                        print("Startup updates delivered.")
+                        log.info("Startup updates delivered.")
                     else:
-                        print(f"Startup updates delivered on retry attempt {attempt}.")
+                        log.warning(f"Startup updates delivered on retry attempt {attempt}.")
                     return
 
                 if not await asyncio.to_thread(updates.has_pending_announcement):
-                    print("Startup updates skipped: nothing pending to deliver.")
+                    log.warning("Startup updates skipped: nothing pending to deliver.")
                     return
 
                 if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
-                    print(
+                    log.warning(
                         "Startup updates pending: Discord was not ready for delivery. "
                         f"Retrying in {STARTUP_UPDATE_RETRY_DELAY_SECONDS}s... attempt {attempt}"
                     )
             except asyncio.TimeoutError:
                 if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
-                    print(
+                    log.warning(
                         "Startup updates delayed: Discord was too slow to respond. "
                         f"Retrying in {STARTUP_UPDATE_RETRY_DELAY_SECONDS}s... attempt {attempt}"
                     )
                 else:
-                    print("Startup updates still pending: Discord did not respond quickly enough.")
+                    log.warning("Startup updates still pending: Discord did not respond quickly enough.")
             except (discord.HTTPException, aiohttp.ClientError) as error:
                 if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
-                    print(
+                    log.warning(
                         "Startup updates delayed by a temporary network issue: "
                         f"{error}. Retrying in {STARTUP_UPDATE_RETRY_DELAY_SECONDS}s... attempt {attempt}"
                     )
                 else:
-                    print(f"Startup updates still pending due to temporary network issue: {error}")
+                    log.warning(f"Startup updates still pending due to temporary network issue: {error}")
             except Exception as error:
-                print(f"Startup updates skipped due to unexpected issue: {error!r}")
+                log.warning(f"Startup updates skipped due to unexpected issue: {error!r}", exc_info=True)
                 await send_error_digest(
                     self.bot,
                     "Startup Update Error",
@@ -499,7 +499,7 @@ class System(commands.Cog):
             if attempt < STARTUP_UPDATE_MAX_ATTEMPTS:
                 await asyncio.sleep(STARTUP_UPDATE_RETRY_DELAY_SECONDS)
 
-        print("Startup updates remain pending. NovaGuard will try again after the next ready/reconnect event.")
+        log.info("Startup updates remain pending. NovaGuard will try again after the next ready/reconnect event.")
 
     def schedule_startup_update_retry(self):
         if self.startup_update_task and not self.startup_update_task.done():
@@ -522,7 +522,7 @@ class System(commands.Cog):
         # they are useful to note in logs, but too noisy for admin panic alerts.
         if lag_ms >= IGNORE_HUGE_LAG_MS:
             self.high_lag_streak = 0
-            print(f"Event-loop lag spike ignored as transient: {lag_ms:.0f}ms")
+            log.info(f"Event-loop lag spike ignored as transient: {lag_ms:.0f}ms")
             return
 
         self.loop_lag_samples.append(lag_ms)
@@ -680,11 +680,11 @@ class System(commands.Cog):
         try:
             backup = await asyncio.to_thread(create_backup, "auto")
             created_at = datetime.fromisoformat(backup.get("created_at")) if backup.get("created_at") else datetime.now(UTC)
-            print(f"Automatic backup created: {backup['name']}")
+            log.info(f"Automatic backup created: {backup['name']}")
             remote = backup.get("remote") or {}
             if remote.get("configured"):
                 if remote.get("ok"):
-                    print(f"Automatic backup uploaded off-site: {backup['name']} -> {remote.get('remote_path')}")
+                    log.info(f"Automatic backup uploaded off-site: {backup['name']} -> {remote.get('remote_path')}")
                     check = remote.get("check") or {}
                     if check and not check.get("ok"):
                         await send_error_digest(
@@ -698,7 +698,7 @@ class System(commands.Cog):
                         )
                 else:
                     message = remote.get("message") or "off-site upload failed"
-                    print(f"Automatic backup off-site upload failed: {message}")
+                    log.warning(f"Automatic backup off-site upload failed: {message}")
                     await send_error_digest(
                         self.bot,
                         "Off-site Backup Error",
@@ -722,7 +722,7 @@ class System(commands.Cog):
                 )
             guild_exports = await self._upload_guild_exports(backup, created_at)
             if guild_exports.get("configured"):
-                print(
+                log.warning(
                     "Guild backup exports finished: "
                     f"{guild_exports['uploaded']} uploaded, {guild_exports['failed']} failed"
                 )
@@ -737,7 +737,7 @@ class System(commands.Cog):
                         ),
                     )
         except Exception as error:
-            print(f"Automatic backup failed: {error!r}")
+            log.warning(f"Automatic backup failed: {error!r}", exc_info=True)
             await send_error_digest(self.bot, "Automatic Backup Error", error, context="Scheduled backup failed.")
 
     @tasks.loop(seconds=60)
@@ -821,7 +821,7 @@ class System(commands.Cog):
         if not getattr(self.bot, "startup_update_announced", False):
             self.bot.startup_update_announced = True
             self.schedule_startup_update_retry()
-        print(f"{self.bot.user} is ready")
+        log.info(f"{self.bot.user} is ready")
 
     @app_commands.command(name="ping", description="Latency, uptime and gateway health at a glance")
     async def ping(self, interaction: discord.Interaction):
