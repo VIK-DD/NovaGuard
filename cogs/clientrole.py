@@ -144,6 +144,22 @@ class ClientRole(commands.Cog):
 
     # ── when it runs ──────────────────────────────────────────────────
 
+    async def recheck_everywhere(self, user_id):
+        """Re-read one person wherever this feature is switched on.
+
+        Called when something changed on another server. Waiting for the daily
+        sweep left someone who had just lost their admin rights wearing the
+        role for up to a day, which is the opposite of what the role claims.
+        """
+        for guild in list(self.bot.guilds):
+            role = configured_role(guild)
+            if role is None:
+                continue
+            member = guild.get_member(user_id)
+            if member is None or getattr(member, "bot", False):
+                continue
+            await self.reconcile(member, role)
+
     @commands.Cog.listener()
     async def on_member_join(self, member):
         if member.bot:
@@ -152,6 +168,24 @@ class ClientRole(commands.Cog):
         if role is None:
             return
         await self.reconcile(member, role)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member):
+        # They left, or were removed from, a server NovaGuard is on. That may
+        # have been the only one making them a client.
+        if getattr(member, "bot", False):
+            return
+        await self.recheck_everywhere(member.id)
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before, after):
+        # Nicknames and ordinary roles change constantly. Only a change to the
+        # permission this feature actually reads is worth a pass.
+        if getattr(after, "bot", False):
+            return
+        if before.guild_permissions.manage_guild == after.guild_permissions.manage_guild:
+            return
+        await self.recheck_everywhere(after.id)
 
     @tasks.loop(hours=SWEEP_HOURS)
     @keep_running(log, "client role sweep")

@@ -16,6 +16,7 @@ UNKNOWN, and UNKNOWN never takes a role away.
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -121,6 +122,139 @@ class ClientStatusTests(unittest.TestCase):
     def test_no_guilds_at_all_is_unknown(self):
         # A failed gateway connect leaves this list empty; it is not evidence.
         self.assertEqual(client_status([], USER, home_guild_id=HOME), UNKNOWN)
+
+
+# ── reacting the moment something changes ─────────────────────────────
+
+
+class FakeRole:
+    def __init__(self, role_id=7, position=1):
+        self.id = role_id
+        self.name = "NovaGuard Client"
+        self.position = position
+
+    def __ge__(self, other):
+        return self.position >= other.position
+
+    def __lt__(self, other):
+        return self.position < other.position
+
+    def __eq__(self, other):
+        return isinstance(other, FakeRole) and self.id == other.id
+
+    def __hash__(self):
+        return hash(self.id)
+
+
+class ReactingMember(FakeMember):
+    """A member the cog can act on, not just classify."""
+
+    def __init__(self, manage_guild, *, member_id=USER, guild=None, roles=()):
+        super().__init__(manage_guild)
+        self.id = member_id
+        self.bot = False
+        self.guild = guild
+        self.roles = list(roles)
+
+
+class ReactingGuild(FakeGuild):
+    def __init__(self, guild_id, *, members=None, chunked=True):
+        super().__init__(guild_id, members=members, chunked=chunked)
+        for member in (members or {}).values():
+            member.guild = self
+
+
+class FakeBot:
+    def __init__(self, guilds):
+        self.guilds = guilds
+
+
+class ReactionTests(unittest.IsolatedAsyncioTestCase):
+    """Losing admin elsewhere is noticed at once, not a day later.
+
+    The daily sweep alone left a revoked administrator wearing the role for up
+    to 24 hours, which is exactly what Victor saw when he kicked a tester from
+    the other server and nothing happened.
+    """
+
+    def setUp(self):
+        import cogs.clientrole as clientrole
+
+        self.clientrole = clientrole
+        self.role = FakeRole()
+        self.granted = []
+        self.revoked = []
+
+    def build(self, *, admin_elsewhere, present_elsewhere=True):
+        """A home guild holding the member, plus another guild to be read."""
+        member = ReactingMember(False, guild=None, roles=[self.role])
+        home_guild = ReactingGuild(HOME, members={USER: member})
+        others = {USER: ReactingMember(admin_elsewhere)} if present_elsewhere else {}
+        other_guild = ReactingGuild(OTHER, members=others)
+
+        cog = self.clientrole.ClientRole(FakeBot([home_guild, other_guild]))
+        cog.grant = self._record(self.granted)
+        cog.revoke = self._record(self.revoked)
+
+        patcher = mock.patch.object(
+            self.clientrole, "configured_role",
+            lambda guild: self.role if guild.id == HOME else None,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return cog, member
+
+    def _record(self, sink):
+        async def recorder(member, role):
+            sink.append(member.id)
+            return True
+        return recorder
+
+    async def test_leaving_the_other_server_revokes_here_immediately(self):
+        cog, _member = self.build(admin_elsewhere=False, present_elsewhere=False)
+
+        await cog.on_member_remove(ReactingMember(False, guild=ReactingGuild(OTHER)))
+
+        self.assertEqual(self.revoked, [USER])
+
+    async def test_losing_the_permission_without_leaving_also_revokes(self):
+        cog, _member = self.build(admin_elsewhere=False)
+        before = ReactingMember(True, guild=ReactingGuild(OTHER))
+        after = ReactingMember(False, guild=ReactingGuild(OTHER))
+
+        await cog.on_member_update(before, after)
+
+        self.assertEqual(self.revoked, [USER])
+
+    async def test_gaining_the_permission_grants_without_rejoining(self):
+        cog, _member = self.build(admin_elsewhere=True)
+        before = ReactingMember(False, guild=ReactingGuild(OTHER))
+        after = ReactingMember(True, guild=ReactingGuild(OTHER))
+
+        await cog.on_member_update(before, after)
+
+        self.assertEqual(self.granted, [USER])
+
+    async def test_an_unrelated_change_costs_nothing(self):
+        # Nicknames and ordinary roles change constantly; only a change to the
+        # permission this feature reads is worth acting on.
+        cog, _member = self.build(admin_elsewhere=True)
+        same = ReactingMember(True, guild=ReactingGuild(OTHER))
+
+        await cog.on_member_update(same, ReactingMember(True, guild=ReactingGuild(OTHER)))
+
+        self.assertEqual(self.granted, [])
+        self.assertEqual(self.revoked, [])
+
+    async def test_a_guild_without_the_role_configured_is_left_alone(self):
+        cog, _member = self.build(admin_elsewhere=False, present_elsewhere=False)
+        patcher = mock.patch.object(self.clientrole, "configured_role", lambda guild: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        await cog.on_member_remove(ReactingMember(False, guild=ReactingGuild(OTHER)))
+
+        self.assertEqual(self.revoked, [])
 
 
 if __name__ == "__main__":
