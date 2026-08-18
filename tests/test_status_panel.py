@@ -118,6 +118,17 @@ class EmbedTests(unittest.TestCase):
         parts += [f.name + " " + f.value for f in embed.fields]
         return "\n".join(parts)
 
+    def test_every_row_stacks_instead_of_sitting_three_to_a_line(self):
+        # Discord packs inline fields side by side on desktop, which squeezes
+        # each row into a narrow column and wraps its detail. Mobile stacks
+        # them anyway, so inline only ever made the desktop view worse.
+        embed = build_status_embed(snapshot())
+
+        self.assertTrue(
+            all(not field.inline for field in embed.fields),
+            "a field is still inline: " + ", ".join(f.name for f in embed.fields if f.inline),
+        )
+
     def test_every_component_is_named_on_the_card(self):
         text = self.body(snapshot())
 

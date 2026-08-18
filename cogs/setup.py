@@ -97,9 +97,11 @@ def build_setup_embed(guild, notice=None):
         )
 
     # The panel is one message that rewrites itself, so the result of the last
-    # action belongs at the top of it rather than in a separate reply.
+    # action belongs at the top of it. A blockquote is what makes it read as an
+    # answer: prepended as plain text it just grew the paragraph below, and
+    # people could not tell whether anything had been saved.
     if notice:
-        status = f"{notice}\n\n{status}"
+        status = f"> {notice}\n\n{status}"
 
     embed = make_embed(title, status, color=color)
     embed.add_field(
@@ -595,7 +597,7 @@ class SetupTargetSelect(discord.ui.Select):
         self.view.pending_key = key
         await self.view.refresh(
             interaction,
-            f"Now pick a channel for **{plain_label(key)}** in the menu below.",
+            f"📝 Now choose the channel for **{plain_label(key)}** in the menu below.",
         )
 
 
@@ -616,7 +618,7 @@ class SetupChannelSelect(discord.ui.ChannelSelect):
             # The old panel defaulted to update_channel here and wrote there
             # without telling anyone. Refusing is the only honest answer.
             return await self.view.refresh(
-                interaction, "Choose what to configure first, then pick its channel."
+                interaction, "⚠️ Nothing saved — choose what to configure first, then pick its channel."
             )
         channel = self.values[0]
         await self.view.save(interaction, key, channel.id, channel.mention)
@@ -662,7 +664,7 @@ class SetupView(discord.ui.View):
         # Cleared before the redraw: a target that outlived its save is what
         # let the next channel picked silently replace the previous setting.
         self.pending_key = None
-        await self.refresh(interaction, f"Saved **{plain_label(key)}** to {mention}.")
+        await self.refresh(interaction, f"✅ Saved **{plain_label(key)}** to {mention}.")
 
     async def interaction_check(self, interaction):
         if not interaction.user.guild_permissions.manage_guild:
@@ -676,29 +678,29 @@ class SetupView(discord.ui.View):
     async def use_this_channel(self, interaction, button):
         key = self.pending_key
         if not key:
-            return await self.refresh(interaction, "Choose what to configure first.")
+            return await self.refresh(interaction, "⚠️ Nothing saved — choose what to configure first.")
         # get_channel returns guild channels only, so a thread or a DM cannot
         # be saved as somewhere the bot will later post.
         channel = interaction.guild.get_channel(interaction.channel_id) if interaction.guild else None
         if channel is None:
-            return await self.refresh(interaction, "Run `/setup` in a normal server text channel to use this.")
+            return await self.refresh(interaction, "⚠️ Nothing saved — run `/setup` in a normal server text channel.")
         await self.save(interaction, key, channel.id, channel.mention)
 
     @discord.ui.button(label="Clear", emoji="🗑️", style=discord.ButtonStyle.secondary, row=2)
     async def clear_selected(self, interaction, button):
         key = self.pending_key
         if not key:
-            return await self.refresh(interaction, "Choose the setting you want to clear from the menu above.")
+            return await self.refresh(interaction, "⚠️ Nothing cleared — choose the setting from the menu above first.")
         update_guild_settings(interaction.guild_id, **{key: None})
         self.pending_key = None
-        await self.refresh(interaction, f"Cleared **{plain_label(key)}**. It is now unset.")
+        await self.refresh(interaction, f"🗑️ Cleared **{plain_label(key)}** — it is now unset.")
 
     @discord.ui.button(label="Mark complete", emoji="✅", style=discord.ButtonStyle.success, row=2)
     async def mark_complete(self, interaction, button):
         update_guild_settings(interaction.guild_id, setup_completed=True)
         await self.refresh(
             interaction,
-            "✅ Setup marked complete. Every channel stays optional — re-open `/setup` anytime.",
+            "✅ Setup marked complete — every channel stays optional, and `/setup` reopens anytime.",
         )
 
 

@@ -169,21 +169,23 @@ def build_status_embed(snapshot, *, now=None):
         # A detail that only repeats the label is noise.
         if detail.lower() == label.lower():
             detail = ""
+        # Stacked, not inline: Discord packs inline fields three to a row on
+        # desktop, squeezing each into a column too narrow for its detail line.
         embed.add_field(
             name=component["name"],
-            value=f"{mark} **{label}**" + (f"\n{detail}" if detail else ""),
-            inline=True,
+            value=f"{mark} **{label}**" + (f"\n{detail}" if detail else "") + "\n\u200b",
+            inline=False,
         )
 
     embed.add_field(
         name="Uptime",
         value=format_timedelta(timedelta(seconds=snapshot["uptime_seconds"])),
-        inline=True,
+        inline=False,
     )
     embed.add_field(
         name="Next refresh",
         value=f"{next_slot_label(now or snapshot['generated_at'])} {status_timezone_name()}",
-        inline=True,
+        inline=False,
     )
 
     embed.timestamp = snapshot["generated_at"]

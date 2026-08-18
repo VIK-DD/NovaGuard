@@ -203,6 +203,53 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(interaction.response.messages, [], f"step {index} sent a message")
             self.assertEqual(interaction.followup.sent, [], f"step {index} sent a followup")
 
+    # --- the panel says what it just did ---------------------------------
+
+    def notice_of(self, interaction):
+        """The confirmation line the panel put in front of the reader."""
+        embed = interaction.response.edits[-1]["embed"]
+        first = (embed.description or "").split("\n\n")[0]
+        return first if first.startswith(">") else ""
+
+    async def test_saving_a_channel_confirms_what_was_saved_and_where(self):
+        await self.choose_target("welcome_channel")
+        interaction = await self.choose_channel(self.general)
+
+        notice = self.notice_of(interaction)
+        self.assertIn("Welcome", notice)
+        self.assertIn("#general", notice)
+        self.assertIn("✅", notice)
+
+    async def test_choosing_a_target_says_what_comes_next(self):
+        interaction = await self.choose_target("log_channel")
+
+        self.assertIn("Server Logs", self.notice_of(interaction))
+
+    async def test_a_refused_action_explains_itself_rather_than_going_quiet(self):
+        interaction = await self.choose_channel(self.general)  # no target chosen
+
+        notice = self.notice_of(interaction)
+        self.assertIn("⚠️", notice)
+        self.assertTrue(notice, "the panel refused silently")
+
+    async def test_clearing_confirms_the_setting_is_now_unset(self):
+        await self.choose_target("welcome_channel")
+        await self.choose_channel(self.general)
+        await self.choose_target("welcome_channel")
+
+        button = find_button(self.view, "Clear")
+        interaction = self.interaction()
+        await button.callback(interaction)
+
+        self.assertIn("Welcome", self.notice_of(interaction))
+
+    async def test_marking_complete_confirms_it(self):
+        button = find_button(self.view, "Mark complete")
+        interaction = self.interaction()
+        await button.callback(interaction)
+
+        self.assertIn("✅", self.notice_of(interaction))
+
     # --- clearing --------------------------------------------------------
 
     async def test_clear_without_a_target_changes_nothing(self):
