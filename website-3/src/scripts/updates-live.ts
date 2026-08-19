@@ -34,6 +34,31 @@ function mergeFeed(baked: Release[], live: unknown): Release[] {
   return extra.length ? [...baked, ...(extra as Release[])] : baked;
 }
 
+/** Give a runtime-built node the same CSS scope the server-rendered ones have.
+ *
+ * Astro scopes a component's styles with a `data-astro-cid-*` attribute
+ * stamped onto the elements it renders, and the compiled rule wants it on
+ * both sides of the selector:
+ *
+ *   details[data-astro-cid-rp3sgb2s][open] .chevron[data-astro-cid-rp3sgb2s]
+ *
+ * Nothing created here at runtime is given that attribute, so every scoped
+ * rule quietly skipped the newest card: the chevron never turned, the panel
+ * never animated open, the rows never rose. Only the chevron was visible
+ * enough for anyone to report.
+ *
+ * The attribute is read off the accordion the page already rendered rather
+ * than written down, because its hash changes whenever the component's styles
+ * are edited — a copied constant would be correct exactly until someone
+ * touched the CSS, then fail the same silent way.
+ */
+export function applyStyleScope(root: Element, node: Element): void {
+  const scope = root.getAttributeNames().find((name) => name.startsWith("data-astro-cid-"));
+  if (!scope) return;
+  node.setAttribute(scope, "");
+  for (const child of node.querySelectorAll("*")) child.setAttribute(scope, "");
+}
+
 function el(tag: string, className: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
   node.className = className;
@@ -273,7 +298,9 @@ async function run() {
     );
     if (!card) {
       // A version that did not exist at build time at all.
-      root.prepend(versionCard(group));
+      const fresh_card = versionCard(group);
+      applyStyleScope(root, fresh_card);
+      root.prepend(fresh_card);
       added += group.updateCount;
       continue;
     }
@@ -281,7 +308,12 @@ async function run() {
     const list = card.querySelector("ol");
     if (!list) continue;
     for (const update of [...fresh].reverse()) {
-      list.prepend(updateRow(update));
+      const row = updateRow(update);
+      // Rows added to a card the server rendered need the scope just as much:
+      // the stagger animation is scoped too, so an unstamped row would sit
+      // still while the ones around it moved.
+      applyStyleScope(root, row);
+      list.prepend(row);
       added += 1;
     }
     updateCardMeta(card, group);

@@ -2,7 +2,77 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ReleaseGroup } from "../data/releases";
-import { syncCurrentVersion, versionCard } from "./updates-live";
+import { applyStyleScope, syncCurrentVersion, versionCard } from "./updates-live";
+
+describe("style scope on cards built at runtime", () => {
+  // Astro scopes a component's CSS with a data-astro-cid-* attribute stamped
+  // onto the elements it renders, and the built rule needs it on BOTH sides:
+  //   details[data-astro-cid-rp3sgb2s][open] .chevron[data-astro-cid-rp3sgb2s]
+  // Nothing built here at runtime receives it, so every scoped rule skipped
+  // the newest card — the chevron never turned, the panel never animated, the
+  // rows never rose. Only the chevron was obvious enough to notice.
+
+  function accordion(): HTMLElement {
+    const root = document.createElement("div");
+    root.className = "release-accordion";
+    root.setAttribute("data-astro-cid-rp3sgb2s", "");
+    return root;
+  }
+
+  function group(version: string) {
+    return {
+      version,
+      phase: "open-beta",
+      phaseLabel: "Open Beta",
+      updates: [],
+      updateCount: 0,
+      significantCount: 0,
+      startedAt: null,
+      releasedAt: null,
+      current: true,
+    } as ReleaseGroup;
+  }
+
+  it("stamps the scope onto the card and everything inside it", () => {
+    const card = versionCard(group("2.6"));
+
+    applyStyleScope(accordion(), card);
+
+    const missing = [card, ...card.querySelectorAll("*")].filter(
+      (node) => !node.hasAttribute("data-astro-cid-rp3sgb2s"),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("reaches the chevron, which is the part people see", () => {
+    const card = versionCard(group("2.6"));
+
+    applyStyleScope(accordion(), card);
+
+    const chevron = card.querySelector(".chevron");
+    expect(chevron?.hasAttribute("data-astro-cid-rp3sgb2s")).toBe(true);
+  });
+
+  it("does nothing when the page carries no scope attribute", () => {
+    // Astro drops the attribute when a component's styles are all global.
+    // Inventing one would be worse than leaving the card unstamped.
+    const root = document.createElement("div");
+    const card = versionCard(group("2.6"));
+
+    expect(() => applyStyleScope(root, card)).not.toThrow();
+    expect(card.getAttributeNames().filter((n) => n.startsWith("data-astro-cid-"))).toEqual([]);
+  });
+
+  it("ignores data attributes that are not Astro's scope", () => {
+    const root = document.createElement("div");
+    root.setAttribute("data-release-live", "");
+    const card = versionCard(group("2.6"));
+
+    applyStyleScope(root, card);
+
+    expect(card.hasAttribute("data-release-live")).toBe(false);
+  });
+});
 
 describe("the live feed request", () => {
   const source = readFileSync(
