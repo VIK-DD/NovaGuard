@@ -94,7 +94,7 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertEqual(report["sqlite"], "ok")
         self.assertIn("data/settings.json", report["json_files"])
-        self.assertTrue((backups.RESTORE_CHECK_DIR / "data" / "novaguard.sqlite3").exists())
+        self.assertTrue(report["extracted_files"])
 
     def test_inspect_backup_reports_invalid_json(self):
         backup_path = self.write_backup(bad_json=True)
@@ -112,8 +112,20 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertTrue(report["encrypted"])
         self.assertEqual(report["sqlite"], "ok")
-        self.assertTrue((backups.RESTORE_CHECK_DIR / "data" / "novaguard.sqlite3").exists())
-        self.assertEqual((backups.RESTORE_CHECK_DIR / "data" / "novaguard.sqlite3").stat().st_mode & 0o777, 0o600)
+        self.assertTrue(report["extracted_files"])
+
+    def test_a_passing_restore_test_leaves_no_decrypted_copy_behind(self):
+        # The archives are encrypted so that a stolen copy is worthless. An
+        # extraction left on the same disk hands over exactly what the
+        # encryption was protecting — and the check only needs the extraction
+        # to have succeeded, not to survive it.
+        backup_path = self.write_encrypted_backup()
+
+        report = backups.inspect_backup(backup_path, extract=True)
+
+        self.assertTrue(report["ok"])
+        self.assertFalse(backups.RESTORE_CHECK_DIR.exists())
+        self.assertIsNone(report["extract_path"])
 
     def test_wrong_backup_key_fails_integrity_without_plaintext_output(self):
         backup_path = self.write_encrypted_backup()

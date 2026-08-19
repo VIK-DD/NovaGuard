@@ -638,6 +638,7 @@ def inspect_backup(backup_path, *, extract=False):
         "json_files": [],
         "sqlite": None,
         "extract_path": None,
+        "extracted_files": 0,
         "warnings": [],
         "errors": [],
         "encrypted": is_encrypted_file(backup_path),
@@ -686,11 +687,21 @@ def inspect_backup(backup_path, *, extract=False):
     if not report["encrypted"]:
         report["warnings"].append("Legacy plaintext archive; rotate it out after migration.")
     if extract and not report["errors"]:
+        # What this proves is that the archive *can* be unpacked. Keeping the
+        # result is not part of that proof, and an extraction is plaintext:
+        # leaving it on the same disk as the archives hands over precisely
+        # what encrypting them was protecting. So it is counted and removed.
+        # An explicit restore is a different act and keeps its output — see
+        # tools/restore_backup.py, which calls extract_backup directly.
         try:
             extract_backup(backup_path, RESTORE_CHECK_DIR, replace=True)
-            report["extract_path"] = str(RESTORE_CHECK_DIR)
+            report["extracted_files"] = sum(
+                1 for path in RESTORE_CHECK_DIR.rglob("*") if path.is_file()
+            )
         except (OSError, SecureFileError, sqlite3.Error, ValueError) as error:
             report["errors"].append(str(error))
+        finally:
+            shutil.rmtree(RESTORE_CHECK_DIR, ignore_errors=True)
 
     report["ok"] = not report["errors"]
     return report

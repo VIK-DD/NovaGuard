@@ -504,12 +504,18 @@ def backup_test_embed(latest, report):
         f"Checked `{latest['name']}` without touching live data.",
         color=color,
     )
+    extracted = report.get("extracted_files") or 0
     embed.add_field(
         name="Result",
         value=(
             f"{backup_integrity_line(report)}\n"
             f"SQLite: `{report.get('sqlite') or 'not included'}`\n"
-            f"Extracted to: `{report.get('extract_path') or 'not extracted'}`"
+            + (
+                f"Unpacked `{extracted}` file(s), then removed them — "
+                "nothing decrypted is left on disk."
+                if extracted
+                else "Not extracted."
+            )
         ),
         inline=False,
     )
