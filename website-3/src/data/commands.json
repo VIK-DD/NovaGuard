@@ -271,31 +271,5 @@
     "commands": [
       "/ask"
     ]
-  },
-  {
-    "emoji": "🔐",
-    "name": "Owner operations",
-    "blurb": "Sensitive host-wide actions protected by owner checks and, where required, the admin key.",
-    "audience": "owner",
-    "commands": [
-      "/config backup",
-      "/backup create",
-      "/backup status",
-      "/backup remote",
-      "/backup list",
-      "/backup inspect",
-      "/backup test",
-      "/backup restore",
-      "/levels backfill run",
-      "/maintenance",
-      "/resync",
-      "/grant",
-      "/admin unlock",
-      "/admin lock",
-      "/admin status",
-      "/admin audit",
-      "/guilds",
-      "/leaveguild"
-    ]
   }
 ]

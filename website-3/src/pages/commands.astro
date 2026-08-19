@@ -7,7 +7,6 @@ import { commandCategories, commandCount } from "../data/commands";
 const audienceLabels = {
   everyone: "Everyone",
   "server-admin": "Server managers",
-  owner: "Bot owner",
 };
 ---
 
@@ -20,8 +19,8 @@ const audienceLabels = {
     <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">Command catalog</p>
     <h1 class="font-display mt-4 max-w-2xl text-3xl leading-tight sm:text-5xl">Every command, one page.</h1>
     <p class="mt-4 max-w-2xl text-ink-muted">
-      {commandCount} supported slash commands, including server-management and owner-only tools.
-      Access labels show who can use each group.
+      {commandCount} slash commands anyone running NovaGuard can use. Access labels show who can
+      use each group. Host-only maintenance commands are not listed here.
     </p>
     <p class="mt-3 text-ink-muted">
       Tip: <code class="rounded-md border border-line bg-card px-1.5 py-0.5 text-sm">/help</code>

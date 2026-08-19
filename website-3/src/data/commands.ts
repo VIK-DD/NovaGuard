@@ -1,6 +1,9 @@
 import catalog from "./commands.json";
 
-export type CommandAudience = "everyone" | "server-admin" | "owner";
+// Host-only commands are not published at all — see core/command_visibility.py
+// for the list and the reasoning. Leaving "owner" out of this union is what
+// makes TypeScript object if one is ever added back to the catalog by mistake.
+export type CommandAudience = "everyone" | "server-admin";
 
 export interface CommandCategory {
   emoji: string;
