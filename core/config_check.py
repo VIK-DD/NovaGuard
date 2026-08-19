@@ -212,7 +212,43 @@ def check_config(env=None, *, file_exists=None):
                 )
             )
 
+    findings.extend(_github_findings(env))
     return findings
+
+
+def _github_findings(env):
+    """The GitHub watcher is the quietest thing here.
+
+    With no repositories named it returns immediately and logs nothing, so a
+    missing setting looks exactly like a repository with no activity: the feed
+    channel simply stays empty, and nobody can tell whether that is a
+    configuration mistake or a quiet week.
+
+    Unauthenticated polling is worth naming too. GitHub allows 60 requests an
+    hour per IP, which the watcher can exhaust on its own, and the events it
+    misses while throttled are never re-delivered.
+    """
+    repos = _value(env, "GITHUB_WATCH_REPOS") or _value(env, "GITHUB_PRIMARY_REPO")
+    if not repos:
+        return [
+            Finding(
+                WARN,
+                "GITHUB_WATCH_REPOS",
+                "not set - the GitHub feed will stay empty. Name a repository as owner/name.",
+            )
+        ]
+
+    if not _value(env, "GITHUB_TOKEN"):
+        return [
+            Finding(
+                WARN,
+                "GITHUB_TOKEN",
+                "not set - polling is limited to 60 requests an hour per IP, "
+                "and events missed while throttled are never re-sent.",
+            )
+        ]
+
+    return [Finding(OK, "GITHUB_WATCH_REPOS", "repository activity feed configured.")]
 
 
 def problems(findings):

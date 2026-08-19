@@ -223,6 +223,14 @@ export function syncCurrentVersion(root: HTMLElement, version: string | undefine
 async function fetchLiveUpdates(): Promise<unknown> {
   const response = await fetch("/api/updates-feed", {
     headers: { Accept: "application/json" },
+    // The one request on the site that must never be answered from the
+    // browser's own cache: its entire job is to be newer than the page it is
+    // patching. A Cloudflare Browser Cache TTL of four hours was rewriting
+    // the worker's five-minute header on the way out, so a reader who had
+    // opened /updates once kept seeing that first copy however often they
+    // refreshed — the static list moved on at the next deploy while the live
+    // tail did not. The edge cache still shields the bot from the traffic.
+    cache: "no-store",
     signal:
       typeof AbortSignal.timeout === "function"
         ? AbortSignal.timeout(FETCH_TIMEOUT_MS)

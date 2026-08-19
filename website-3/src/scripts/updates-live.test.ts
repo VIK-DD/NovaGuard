@@ -1,6 +1,28 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ReleaseGroup } from "../data/releases";
 import { syncCurrentVersion, versionCard } from "./updates-live";
+
+describe("the live feed request", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "src/scripts/updates-live.ts"),
+    "utf8",
+  );
+
+  it("never lets the browser answer it from cache", () => {
+    // This request exists to be newer than the page it patches. A Cloudflare
+    // Browser Cache TTL of four hours was rewriting the worker's five-minute
+    // header on the way out, and a reader who had opened /updates once kept
+    // being served that first copy no matter how often they refreshed. The
+    // edge cache still absorbs the traffic, so this costs the bot nothing.
+    expect(source).toContain('cache: "no-store"');
+  });
+
+  it("makes exactly one request, so the guard cannot be sidestepped", () => {
+    expect(source.match(/\bfetch\(/g)).toHaveLength(1);
+  });
+});
 
 function group(version: string, current: boolean): ReleaseGroup {
   return {

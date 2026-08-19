@@ -473,9 +473,13 @@ def summarize_changes(old_files, new_files, has_history=False):
             other_changed_files.append(file_name)
 
     if other_changed_files:
-        summary.append(
-            "Refreshed docs and examples: " + ", ".join(f"`{name}`" for name in other_changed_files[:6])
-        )
+        # Named by area, not listed by path. This branch used to print the
+        # paths, which was survivable when the only non-Python files watched
+        # were SETUP.md and .env.example — and became nonsense the moment the
+        # website joined, announcing "Refreshed docs and examples:
+        # `website-3/astro.config.mjs`, ..." to everyone reading the changelog.
+        # It also meant SETUP.md never got the friendly name it already had.
+        summary.append("Refreshed " + humanize_areas(other_changed_files))
     if internal_changed_files and (not summary or not (added_commands or removed_commands or changed_commands)):
         summary.append(
             "Behind-the-scenes improvements to " + humanize_areas(internal_changed_files)

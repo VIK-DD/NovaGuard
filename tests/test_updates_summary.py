@@ -84,6 +84,44 @@ class WordingTests(unittest.TestCase):
         self.assertIn("voice session reports", bullet)
         self.assertNotIn(".py", bullet)
 
+    # --- the website is not "docs and examples" --------------------------
+
+    def test_a_website_change_is_described_by_area_not_by_path(self):
+        # This branch was written when the only non-Python files watched were
+        # .env.example and SETUP.md. Once 71 website files started flowing
+        # through it, every site change was published as "Refreshed docs and
+        # examples:" followed by raw paths — exactly the thing humanize_areas
+        # exists to prevent. Seen live in build 64.
+        old = {"website-3/src/components/Footer.astro": "a"}
+        new = {"website-3/src/components/Footer.astro": "b"}
+
+        summary, _, _ = summarize_changes(old, new)
+        text = " ".join(summary)
+
+        self.assertNotIn("docs and examples", text)
+        self.assertNotIn("website-3/", text)
+        self.assertNotIn(".astro", text)
+        self.assertIn("the website layout", text)
+
+    def test_the_real_setup_guides_are_still_called_that(self):
+        # SETUP.md and .env.example are genuinely docs and examples; widening
+        # the branch must not cost them their name.
+        old = {"SETUP.md": "a"}
+        new = {"SETUP.md": "b"}
+
+        summary, _, _ = summarize_changes(old, new)
+
+        self.assertIn("the setup guides", " ".join(summary))
+
+    def test_bot_and_website_changes_are_reported_together(self):
+        old = {"cogs/voice.py": "a", "website-3/src/pages/status.astro": "x"}
+        new = {"cogs/voice.py": "b", "website-3/src/pages/status.astro": "y"}
+
+        text = " ".join(summarize_changes(old, new)[0])
+
+        self.assertIn("voice session reports", text)
+        self.assertIn("the public status page", text)
+
 
 if __name__ == "__main__":
     unittest.main()

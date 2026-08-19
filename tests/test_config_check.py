@@ -21,6 +21,8 @@ HEALTHY = {
     "GUILD_ID": "123",
     "BACKUP_REMOTE_DEST": "gdrive:NovaGuard",
     "BACKUP_ENCRYPTION_KEY": "a-long-random-backup-key-with-more-than-32-chars",
+    "GITHUB_WATCH_REPOS": "owner/repo",
+    "GITHUB_TOKEN": "a-github-token",
 }
 
 
@@ -41,7 +43,12 @@ class HealthyConfigTests(unittest.TestCase):
     def test_a_healthy_config_still_confirms_the_important_settings(self):
         self.assertEqual(
             names(findings_for(), OK),
-            {"TOKEN", "BACKUP_REMOTE_DEST", "BACKUP_ENCRYPTION_KEY"},
+            {
+                "TOKEN",
+                "BACKUP_REMOTE_DEST",
+                "BACKUP_ENCRYPTION_KEY",
+                "GITHUB_WATCH_REPOS",
+            },
         )
 
 
@@ -135,6 +142,56 @@ class WebServerTests(unittest.TestCase):
                     }
                 )
                 self.assertIn("WEB_CORS_ORIGIN", names(found, CRITICAL))
+
+
+class GitHubTests(unittest.TestCase):
+    """A feed that stays empty is indistinguishable from a quiet repository.
+
+    The watcher returns immediately when no repository is named and logs
+    nothing at all, so the only symptom is a channel where commits never
+    appear — which looks exactly like nobody having pushed.
+    """
+
+    def names(self, findings):
+        return {finding.name for finding in findings}
+
+    def test_no_repository_named_is_reported_rather_than_silent(self):
+        findings = problems(findings_for({"GITHUB_WATCH_REPOS": "", "GITHUB_PRIMARY_REPO": ""}))
+
+        self.assertIn("GITHUB_WATCH_REPOS", self.names(findings))
+
+    def test_a_primary_repository_alone_is_enough(self):
+        # config.py falls back to the primary repo when the watch list is
+        # empty, so warning here would be wrong.
+        findings = problems(
+            findings_for({"GITHUB_WATCH_REPOS": "", "GITHUB_PRIMARY_REPO": "owner/repo"})
+        )
+
+        self.assertNotIn("GITHUB_WATCH_REPOS", self.names(findings))
+
+    def test_polling_without_a_token_is_worth_saying_out_loud(self):
+        # 60 requests an hour per IP, and the events dropped while throttled
+        # are never re-delivered.
+        findings = problems(findings_for({"GITHUB_TOKEN": ""}))
+
+        self.assertIn("GITHUB_TOKEN", self.names(findings))
+
+    def test_a_configured_watcher_reports_ok_and_nothing_else(self):
+        findings = findings_for()
+
+        self.assertNotIn("GITHUB_WATCH_REPOS", self.names(problems(findings)))
+        self.assertNotIn("GITHUB_TOKEN", self.names(problems(findings)))
+        self.assertIn(
+            "GITHUB_WATCH_REPOS",
+            {f.name for f in findings if f.level == OK},
+        )
+
+    def test_the_repository_name_is_never_printed(self):
+        # Same rule as every other check here: names, never values.
+        text = format_report(findings_for({"GITHUB_WATCH_REPOS": "secret-org/private-repo"}))
+
+        self.assertNotIn("secret-org", text)
+        self.assertNotIn("private-repo", text)
 
 
 class ReportTests(unittest.TestCase):
