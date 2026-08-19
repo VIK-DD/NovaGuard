@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 COGS = (
     "setup",
+    "infopanel",
     "privacy",
     "system",
     "statuspanel",

@@ -665,12 +665,35 @@ class SetupView(discord.ui.View):
             view=self,
         )
 
+    async def confirm(self, interaction, title, description):
+        """Say what just happened, in a message of its own.
+
+        The panel carries the same line already, quoted at the top. It was
+        being missed: the embed below it is long, and a single quoted line
+        loses to four blocks of settings. This lands under the panel, where
+        the reader is already looking after clicking.
+
+        Deliberately not a second panel — no view, nothing interactive. That
+        is what made the original version unusable, with the real panel
+        scrolling away behind its own confirmations.
+        """
+        embed = make_embed(title, description, color=Palette.SUCCESS)
+        brand_footer(embed, "Server setup")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     async def save(self, interaction, key, channel_id, mention):
         update_guild_settings(interaction.guild_id, **{key: channel_id})
         # Cleared before the redraw: a target that outlived its save is what
         # let the next channel picked silently replace the previous setting.
         self.pending_key = None
-        await self.refresh(interaction, f"✅ Saved **{plain_label(key)}** to {mention}.")
+        label = plain_label(key)
+        await self.refresh(interaction, f"✅ Saved **{label}** to {mention}.")
+        await self.confirm(
+            interaction,
+            "✅ Saved",
+            f"**{label}** now points at {mention}.\n\nPick another setting above, "
+            "or press **Mark complete** when you are done.",
+        )
 
     async def interaction_check(self, interaction):
         if not interaction.user.guild_permissions.manage_guild:
@@ -699,7 +722,14 @@ class SetupView(discord.ui.View):
             return await self.refresh(interaction, "⚠️ Nothing cleared — choose the setting from the menu above first.")
         update_guild_settings(interaction.guild_id, **{key: None})
         self.pending_key = None
-        await self.refresh(interaction, f"🗑️ Cleared **{plain_label(key)}** — it is now unset.")
+        label = plain_label(key)
+        await self.refresh(interaction, f"🗑️ Cleared **{label}** — it is now unset.")
+        await self.confirm(
+            interaction,
+            "🗑️ Cleared",
+            f"**{label}** is unset. NovaGuard will not post there until you choose "
+            "a channel for it again.",
+        )
 
     @discord.ui.button(label="Mark complete", emoji="✅", style=discord.ButtonStyle.success, row=2)
     async def mark_complete(self, interaction, button):
@@ -707,6 +737,12 @@ class SetupView(discord.ui.View):
         await self.refresh(
             interaction,
             "✅ Setup marked complete — every channel stays optional, and `/setup` reopens anytime.",
+        )
+        await self.confirm(
+            interaction,
+            "✅ Setup complete",
+            "NovaGuard is ready. Nothing is locked in — run `/setup` again whenever "
+            "you want to change a channel.",
         )
 
 
@@ -905,18 +941,11 @@ class Setup(commands.Cog):
         brand_footer(embed, "Config reset")
         await respond(interaction, embed, ephemeral=True)
 
-    @commands.Cog.listener()
-    async def on_guild_join(self, guild):
-        for channel in guild.text_channels:
-            perms = channel.permissions_for(guild.me)
-            if not (perms.send_messages and perms.embed_links):
-                continue
-
-            try:
-                await channel.send(embed=build_setup_embed(guild), view=SetupView())
-            except discord.HTTPException:
-                continue
-            break
+    # Arrival is handled by cogs/infopanel.py now. This panel used to be posted
+    # publicly on join, which showed every member a control surface that
+    # refuses them the moment they touch it. The introduction card goes out
+    # instead, and its "Open setup" button opens this one privately for anyone
+    # holding Manage Server.
 
 
 async def setup(bot):

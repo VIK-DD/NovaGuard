@@ -60,7 +60,7 @@ class FakeFollowup:
         self.sent = []
 
     async def send(self, content=None, **kwargs):
-        self.sent.append(content)
+        self.sent.append({"content": content, **kwargs})
 
 
 class FakeInteraction:
@@ -190,7 +190,10 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
 
     # --- one panel, not a pile of messages -------------------------------
 
-    async def test_every_step_edits_the_one_panel_instead_of_sending_messages(self):
+    async def test_every_step_edits_the_one_panel_instead_of_replacing_it(self):
+        # The original bug answered with a whole new panel each time, so the
+        # real one scrolled away behind its own confirmations. A confirmation
+        # is fine; a second panel is not, and a panel is what carries a view.
         steps = [
             await self.choose_target("welcome_channel"),
             await self.choose_channel(self.general),
@@ -201,7 +204,56 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
         for index, interaction in enumerate(steps):
             self.assertEqual(len(interaction.response.edits), 1, f"step {index} did not edit")
             self.assertEqual(interaction.response.messages, [], f"step {index} sent a message")
-            self.assertEqual(interaction.followup.sent, [], f"step {index} sent a followup")
+            for message in interaction.followup.sent:
+                self.assertIsNone(message.get("view"), f"step {index} sent a second panel")
+                self.assertTrue(message.get("ephemeral"), f"step {index} confirmed in public")
+
+    # --- and says so where the reader is looking -------------------------
+
+    def confirmation_of(self, interaction):
+        """The separate note sent under the panel, if there was one."""
+        if not interaction.followup.sent:
+            return ""
+        embed = interaction.followup.sent[-1].get("embed")
+        return f"{embed.title or ''}\n{embed.description or ''}" if embed else ""
+
+    async def test_a_save_is_confirmed_in_its_own_message(self):
+        # The panel already said so in a quoted line at the top of a long
+        # embed, and it was missed: the eye goes to the big blocks below it.
+        # A short note under the panel lands where the reader already is.
+        await self.choose_target("welcome_channel")
+        interaction = await self.choose_channel(self.general)
+
+        confirmation = self.confirmation_of(interaction)
+        self.assertIn("Welcome", confirmation)
+        self.assertIn("#general", confirmation)
+
+    async def test_clearing_and_completing_are_confirmed_too(self):
+        await self.choose_target("welcome_channel")
+        await self.choose_channel(self.general)
+        await self.choose_target("welcome_channel")
+
+        cleared = self.interaction()
+        await find_button(self.view, "Clear").callback(cleared)
+        completed = self.interaction()
+        await find_button(self.view, "Mark complete").callback(completed)
+
+        self.assertIn("Welcome", self.confirmation_of(cleared))
+        self.assertTrue(self.confirmation_of(completed))
+
+    async def test_choosing_a_target_is_not_worth_a_message_of_its_own(self):
+        # Guidance is not a result. Confirming every dropdown click would bury
+        # the panel under notes about things that have not happened yet.
+        interaction = await self.choose_target("log_channel")
+
+        self.assertEqual(interaction.followup.sent, [])
+
+    async def test_a_refusal_is_not_reported_twice(self):
+        # Nothing was saved, so there is nothing to confirm; the panel's own
+        # warning is the whole answer.
+        interaction = await self.choose_channel(self.general)  # no target chosen
+
+        self.assertEqual(interaction.followup.sent, [])
 
     # --- the panel says what it just did ---------------------------------
 

@@ -2,10 +2,11 @@
   {
     "emoji": "🚀",
     "name": "Setup",
-    "blurb": "Connect NovaGuard to a server and manage its saved configuration.",
+    "blurb": "Onboarding, the public introduction card, and per-server configuration.",
     "audience": "server-admin",
     "commands": [
       "/setup",
+      "/infopanel",
       "/config view",
       "/config export",
       "/config reset"
