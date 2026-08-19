@@ -69,12 +69,52 @@ FRIENDLY_AREAS = {
     "core/webserver.py": "the web dashboard",
 }
 
+# Website areas are matched by prefix, longest first. The site has many more
+# files than the bot and renames them more often, so a per-file table would
+# rot; the folder a change lands in is the right grain for a release note.
+WEBSITE_AREAS = (
+    ("website-3/src/app/", "the web dashboard"),
+    ("website-3/src/pages/updates", "the public update feed"),
+    ("website-3/src/pages/dashboard", "the web dashboard"),
+    ("website-3/src/pages/commands", "the command catalog on the website"),
+    ("website-3/src/pages/status", "the public status page"),
+    ("website-3/src/pages/privacy", "the privacy and terms pages"),
+    ("website-3/src/pages/terms", "the privacy and terms pages"),
+    ("website-3/src/pages/server-admin-notice", "the privacy and terms pages"),
+    ("website-3/src/pages/setup", "the setup guide on the website"),
+    ("website-3/src/data/privacy", "the privacy and terms pages"),
+    ("website-3/src/data/legal", "the privacy and terms pages"),
+    ("website-3/src/data/commands", "the command catalog on the website"),
+    ("website-3/src/pages/", "the website pages"),
+    ("website-3/src/components/", "the website layout"),
+    ("website-3/src/layouts/", "the website layout"),
+    ("website-3/src/styles/", "the website's visual style"),
+    ("website-3/src/lib/", "the website's plumbing"),
+    ("website-3/src/data/", "the website content"),
+    ("website-3/scripts/", "the website build"),
+)
+
+
+def _website_area(file_name):
+    """A readable name for a website file, or None if this is not one.
+
+    The site has far more files than the bot and they are renamed more often,
+    so naming each one individually would rot. Its folders already say what a
+    change touched, which is the level of detail a release note wants.
+    """
+    if not file_name.startswith("website-3/"):
+        return None
+    for prefix, label in WEBSITE_AREAS:
+        if file_name.startswith(prefix):
+            return label
+    return "the website"
+
 
 def humanize_areas(file_names, limit=4):
     """Turn tracked file paths into a readable list of feature areas."""
     areas = []
     for file_name in sorted(file_names):
-        label = FRIENDLY_AREAS.get(file_name)
+        label = FRIENDLY_AREAS.get(file_name) or _website_area(file_name)
         if label is None:
             stem = file_name.rsplit("/", 1)[-1]
             label = stem.removesuffix(".py").replace("_", " ")
@@ -94,12 +134,57 @@ def humanize_areas(file_names, limit=4):
     return text
 
 
+WEBSITE_DIR = BASE_DIR / "website-3"
+
+# Source the site is actually built from. Deliberately globbed rather than
+# listed, so a new page is watched the day it is written.
+WEBSITE_SOURCE_GLOBS = (
+    "src/**/*.astro",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.css",
+    "src/**/*.json",
+    "scripts/*.mjs",
+    "astro.config.mjs",
+)
+
+# Written by the build, not by a person.
+#
+# updates-archive.json is the dangerous one: it is committed to git and
+# rewritten at every build from the feed this very module produces. Watching
+# it would close a circle — a release rewrites the archive, the rewritten
+# archive reads as a change, that announces a release — with no natural end
+# and nothing in the notes to explain it. tests/test_tracked_sources.py holds
+# the line.
+WEBSITE_GENERATED = frozenset({"src/data/updates-archive.json"})
+
+
+def _is_website_source(relative_path):
+    if relative_path.as_posix() in WEBSITE_GENERATED:
+        return False
+    # A changed test is not news, the same reason the bot's own tests/ has
+    # never been watched.
+    return ".test." not in relative_path.name and ".spec." not in relative_path.name
+
+
+def website_files():
+    if not WEBSITE_DIR.is_dir():
+        return []
+    found = set()
+    for pattern in WEBSITE_SOURCE_GLOBS:
+        for path in WEBSITE_DIR.glob(pattern):
+            if path.is_file() and _is_website_source(path.relative_to(WEBSITE_DIR)):
+                found.add(path)
+    return sorted(found)
+
+
 def tracked_files():
     files = [BASE_DIR / "bot.py", BASE_DIR / ".env.example", BASE_DIR / "SETUP.md"]
     for folder_name in ("core", "cogs"):
         folder = BASE_DIR / folder_name
         if folder.is_dir():
             files.extend(sorted(folder.glob("*.py")))
+    files.extend(website_files())
     return [path for path in files if path.exists()]
 
 
