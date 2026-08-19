@@ -226,6 +226,30 @@ class EmbedTests(unittest.TestCase):
 
         self.assertIn("07:00", text)
 
+    def test_the_next_refresh_names_the_clock_a_reader_recognises(self):
+        # "Europe/Chisinau" is a database key, not a time. Someone glancing at
+        # the card wants the zone people actually say out loud.
+        summer = datetime(2026, 8, 19, 8, 0, tzinfo=CHISINAU)
+
+        text = self.body(snapshot(generated_at=summer))
+
+        self.assertIn("19:00 EEST", text)
+        self.assertNotIn("Europe/Chisinau", text)
+
+    def test_the_clock_follows_daylight_saving_rather_than_a_fixed_string(self):
+        # Same zone, January: EET, not EEST. Hardcoding either one is wrong for
+        # half the year, and a status card that misstates the hour is worse
+        # than one that omits it.
+        winter = datetime(2026, 1, 15, 8, 0, tzinfo=CHISINAU)
+
+        self.assertIn("19:00 EET", self.body(snapshot(generated_at=winter)))
+
+    def test_the_rows_are_not_padded_with_blank_lines(self):
+        # A zero-width space on its own line buys a gap Discord already puts
+        # between stacked fields. Two gaps read as a card that has come apart.
+        for field in build_status_embed(snapshot()).fields:
+            self.assertNotIn("​", field.value)
+
 
 if __name__ == "__main__":
     unittest.main()

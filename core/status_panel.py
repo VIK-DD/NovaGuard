@@ -73,6 +73,18 @@ def due_slot(now=None):
     return local_now.strftime("%Y-%m-%d %H:%M")
 
 
+def status_clock_label(now=None):
+    """The zone as people say it: EEST in summer, EET in winter.
+
+    ``Europe/Chisinau`` is a database key, not a clock, and it tells a reader
+    glancing at the card nothing. Reading the abbreviation off the moment being
+    described also survives the daylight-saving switch, which any fixed string
+    gets wrong for half the year.
+    """
+    local_now = (now or datetime.now(UTC)).astimezone(status_timezone())
+    return local_now.tzname() or status_timezone_name()
+
+
 def next_slot_label(now=None):
     """The next scheduled time, so a reader can judge whether a card is stale."""
     local_now = (now or datetime.now(UTC)).astimezone(status_timezone())
@@ -171,9 +183,12 @@ def build_status_embed(snapshot, *, now=None):
             detail = ""
         # Stacked, not inline: Discord packs inline fields three to a row on
         # desktop, squeezing each into a column too narrow for its detail line.
+        # Stacking is all the separation the rows need \u2014 a trailing zero-width
+        # space added a second gap on top of Discord's own, and three rows of
+        # that made the card look like it had come apart.
         embed.add_field(
             name=component["name"],
-            value=f"{mark} **{label}**" + (f"\n{detail}" if detail else "") + "\n\u200b",
+            value=f"{mark} **{label}**" + (f"\n{detail}" if detail else ""),
             inline=False,
         )
 
@@ -182,9 +197,10 @@ def build_status_embed(snapshot, *, now=None):
         value=format_timedelta(timedelta(seconds=snapshot["uptime_seconds"])),
         inline=False,
     )
+    moment = now or snapshot["generated_at"]
     embed.add_field(
         name="Next refresh",
-        value=f"{next_slot_label(now or snapshot['generated_at'])} {status_timezone_name()}",
+        value=f"{next_slot_label(moment)} {status_clock_label(moment)}",
         inline=False,
     )
 
