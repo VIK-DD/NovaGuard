@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 from core.loop_guard import keep_running
 from core.config import GITHUB_STATE_FILE, github_config
 from core.github_api import github_api
+from core.github_commits import hidden_count, remembered_shas, select_new_commits
 from core.guild_config import resolve_configured_channels
 from core.storage import get_guild_settings, load_json_file, save_json_file
 from core.theme import Palette, brand_footer, make_embed, pick_embed_color
@@ -30,7 +31,13 @@ from core.utils import (
 
 log = logging.getLogger(__name__)
 
-WATCHED_EVENT_TYPES = {"PushEvent", "PullRequestEvent", "IssuesEvent", "ReleaseEvent"}
+# PushEvent is deliberately absent: pushes are read from /commits instead.
+# The Events API is a cached timeline GitHub documents as unsuitable for
+# real-time use, and on 2026-08-19 it was a full day behind — commits sat on
+# main at 20:42 while the newest event returned dated from 21:30 the evening
+# before. The other three have no current alternative, so they stay here and
+# arrive late rather than not at all.
+WATCHED_EVENT_TYPES = {"PullRequestEvent", "IssuesEvent", "ReleaseEvent"}
 
 # What each pull request action implies about the state, for when the payload
 # does not carry one. "synchronize" and friends say nothing about it.
@@ -467,6 +474,51 @@ def build_health_embed(repo, commits, workflow_run, release, branch_data, open_p
     )
 
 
+def commit_author_name(commit):
+    account = commit.get("author") or {}
+    if account.get("login"):
+        return account["login"]
+    return (commit.get("commit", {}).get("author") or {}).get("name") or "someone"
+
+
+def build_commit_digest_embed(repo_name, commits, hidden=0):
+    """One card for a batch of commits, rather than one card each.
+
+    A push of nine commits posted nine times buries the channel and tells the
+    reader nothing the list would not. The cap lives in core/github_commits.py;
+    this only has to say honestly that it applied.
+    """
+    urls = repo_to_urls(repo_name)
+    lines = []
+    for entry in reversed(commits):  # newest first for reading
+        sha = push_commit_sha(entry)
+        link = entry.get("html_url") or f"{urls['commits']}/{entry.get('sha', '')}"
+        lines.append(f"[`{sha}`]({link}) {push_commit_message(entry)}")
+    if hidden:
+        lines.append(f"...and `{hidden}` more commit(s)")
+
+    authors = []
+    for entry in commits:
+        name = commit_author_name(entry)
+        if name not in authors:
+            authors.append(name)
+
+    count = len(commits) + hidden
+    embed = discord.Embed(
+        title=f"📤 {count} new commit{'' if count == 1 else 's'} in {repo_name}",
+        description="\n".join(lines),
+        color=discord.Color.green(),
+        timestamp=(
+            parse_github_datetime((commits[-1].get("commit", {}).get("author") or {}).get("date"))
+            or datetime.now(UTC)
+        ),
+    )
+    embed.add_field(name="By", value=", ".join(f"`{name}`" for name in authors[:4]), inline=True)
+    embed.add_field(name="Repository", value=f"[{repo_name}]({urls['repo']})", inline=True)
+    brand_footer(embed, "GitHub activity")
+    return embed
+
+
 async def build_watcher_embed(repo_name, event):
     event_type = event.get("type")
     payload = event.get("payload", {})
@@ -681,6 +733,41 @@ class Developer(commands.Cog):
     async def cog_unload(self):
         self.watch_github_activity.cancel()
 
+    async def announce_new_commits(self, repo_name, commit_state, channels):
+        """Post the commits that have landed since the last poll.
+
+        Read from /commits rather than /events because that list is current;
+        see WATCHED_EVENT_TYPES for what the timeline was doing instead.
+        """
+        try:
+            commits = await github_api.fetch_repo_commits(repo_name, per_page=30) or []
+        except RuntimeError as error:
+            log.warning(f"GitHub commit poll skipped {repo_name}: {error}")
+            return
+        except (asyncio.TimeoutError, aiohttp.ClientError) as error:
+            log.warning(f"GitHub commit poll skipped {repo_name}: temporary network issue ({error})")
+            return
+
+        if not commits:
+            return
+
+        known = commit_state.get(repo_name)
+        # First sight of a repository: remember where it is and say nothing.
+        # Announcing here would dump a page of history into the channel the
+        # moment the watcher is switched on, or after the state file is lost.
+        if known is None:
+            commit_state[repo_name] = remembered_shas(commits)
+            return
+
+        fresh = select_new_commits(commits, known)
+        commit_state[repo_name] = remembered_shas(commits)
+        if not fresh or not channels:
+            return
+
+        embed = build_commit_digest_embed(repo_name, fresh, hidden_count(commits, known))
+        for channel in channels:
+            await safe_send_embed(channel, embed)
+
     @tasks.loop(seconds=github_config.poll_seconds)
     @keep_running(log, "GitHub activity poll")
     async def watch_github_activity(self):
@@ -689,7 +776,11 @@ class Developer(commands.Cog):
 
         state = await asyncio.to_thread(load_github_state)
         event_state = state.setdefault("events", {})
+        commit_state = state.setdefault("commits", {})
         channels = await resolve_configured_channels(self.bot, "github_event_channel", github_config.event_channel_id)
+
+        for repo_name in github_config.watch_repos:
+            await self.announce_new_commits(repo_name, commit_state, channels)
 
         for repo_name in github_config.watch_repos:
             try:
