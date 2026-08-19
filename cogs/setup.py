@@ -601,6 +601,9 @@ class SetupTargetSelect(discord.ui.Select):
     async def callback(self, interaction):
         key = self.values[0]
         self.view.pending_key = key
+        # Blank the channel menu, or it still shows the channel used for the
+        # previous setting and this one looks already answered.
+        self.view.start_target()
         await self.view.refresh(
             interaction,
             f"📝 Now choose the channel for **{plain_label(key)}** in the menu below.",
@@ -649,6 +652,24 @@ class SetupView(discord.ui.View):
         self.add_item(self.channel_select)
         self._sync()
 
+    def _replace(self, attribute, factory):
+        """Swap a menu for an identical, unanswered one.
+
+        A select's chosen value is drawn by the Discord client and keyed to the
+        component's custom_id — not to anything sent back with the edit.
+        discord.py mints that id once, in the constructor, so re-sending the
+        same item leaves the previous pick sitting in the menu: after saving
+        Bot Updates to #general the channel picker still read "#general", and
+        the next setting looked answered before it had been touched. A new
+        item carries a new id, which is what makes the client draw it empty.
+        """
+        old = getattr(self, attribute)
+        self.remove_item(old)
+        new = factory()
+        new.row = old.row
+        setattr(self, attribute, new)
+        self.add_item(new)
+
     def _sync(self):
         """Make the channel menu describe exactly what it is about to set."""
         if self.pending_key:
@@ -657,6 +678,22 @@ class SetupView(discord.ui.View):
         else:
             self.channel_select.placeholder = "2. Choose a setting above first…"
             self.channel_select.disabled = True
+
+    def start_target(self):
+        """A setting has been chosen; the channel menu must arrive blank."""
+        self._replace("channel_select", SetupChannelSelect)
+
+    def finish_action(self):
+        """An action landed. Both menus go back to asking, not answering.
+
+        The setting menu is only reset here, never while a choice is pending:
+        between picking a setting and giving it a channel, that setting is the
+        question on screen, and blanking it would leave a channel picker with
+        nothing saying what it is for.
+        """
+        self.pending_key = None
+        self._replace("target_select", SetupTargetSelect)
+        self._replace("channel_select", SetupChannelSelect)
 
     async def refresh(self, interaction, notice=None):
         self._sync()
@@ -685,7 +722,7 @@ class SetupView(discord.ui.View):
         update_guild_settings(interaction.guild_id, **{key: channel_id})
         # Cleared before the redraw: a target that outlived its save is what
         # let the next channel picked silently replace the previous setting.
-        self.pending_key = None
+        self.finish_action()
         label = plain_label(key)
         await self.refresh(interaction, f"✅ Saved **{label}** to {mention}.")
         await self.confirm(
@@ -721,7 +758,7 @@ class SetupView(discord.ui.View):
         if not key:
             return await self.refresh(interaction, "⚠️ Nothing cleared — choose the setting from the menu above first.")
         update_guild_settings(interaction.guild_id, **{key: None})
-        self.pending_key = None
+        self.finish_action()
         label = plain_label(key)
         await self.refresh(interaction, f"🗑️ Cleared **{label}** — it is now unset.")
         await self.confirm(
@@ -734,6 +771,7 @@ class SetupView(discord.ui.View):
     @discord.ui.button(label="Mark complete", emoji="✅", style=discord.ButtonStyle.success, row=2)
     async def mark_complete(self, interaction, button):
         update_guild_settings(interaction.guild_id, setup_completed=True)
+        self.finish_action()
         await self.refresh(
             interaction,
             "✅ Setup marked complete — every channel stays optional, and `/setup` reopens anytime.",

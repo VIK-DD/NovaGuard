@@ -208,6 +208,62 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(message.get("view"), f"step {index} sent a second panel")
                 self.assertTrue(message.get("ephemeral"), f"step {index} confirmed in public")
 
+    # --- the menus must not keep showing an answered question ------------
+    #
+    # A select's chosen value is drawn by the Discord client and keyed to the
+    # component's custom_id, not to anything the bot sends back. discord.py
+    # mints that id once, in the constructor, so editing the message leaves
+    # the previous pick sitting in the menu: after saving Bot Updates to
+    # #general the channel picker still reads "#general", and the next
+    # setting looks answered before it has been touched. Replacing the item
+    # is the only thing that clears it.
+
+    async def test_the_channel_picker_is_a_fresh_menu_after_a_save(self):
+        await self.choose_target("update_channel")
+        before = self.view.channel_select.custom_id
+
+        await self.choose_channel(self.general)
+
+        self.assertNotEqual(self.view.channel_select.custom_id, before)
+
+    async def test_choosing_the_next_setting_clears_the_previous_channel(self):
+        # Victor's report: pick a channel, then pick another setting, and the
+        # picker stays stuck on the channel already used.
+        await self.choose_target("update_channel")
+        await self.choose_channel(self.general)
+        after_save = self.view.channel_select.custom_id
+
+        await self.choose_target("log_channel")
+
+        self.assertNotEqual(self.view.channel_select.custom_id, after_save)
+
+    async def test_the_setting_menu_resets_once_its_action_is_done(self):
+        await self.choose_target("update_channel")
+        before = self.view.target_select.custom_id
+
+        await self.choose_channel(self.general)
+
+        self.assertNotEqual(self.view.target_select.custom_id, before)
+
+    async def test_the_setting_menu_keeps_its_pick_while_it_is_pending(self):
+        # Between choosing a setting and giving it a channel, that setting is
+        # the question being answered — blanking it would leave the reader
+        # with a channel menu and nothing saying what it is for.
+        before = self.view.target_select.custom_id
+
+        await self.choose_target("update_channel")
+
+        self.assertEqual(self.view.target_select.custom_id, before)
+
+    async def test_replacing_the_menus_does_not_pile_them_up(self):
+        for target, channel in (("update_channel", self.general), ("log_channel", self.logs)):
+            await self.choose_target(target)
+            await self.choose_channel(channel)
+
+        selects = [c for c in self.view.children if hasattr(c, "placeholder")]
+        self.assertEqual(len(selects), 2)
+        self.assertEqual([s.row for s in sorted(selects, key=lambda s: s.row)], [0, 1])
+
     # --- and says so where the reader is looking -------------------------
 
     def confirmation_of(self, interaction):
