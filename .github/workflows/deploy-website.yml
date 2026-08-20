@@ -55,3 +55,27 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: website-3
           command: deploy
+
+      # Audited here rather than anywhere else, because this is the only
+      # machine with both halves: a freshly built dist/, which is what lets
+      # route discovery find all sixteen pages instead of the five it can name
+      # without one, and network reach to the site it has just published.
+      #
+      # The audit signs in through the soft-launch gate itself, so scanning
+      # never requires opening the site to the public.
+      - name: Wait for the edge to serve the new version
+        run: sleep 20
+
+      - name: Security audit
+        env:
+          NG_AUDIT_PASSWORD: ${{ secrets.NG_AUDIT_PASSWORD }}
+        run: |
+          # Without the password every gated page comes back unaudited and the
+          # run would finish green having read almost nothing. A missing secret
+          # is a broken check, not a clean site.
+          if [ -z "$NG_AUDIT_PASSWORD" ]; then
+            echo "::error::NG_AUDIT_PASSWORD is not set, so the gated pages cannot be audited."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          npm run security:audit

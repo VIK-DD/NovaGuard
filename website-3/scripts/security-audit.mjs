@@ -303,10 +303,19 @@ async function main() {
 
   console.log("\n" + "-".repeat(60));
   if (actionable.length === 0) {
-    const scope = buildSkipped ? "live responses only — build output NOT checked" : "our own hosts";
+    // A pass has to describe what was actually read. Pages the gate turned
+    // away and an unbuilt dist/ are both half-scans, and calling either one
+    // "no findings on our own hosts" is the failure this tool exists to catch.
+    const unaudited = findings.filter((f) => f.rule === "not-audited").length;
+    const gaps = [];
+    if (unaudited) gaps.push(`${unaudited} page(s) behind the gate NOT audited`);
+    if (buildSkipped) gaps.push("build output NOT checked");
+    const scope = gaps.length ? `part of our hosts — ${gaps.join(", ")}` : "our own hosts";
     console.log(`PASS — no findings at or above '${args.failOn}' on ${scope}.`);
-    if (buildSkipped) {
-      console.log("       This is a partial pass. Build the site and rerun for the rest.");
+    if (gaps.length) {
+      console.log("       This is a PARTIAL pass, not a clean bill of health.");
+      if (unaudited) console.log("       Set NG_AUDIT_PASSWORD to reach the gated pages.");
+      if (buildSkipped) console.log("       Run `npm run build` first for the build half.");
     }
     if (worst) console.log(`       (${findings.length} informational note(s) above.)`);
     process.exit(0);
