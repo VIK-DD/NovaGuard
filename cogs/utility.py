@@ -189,18 +189,35 @@ class Utility(commands.Cog):
                 return
             await asyncio.to_thread(save_data, "reminders", remaining)
 
+        # Delivery is at-most-once on purpose: the store above was already
+        # rewritten without these, so a channel that is gone for good cannot
+        # make the loop retry it forever. The price is that a failure here
+        # loses the reminder — which has to be recorded, because the only
+        # other symptom is a message that never arrived, and nobody can report
+        # something they did not receive.
         for item in due:
             channel = self.bot.get_channel(item["channel_id"])
             if channel is None:
                 try:
                     channel = await self.bot.fetch_channel(item["channel_id"])
                 except discord.HTTPException:
+                    log.warning(
+                        "Reminder %s dropped: channel %s is unreachable",
+                        item.get("id"),
+                        item.get("channel_id"),
+                    )
                     continue
             embed = make_embed("⏰ Reminder", item["message"], color=Palette.WARNING)
             brand_footer(embed, "You asked me to remind you")
             try:
                 await channel.send(content=f"<@{item['user_id']}>", embed=embed)
             except discord.HTTPException:
+                log.warning(
+                    "Reminder %s dropped: could not post in channel %s",
+                    item.get("id"),
+                    item.get("channel_id"),
+                    exc_info=True,
+                )
                 continue
 
     @reminder_loop.before_loop
