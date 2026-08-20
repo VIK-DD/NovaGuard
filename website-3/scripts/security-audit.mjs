@@ -258,6 +258,8 @@ async function main() {
     }
   }
 
+  let buildSkipped = false;
+
   printFindings(`Live responses — ${scanned} scanned on our hosts only`, findings);
 
   if (!args.skipBuild) {
@@ -272,7 +274,18 @@ async function main() {
     );
     const buildFindings = auditBuildArtifacts(artifacts);
     findings.push(...buildFindings);
-    printFindings(`Build output — ${artifacts.length} files in dist/`, buildFindings);
+    if (artifacts.length === 0) {
+      // "none" under a heading reads as "checked, and clean". With an empty
+      // dist/ nothing was read at all, and reporting no findings when it did
+      // not look is the one thing a security tool must never do. Seen for real
+      // on the VPS, where the site is built by CI and dist/ never exists.
+      buildSkipped = true;
+      console.log("\nBuild output — NOT CHECKED");
+      console.log("  dist/ is empty or missing, so this half of the audit read nothing.");
+      console.log("  Run `npm run build` first, or audit from where the site is built.");
+    } else {
+      printFindings(`Build output — ${artifacts.length} files in dist/`, buildFindings);
+    }
   }
 
   if (externalHosts.size > 0) {
@@ -290,7 +303,11 @@ async function main() {
 
   console.log("\n" + "-".repeat(60));
   if (actionable.length === 0) {
-    console.log(`PASS — no findings at or above '${args.failOn}' on our own hosts.`);
+    const scope = buildSkipped ? "live responses only — build output NOT checked" : "our own hosts";
+    console.log(`PASS — no findings at or above '${args.failOn}' on ${scope}.`);
+    if (buildSkipped) {
+      console.log("       This is a partial pass. Build the site and rerun for the rest.");
+    }
     if (worst) console.log(`       (${findings.length} informational note(s) above.)`);
     process.exit(0);
   }
