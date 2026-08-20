@@ -101,6 +101,15 @@ class GitHubAPI:
     async def fetch_repo_languages(self, full_name):
         return await self.get_json(f"/repos/{full_name}/languages")
 
+    async def fetch_repo_branches(self, full_name, per_page=100):
+        """Every branch with its head SHA.
+
+        The head is the useful part: a branch whose head is already known
+        cannot be hiding new commits, so the watcher can skip reading it and
+        a quiet repository costs one request rather than one per branch.
+        """
+        return await self.get_json(f"/repos/{full_name}/branches", params={"per_page": per_page})
+
     async def fetch_repo_events(self, full_name, per_page=10):
         return await self.get_json(f"/repos/{full_name}/events", params={"per_page": per_page})
 

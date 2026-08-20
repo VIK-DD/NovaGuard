@@ -13,7 +13,13 @@ from discord.ext import commands, tasks
 from core.loop_guard import keep_running
 from core.config import GITHUB_STATE_FILE, github_config
 from core.github_api import github_api
-from core.github_commits import hidden_count, remembered_shas, select_new_commits
+from core.github_commits import (
+    branches_needing_a_read,
+    merge_new_commits,
+    remember_across_branches,
+    store_shas,
+    stored_shas,
+)
 from core.guild_config import resolve_configured_channels
 from core.storage import get_guild_settings, load_json_file, save_json_file
 from core.theme import Palette, brand_footer, make_embed, pick_embed_color
@@ -38,6 +44,12 @@ log = logging.getLogger(__name__)
 # before. The other three have no current alternative, so they stay here and
 # arrive late rather than not at all.
 WATCHED_EVENT_TYPES = {"PullRequestEvent", "IssuesEvent", "ReleaseEvent"}
+
+# Only branches that actually moved are read, so this is reached solely when
+# a great many change at once — a force-push cleanup, or a first sight after
+# the state file is lost. Reading them all in one pass would spend the rate
+# limit on history nobody is waiting for; the rest are picked up next poll.
+MAX_BRANCHES_PER_POLL = 10
 
 # What each pull request action implies about the state, for when the payload
 # does not carry one. "synchronize" and friends say nothing about it.
@@ -481,12 +493,11 @@ def commit_author_name(commit):
     return (commit.get("commit", {}).get("author") or {}).get("name") or "someone"
 
 
-def build_commit_digest_embed(repo_name, commits, hidden=0):
-    """One card for a batch of commits, rather than one card each.
+def build_commit_digest_embed(repo_name, branch_name, commits):
+    """One card for a batch of commits on one branch, not one card each.
 
     A push of nine commits posted nine times buries the channel and tells the
-    reader nothing the list would not. The cap lives in core/github_commits.py;
-    this only has to say honestly that it applied.
+    reader nothing the list would not.
     """
     urls = repo_to_urls(repo_name)
     lines = []
@@ -494,8 +505,6 @@ def build_commit_digest_embed(repo_name, commits, hidden=0):
         sha = push_commit_sha(entry)
         link = entry.get("html_url") or f"{urls['commits']}/{entry.get('sha', '')}"
         lines.append(f"[`{sha}`]({link}) {push_commit_message(entry)}")
-    if hidden:
-        lines.append(f"...and `{hidden}` more commit(s)")
 
     authors = []
     for entry in commits:
@@ -503,7 +512,7 @@ def build_commit_digest_embed(repo_name, commits, hidden=0):
         if name not in authors:
             authors.append(name)
 
-    count = len(commits) + hidden
+    count = len(commits)
     embed = discord.Embed(
         title=f"📤 {count} new commit{'' if count == 1 else 's'} in {repo_name}",
         description="\n".join(lines),
@@ -513,10 +522,27 @@ def build_commit_digest_embed(repo_name, commits, hidden=0):
             or datetime.now(UTC)
         ),
     )
+    embed.add_field(name="Branch", value=f"`{branch_name}`", inline=True)
     embed.add_field(name="By", value=", ".join(f"`{name}`" for name in authors[:4]), inline=True)
     embed.add_field(name="Repository", value=f"[{repo_name}]({urls['repo']})", inline=True)
     brand_footer(embed, "GitHub activity")
     return embed
+
+
+def build_commit_digest_embeds(repo_name, branch_commits):
+    """A card per branch, in the order the branches were walked.
+
+    Grouping matters now that several branches are watched: a card headed
+    "main" listing a commit that landed on a working branch would be wrong
+    about the one thing the card exists to say.
+    """
+    grouped = {}
+    for branch_name, commit in branch_commits:
+        grouped.setdefault(branch_name, []).append(commit)
+    return [
+        build_commit_digest_embed(repo_name, branch_name, commits)
+        for branch_name, commits in grouped.items()
+    ]
 
 
 async def build_watcher_embed(repo_name, event):
@@ -721,6 +747,9 @@ class Developer(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        # repo -> default branch name, asked once per process. It only decides
+        # which branch is credited for a commit that exists on several.
+        self._default_branches: dict[str, str] = {}
 
     async def cog_load(self):
         # light per-user cooldown on every command here — they all hit the
@@ -733,14 +762,37 @@ class Developer(commands.Cog):
     async def cog_unload(self):
         self.watch_github_activity.cancel()
 
+    async def default_branch_of(self, repo_name):
+        """Cached for the process: it decides credit, not correctness.
+
+        When a commit exists on several branches the first one walked is the
+        one named on the card, and the default branch is the honest answer.
+        Asking GitHub once at first use costs one request ever, rather than
+        one per poll for a cosmetic detail.
+        """
+        if repo_name not in self._default_branches:
+            try:
+                repo = await github_api.fetch_repo(repo_name) or {}
+                self._default_branches[repo_name] = repo.get("default_branch") or ""
+            except (RuntimeError, asyncio.TimeoutError, aiohttp.ClientError):
+                # Unknown is fine: branches keep their listed order and a
+                # shared commit is credited to whichever comes first.
+                self._default_branches[repo_name] = ""
+        return self._default_branches[repo_name]
+
     async def announce_new_commits(self, repo_name, commit_state, channels):
-        """Post the commits that have landed since the last poll.
+        """Post the commits that have landed on any branch since the last poll.
 
         Read from /commits rather than /events because that list is current;
         see WATCHED_EVENT_TYPES for what the timeline was doing instead.
+
+        GitHub has no endpoint for "every commit on every branch", so each
+        branch costs a request. The branch listing carries every head SHA
+        though, so branches that have not moved are skipped entirely and a
+        quiet repository costs exactly one request per poll.
         """
         try:
-            commits = await github_api.fetch_repo_commits(repo_name, per_page=30) or []
+            branches = await github_api.fetch_repo_branches(repo_name) or []
         except RuntimeError as error:
             log.warning(f"GitHub commit poll skipped {repo_name}: {error}")
             return
@@ -748,25 +800,69 @@ class Developer(commands.Cog):
             log.warning(f"GitHub commit poll skipped {repo_name}: temporary network issue ({error})")
             return
 
-        if not commits:
+        if not branches:
             return
 
-        known = commit_state.get(repo_name)
-        # First sight of a repository: remember where it is and say nothing.
-        # Announcing here would dump a page of history into the channel the
-        # moment the watcher is switched on, or after the state file is lost.
-        if known is None:
-            commit_state[repo_name] = remembered_shas(commits)
+        # A state file written before branches were watched covered the
+        # default branch only, so it is primed rather than trusted — see
+        # stored_shas.
+        seen, first_sight = stored_shas(commit_state.get(repo_name))
+
+        moved = branches_needing_a_read(branches, seen)
+        if not moved:
             return
 
-        fresh = select_new_commits(commits, known)
-        commit_state[repo_name] = remembered_shas(commits)
+        default = await self.default_branch_of(repo_name)
+        # Default first, so a commit that exists on several branches is
+        # credited to the one people recognise.
+        moved.sort(key=lambda name: (name != default, name))
+        if len(moved) > MAX_BRANCHES_PER_POLL:
+            log.info(
+                "GitHub commit poll for %s reading %d of %d changed branches this pass",
+                repo_name,
+                MAX_BRANCHES_PER_POLL,
+                len(moved),
+            )
+            moved = moved[:MAX_BRANCHES_PER_POLL]
+
+        per_branch = []
+        for branch_name in moved:
+            try:
+                commits = await github_api.fetch_repo_commits(
+                    repo_name, per_page=30, sha=branch_name
+                ) or []
+            except (RuntimeError, asyncio.TimeoutError, aiohttp.ClientError) as error:
+                log.warning(
+                    f"GitHub commit poll skipped {repo_name}@{branch_name}: {error}"
+                )
+                continue
+            per_branch.append((branch_name, commits))
+
+        if not per_branch:
+            return
+
+        every_sha = [
+            commit.get("sha")
+            for _branch, commits in per_branch
+            for commit in commits
+        ]
+        heads = [(b.get("commit") or {}).get("sha") for b in branches if isinstance(b, dict)]
+
+        # First sight of a repository: remember where every branch is and say
+        # nothing. Announcing here would dump pages of history into the channel
+        # the moment the watcher is switched on, or after the state file is lost.
+        if first_sight:
+            commit_state[repo_name] = store_shas(remember_across_branches([], every_sha, heads))
+            return
+
+        fresh = merge_new_commits(per_branch, seen)
+        commit_state[repo_name] = store_shas(remember_across_branches(seen, every_sha, heads))
         if not fresh or not channels:
             return
 
-        embed = build_commit_digest_embed(repo_name, fresh, hidden_count(commits, known))
-        for channel in channels:
-            await safe_send_embed(channel, embed)
+        for embed in build_commit_digest_embeds(repo_name, fresh):
+            for channel in channels:
+                await safe_send_embed(channel, embed)
 
     @tasks.loop(seconds=github_config.poll_seconds)
     @keep_running(log, "GitHub activity poll")
