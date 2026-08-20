@@ -39,6 +39,17 @@ jobs:
       - name: Test suite
         run: npx vitest run
 
+      # The Python side has had pip-audit in CI for a while; the Node side had
+      # nothing, so a known vulnerability in astro, vite or anything they pull
+      # in would have shipped unremarked. Checked before the build, so a bad
+      # dependency never reaches the deploy step.
+      #
+      # high and critical only: moderate advisories in build-time tooling would
+      # block deploys over code that never reaches a visitor, and a gate that
+      # cries wolf gets switched off.
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
       # Must be the same build the maintainer runs locally. `build:launch`
       # skips scripts/soft-launch.mjs, and there is no src/pages/index.astro -
       # the site's root page exists *only* because soft-launch copies the
