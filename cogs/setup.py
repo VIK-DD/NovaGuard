@@ -18,10 +18,13 @@ from core.backups import (
     latest_backup,
     list_backups,
     refresh_latest_remote_check,
+    remote_backup_config,
     remote_backup_status,
+    remote_join,
 )
 from cogs.admin import require_admin
-from core.config import github_config
+from core.config import BASE_DIR, github_config
+from core.privacy_ledger import LEDGER_PATH, REMOTE_LEDGER_PATH
 from core.privacy import export_guild_data
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -546,14 +549,65 @@ def backup_inspect_embed(backup, report):
     return embed
 
 
+def deletion_ledger_text():
+    """Why the restore will stop, and where the missing file lives.
+
+    The ledger records who asked to be erased. Applying it during a restore is
+    what stops an old archive putting their data back, so restore_backup.py
+    refuses without it — correctly, and with no way for the reader to guess
+    what to do next, because the plan never mentioned it.
+
+    It is deliberately not inside the archive: an archive is a snapshot of a
+    moment, and the ledger has to be newer than whatever snapshot it is
+    applied to, or erasures made since would be undone.
+    """
+    lines = [
+        f"The restore stops unless it can read `{LEDGER_PATH.name}`, which records who "
+        "asked to be erased. Applying it is what stops an old archive putting their "
+        "data back.",
+        "",
+        "**It is not inside the archive.** On this machine it is already in place.",
+    ]
+
+    config = remote_backup_config()
+    if config["configured"]:
+        remote_path = remote_join(config["destination"], REMOTE_LEDGER_PATH)
+        lines += [
+            "On a replacement host it will not exist yet — fetch the off-site copy first, "
+            "then point the restore at it:",
+            f"```bash\n{config['rclone_bin']} copyto \\\n"
+            f"  {remote_path} \\\n"
+            "  /tmp/deletion-ledger.ngbackup\n```",
+            "and add `--encrypted-ledger /tmp/deletion-ledger.ngbackup` to the restore "
+            "command below.",
+        ]
+    else:
+        lines += [
+            f"⚠️ No off-site destination is configured, so `{LEDGER_PATH}` is the **only** "
+            "copy that exists. Losing this host loses it, and a restore afterwards cannot "
+            "honour past erasure requests.",
+        ]
+
+    return "\n".join(lines)
+
+
 def backup_restore_plan_embed(backup, report):
-    command_block = (
-        "cd ~/NovaGuard\n"
+    # Two blocks rather than one. The single block was sliced at 920
+    # characters, so any added step could cut the last command in half — and a
+    # plan that ends mid-line while looking complete is worse than a long one.
+    # Splitting also matches how it is actually performed: verify first, and
+    # only then overwrite anything.
+    scratch_block = (
+        f"cd {BASE_DIR}\n"
         "pm2 stop 0\n"
         "mkdir -p data-before-restore\n"
         "cp -a data/. data-before-restore/\n"
         "rm -rf backups/restore-check\n"
-        f"venv/bin/python tools/restore_backup.py backups/{backup['name']} --output backups/restore-check --replace\n"
+        "venv/bin/python tools/restore_backup.py \\\n"
+        f"  backups/{backup['name']} \\\n"
+        "  --output backups/restore-check --replace"
+    )
+    golive_block = (
         "cp backups/restore-check/data/novaguard.sqlite3 data/novaguard.sqlite3\n"
         "cp backups/restore-check/data/*.json data/ 2>/dev/null || true\n"
         "cp backups/restore-check/.update_state.json . 2>/dev/null || true\n"
@@ -561,9 +615,11 @@ def backup_restore_plan_embed(backup, report):
         "pm2 restart 0 --update-env\n"
         "pm2 logs 0 --lines 100"
     )
+
     embed = make_embed(
         "🧭 Backup restore plan",
-        "This does not restore anything automatically. Stop the bot first and run the commands only when you are sure.",
+        "Nothing is restored automatically. Read the ledger note and both steps before "
+        "running any of them — step 1 stops the bot.",
         color=Palette.INFO if report.get("ok") else Palette.WARNING,
     )
     embed.add_field(
@@ -571,7 +627,21 @@ def backup_restore_plan_embed(backup, report):
         value=f"`{backup['name']}`\nIntegrity: `{backup_integrity_line(report)}`",
         inline=False,
     )
-    embed.add_field(name="Commands", value=f"```bash\n{command_block[:920]}\n```", inline=False)
+    embed.add_field(
+        name="Before you start — the deletion ledger",
+        value=deletion_ledger_text(),
+        inline=False,
+    )
+    embed.add_field(
+        name="1 · Stop, set the current data aside, unpack",
+        value=f"```bash\n{scratch_block}\n```",
+        inline=False,
+    )
+    embed.add_field(
+        name="2 · Put the unpacked copy live",
+        value=f"```bash\n{golive_block}\n```",
+        inline=False,
+    )
     embed.add_field(name="Notes", value=backup_errors_text(report), inline=False)
     brand_footer(embed, "Manual restore plan")
     return embed
