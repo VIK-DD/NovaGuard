@@ -212,9 +212,14 @@ async function main() {
   console.log(`  gated: ${gated.size} of ${targets.length} paths require signing in`);
 
   // Sign in so the audit sees the real pages instead of the login gate.
+  let gateRefused = false;
   if (args.password) {
     const result = await signIn(args.base, args.password, jar);
     console.log(`  gate : ${result.ok ? "signed in" : `NOT signed in — ${result.reason}`}`);
+    // A password was supplied and rejected. That says the audit is
+    // misconfigured, not that the site is clean, and finishing green would
+    // report a pass for every page the gate then turned away.
+    gateRefused = !result.ok;
   } else {
     console.log("  gate : no password given (set NG_AUDIT_PASSWORD to audit pages behind it)");
   }
@@ -302,6 +307,13 @@ async function main() {
   const actionable = findings.filter((f) => SEVERITY_RANK[f.severity] >= threshold);
 
   console.log("\n" + "-".repeat(60));
+  if (gateRefused) {
+    console.log("FAIL — the gate password was refused, so most pages went unread.");
+    console.log("       Check NG_AUDIT_PASSWORD matches the live gate, with no stray");
+    console.log("       whitespace or newline. This is a configuration fault, not a");
+    console.log("       finding about the site.");
+    process.exit(1);
+  }
   if (actionable.length === 0) {
     // A pass has to describe what was actually read. Pages the gate turned
     // away and an unbuilt dist/ are both half-scans, and calling either one
