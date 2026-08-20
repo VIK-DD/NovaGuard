@@ -90,7 +90,13 @@ class GiveawayButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"gw:(?P<message_id>\d+)",
 ):
-    _cooldown: dict[int, float] = {}  # user_id -> last click, anti-spam
+    # (message_id, user_id) -> last click, anti-spam.
+    #
+    # Keyed on the member alone this also refused their *first* press on a
+    # different giveaway, which reads as the bot being broken: one click, and
+    # a "slow down" they did nothing to earn. Per giveaway still stops anyone
+    # hammering one button, which is all it was ever for.
+    _cooldown: dict[tuple[int, int], float] = {}
     _COOLDOWN = 2.0
 
     def __init__(self, message_id: int):
@@ -110,12 +116,13 @@ class GiveawayButton(
 
     async def callback(self, interaction: discord.Interaction):
         now = time.monotonic()
-        if now - self._cooldown.get(interaction.user.id, 0.0) < self._COOLDOWN:
+        key = (self.message_id, interaction.user.id)
+        if now - self._cooldown.get(key, 0.0) < self._COOLDOWN:
             return await interaction.response.send_message("⏳ Slow down a moment.", ephemeral=True)
-        self._cooldown[interaction.user.id] = now
+        self._cooldown[key] = now
         if len(self._cooldown) > 4000:
-            for uid in [u for u, t in self._cooldown.items() if now - t > 60]:
-                self._cooldown.pop(uid, None)
+            for stale in [k for k, t in self._cooldown.items() if now - t > 60]:
+                self._cooldown.pop(stale, None)
 
         note = None
         async with _STORE_LOCK:
