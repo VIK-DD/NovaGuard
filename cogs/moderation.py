@@ -206,6 +206,65 @@ class Moderation(commands.Cog):
         brand_footer(confirm)
         await respond(interaction, confirm, ephemeral=True)
 
+    @app_commands.command(name="say", description="Make NovaGuard post a plain message")
+    @app_commands.describe(
+        message="What NovaGuard should say (use \\n for new lines)",
+        channel="Where to post it; defaults to this channel",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def say(
+        self,
+        interaction: discord.Interaction,
+        message: str,
+        channel: discord.TextChannel | None = None,
+    ):
+        await defer_interaction(interaction, ephemeral=True)
+        target = channel or interaction.channel
+        text = message.replace("\\n", "\n").strip()
+
+        if not text:
+            embed = make_embed("🤔 Nothing to say", "Give me some text to post.", color=Palette.WARNING)
+            brand_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+        if len(text) > 2000:
+            embed = make_embed(
+                "✂️ Too long",
+                f"Discord caps a message at 2000 characters; that was `{len(text)}`.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        try:
+            # @everyone, @here and role pings are refused even if a manager
+            # types them: /say must not become a way to mass-ping the server
+            # through the bot. Naming a specific member still works.
+            await target.send(
+                text,
+                allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
+            )
+        except discord.Forbidden:
+            embed = make_embed("🔒 No access", f"I cannot post in {target.mention}.", color=Palette.DANGER)
+            brand_footer(embed)
+            return await respond(interaction, embed, ephemeral=True)
+
+        # A command that speaks in the bot's voice can impersonate staff, so it
+        # leaves a trail: the mod log records who said what, where.
+        log_embed = make_embed(
+            "🗣️ /say used",
+            f"{interaction.user.mention} sent a message through NovaGuard in {target.mention}.",
+            color=Palette.INFO,
+        )
+        log_embed.add_field(name="Message", value=truncate(text, 1000), inline=False)
+        brand_footer(log_embed, f"By {interaction.user.display_name}")
+        self.bot.dispatch("modlog", interaction.guild, log_embed)
+
+        confirm = make_embed("✅ Sent", f"Posted in {target.mention}.", color=Palette.SUCCESS)
+        brand_footer(confirm)
+        await respond(interaction, confirm, ephemeral=True)
+
     @warn.command(name="add", description="Warn a member")
     @app_commands.describe(member="Who gets the warning?", reason="Why?")
     async def warn_add(self, interaction: discord.Interaction, member: discord.Member, reason: str):

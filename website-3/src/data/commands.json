@@ -121,6 +121,7 @@
       "/untimeout",
       "/slowmode",
       "/announce",
+      "/say",
       "/warn add",
       "/warn list",
       "/warn clear"

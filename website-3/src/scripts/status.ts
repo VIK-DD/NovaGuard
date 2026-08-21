@@ -121,7 +121,9 @@ const stampChecked = (prefix = "Last checked") => {
     second: "2-digit",
     hour12: false,
   }).format(new Date());
-  node.textContent = `${prefix} ${time} · refreshes every 30 s`;
+  // "refreshes" lowercase after the middot read as a typo, and the unit space
+  // in "30 s" looked like a stray letter. Both cleaned up.
+  node.textContent = `${prefix} ${time} · Refreshes every 30s`;
 };
 
 const getStatusSnapshot = async (refresh = false) => {

@@ -296,6 +296,20 @@ def init_web_tables():
             )
 
 
+def count_runnable_commands(tree):
+    """How many slash commands a member can actually invoke.
+
+    walk_commands() yields every node in the tree — the group containers as
+    well as the leaves inside them — so a group of five subcommands counted as
+    six. That inflated the public number (131 against a real 116): a group like
+    /backup is not itself runnable, only /backup create and its siblings are.
+    Counting only the leaves is the number a person recognises.
+    """
+    from discord import app_commands
+
+    return sum(1 for command in tree.walk_commands() if isinstance(command, app_commands.Command))
+
+
 def db_ping():
     """Cheap connectivity probe for the health endpoint."""
     try:
@@ -1117,7 +1131,7 @@ class WebServer:
                 "codename": BOT_CODENAME,
                 "guilds": len(guilds),
                 "members": sum(g.member_count or 0 for g in guilds),
-                "commands": len(list(self.bot.tree.walk_commands())),
+                "commands": count_runnable_commands(self.bot.tree),
                 "uptime_seconds": uptime,
                 "ready": self.bot.is_ready(),
             }
@@ -1513,7 +1527,7 @@ class WebServer:
                 "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "uptime_seconds": uptime,
-                "commands": len(list(self.bot.tree.walk_commands())),
+                "commands": count_runnable_commands(self.bot.tree),
                 "guilds": len(self.bot.guilds),
                 "members": sum(g.member_count or 0 for g in self.bot.guilds),
             },

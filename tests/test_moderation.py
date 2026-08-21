@@ -47,6 +47,7 @@ class FakeMember:
     def __init__(self, member_id, role_position, guild=None, name="Member"):
         self.id = member_id
         self.display_name = name
+        self.mention = f"<@{member_id}>"
         self.top_role = FakeRole(role_position)
         self.guild = guild
 
@@ -285,6 +286,105 @@ class WarningStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("`#6`", body)
         self.assertIn("`#15`", body)
         self.assertNotIn("`#5`", body)
+
+
+class _Resp:
+    def __init__(self, status):
+        self.status = status
+        self.reason = "forbidden"
+
+
+class FakeChannel:
+    def __init__(self, *, fails=False):
+        self.sent = []
+        self.fails = fails
+        self.mention = "#general"
+
+    async def send(self, content=None, **kwargs):
+        if self.fails:
+            raise moderation.discord.Forbidden(_Resp(403), "no access")
+        self.sent.append((content, kwargs))
+
+
+class SayCommandTests(unittest.IsolatedAsyncioTestCase):
+    """/say speaks in the bot's voice, so the guard rails matter more than the happy path."""
+
+    def setUp(self):
+        self.guild = build_guild()
+        self.mod = member(self.guild, 20, 5, name="Mod")
+        self.channel = FakeChannel()
+        self.bot = FakeBot()
+        self.cog = moderation.Moderation(self.bot)
+
+    def interaction(self):
+        i = FakeInteraction(self.guild, self.mod)
+        i.channel = self.channel
+        return i
+
+    async def say(self, message, channel=None):
+        i = self.interaction()
+        await self.cog.say.callback(self.cog, i, message, channel)
+        return i
+
+    async def test_it_posts_the_message_in_the_channel(self):
+        await self.say("Server maintenance at 20:00.")
+
+        self.assertEqual(len(self.channel.sent), 1)
+        content, _ = self.channel.sent[0]
+        self.assertEqual(content, "Server maintenance at 20:00.")
+
+    async def test_it_posts_a_plain_message_not_an_embed(self):
+        # "say" means the bot speaks; an embed would look like an announcement.
+        await self.say("hello")
+        _, kwargs = self.channel.sent[0]
+
+        self.assertNotIn("embed", kwargs)
+
+    async def test_it_never_lets_the_bot_ping_everyone_or_roles(self):
+        # The whole reason this command is gated and guarded: a manager must
+        # not be able to turn the bot into a mass-ping.
+        await self.say("Heads up @everyone and @here")
+
+        _, kwargs = self.channel.sent[0]
+        mentions = kwargs["allowed_mentions"]
+        self.assertFalse(mentions.everyone)
+        self.assertFalse(mentions.roles)
+
+    async def test_backslash_n_becomes_a_real_newline(self):
+        await self.say("line one\\nline two")
+
+        content, _ = self.channel.sent[0]
+        self.assertEqual(content, "line one\nline two")
+
+    async def test_empty_text_posts_nothing(self):
+        await self.say("   ")
+
+        self.assertEqual(self.channel.sent, [])
+
+    async def test_a_message_over_the_discord_limit_is_refused(self):
+        await self.say("x" * 2001)
+
+        self.assertEqual(self.channel.sent, [])
+
+    async def test_using_it_is_recorded_in_the_mod_log(self):
+        # A command that can impersonate staff must leave a trace of who did it.
+        await self.say("This is official.")
+
+        modlogs = [d for d in self.bot.dispatched if d and d[0] == "modlog"]
+        self.assertEqual(len(modlogs), 1)
+        embed = modlogs[0][2]
+        body = (embed.description or "") + " ".join(f.value for f in embed.fields)
+        self.assertIn("This is official.", body)
+
+    async def test_a_channel_it_cannot_post_in_is_reported_not_swallowed(self):
+        blocked = FakeChannel(fails=True)
+
+        i = self.interaction()
+        await self.cog.say.callback(self.cog, i, "hi", blocked)
+
+        # Nothing reaches the mod log, and no message was posted.
+        self.assertFalse([d for d in self.bot.dispatched if d and d[0] == "modlog"])
+        self.assertEqual(blocked.sent, [])
 
 
 if __name__ == "__main__":
