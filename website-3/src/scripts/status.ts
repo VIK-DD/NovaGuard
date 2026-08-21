@@ -147,7 +147,10 @@ function init() {
 
   if (!document.querySelector("[data-status-page]")) return;
 
-  set("version", `${PUBLIC_RELEASE.version} · ${PUBLIC_RELEASE.phaseLabel}`);
+  // Same format as the live poll's release_label, and the same as the
+  // server-rendered value already in the page, so this init and the poll both
+  // leave the version visually unchanged.
+  set("version", `${PUBLIC_RELEASE.version} ${PUBLIC_RELEASE.phaseLabel}`);
 
   let stopped = false;
   let uptimeBase = 0;

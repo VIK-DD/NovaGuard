@@ -2,6 +2,19 @@
 import Base from "../layouts/Base.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
+import archive from "../data/updates-archive.json";
+import { currentRelease } from "../data/releases";
+
+// The version is known at build time, so render it into the page instead of a
+// dash. Everything else on this page (uptime, servers, database…) genuinely
+// needs the live poll, but the version does not, and showing "—" for a second
+// before it appeared was the flash people noticed on every click. The live
+// poll still overwrites this with the canonical value from the bot.
+// Matched to the live poll's format (release_label, e.g. "2.5 Open Beta") so
+// that when the poll lands it replaces this with an identical string and
+// nothing visibly changes.
+const baked = currentRelease(archive as Parameters<typeof currentRelease>[0]);
+const bakedVersion = `${baked.version} ${baked.phaseLabel}`;
 ---
 
 <Base title="Status — NovaGuard" description="Live operational status of the NovaGuard bot.">
@@ -23,7 +36,7 @@ import Footer from "../components/Footer.astro";
       </div>
       <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
         <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Version</dt>
-        <dd data-f="version" class="font-display text-lg sm:text-xl">—</dd>
+        <dd data-f="version" class="font-display text-lg sm:text-xl">{bakedVersion}</dd>
       </div>
       <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
         <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Uptime</dt>
