@@ -1,10 +1,10 @@
 """The command count the status page shows.
 
-/stats reported 131 slash commands while the bot has 116 a member can run.
-The difference was every group counted as a command: walk_commands() yields
-the group container as well as the leaves inside it, so /backup added one to
-the total on top of its eight subcommands. A status page that overstates the
-bot by 13 percent is a small lie, but a visible one.
+/stats reported 131 by counting every node in the tree — groups plus the
+leaves inside them. The number people recognise is the one Discord shows when
+they type "/": the top-level entries, where /backup appears once rather than
+as its eight subcommands. That is 81, and it matches the "synced N slash
+commands" line the bot logs on startup.
 """
 
 import os
@@ -13,61 +13,51 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-os.environ.setdefault("WEB_ENABLED", "false")
+# core.webserver reads these once at import into module constants, so whichever
+# test file imports it first fixes them for the run. Match tests/test_webserver.py
+# exactly, with setdefault, so that script-style test still starts its server on
+# the port it later connects to.
+os.environ.setdefault("WEB_ENABLED", "true")
+os.environ.setdefault("WEB_PORT", "8399")
+os.environ.setdefault("WEB_HOST", "127.0.0.1")
+os.environ.setdefault("WEB_CORS_ORIGIN", "http://localhost:5173")
 
-from discord import app_commands  # noqa: E402
-
-from core.webserver import count_runnable_commands  # noqa: E402
+from core.webserver import count_visible_commands  # noqa: E402
 
 
 class FakeTree:
-    """A stand-in that walks a fixed set of command nodes."""
+    """A stand-in that returns a fixed set of top-level commands."""
 
-    def __init__(self, nodes):
-        self._nodes = nodes
+    def __init__(self, top_level):
+        self._top_level = top_level
 
-    def walk_commands(self):
-        return iter(self._nodes)
-
-
-def leaf(name):
-    node = object.__new__(app_commands.Command)
-    node.name = name
-    return node
-
-
-def group(name):
-    node = object.__new__(app_commands.Group)
-    node.name = name
-    return node
+    def get_commands(self):
+        return list(self._top_level)
 
 
 class CommandCountTests(unittest.TestCase):
-    def test_a_flat_set_of_commands_counts_each_one(self):
-        tree = FakeTree([leaf("ping"), leaf("help"), leaf("rank")])
+    def test_each_top_level_entry_counts_once(self):
+        tree = FakeTree(["ping", "help", "rank"])
 
-        self.assertEqual(count_runnable_commands(tree), 3)
+        self.assertEqual(count_visible_commands(tree), 3)
 
-    def test_a_group_is_not_counted_as_a_command(self):
-        # The bug: /backup itself is not runnable, only its subcommands are.
-        tree = FakeTree([group("backup"), leaf("backup create"), leaf("backup list")])
+    def test_a_group_counts_as_one_not_as_its_subcommands(self):
+        # /backup is one entry in the Discord picker, whatever it contains.
+        # get_commands() returns only the top level, so a group is a single
+        # entry — the whole point of the fix.
+        tree = FakeTree(["ping", "backup-group", "config-group"])
 
-        self.assertEqual(count_runnable_commands(tree), 2)
+        self.assertEqual(count_visible_commands(tree), 3)
 
     def test_the_real_shape_of_the_tree(self):
-        # 116 leaves and 15 groups, the way the live tree actually walks. The
-        # old count returned 131; only the leaves are real commands.
-        nodes = [leaf(f"c{i}") for i in range(116)] + [group(f"g{i}") for i in range(15)]
+        # 69 standalone commands + 12 groups = 81 top-level entries, the way
+        # the live tree registers with Discord. The old count returned 131.
+        top_level = [f"c{i}" for i in range(69)] + [f"g{i}" for i in range(12)]
 
-        self.assertEqual(count_runnable_commands(FakeTree(nodes)), 116)
+        self.assertEqual(count_visible_commands(FakeTree(top_level)), 81)
 
     def test_an_empty_tree_is_zero_not_an_error(self):
-        self.assertEqual(count_runnable_commands(FakeTree([])), 0)
-
-    def test_only_groups_counts_nothing(self):
-        tree = FakeTree([group("backup"), group("admin")])
-
-        self.assertEqual(count_runnable_commands(tree), 0)
+        self.assertEqual(count_visible_commands(FakeTree([])), 0)
 
 
 if __name__ == "__main__":

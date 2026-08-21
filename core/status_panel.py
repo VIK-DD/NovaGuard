@@ -178,6 +178,12 @@ def build_status_embed(snapshot, *, now=None):
         mark = _UP if component["ok"] else _DOWN
         label = "Operational" if component["ok"] else "Not responding"
         detail = (component.get("detail") or "").strip()
+        # Reads better with a capital: "responding" becomes "Responding". A
+        # detail that starts with a number ("101 ms to Discord") is left as it
+        # is, since upper-casing a digit does nothing and the line already
+        # reads cleanly.
+        if detail and detail[0].isalpha():
+            detail = detail[0].upper() + detail[1:]
         # A detail that only repeats the label is noise.
         if detail.lower() == label.lower():
             detail = ""

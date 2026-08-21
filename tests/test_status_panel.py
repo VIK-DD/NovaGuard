@@ -195,9 +195,24 @@ class EmbedTests(unittest.TestCase):
         self.assertIn("42", self.body(snapshot(latency_ms=42)))
 
     def test_an_unreachable_api_explains_itself(self):
+        # The detail is rendered with a capital first letter, so the reason
+        # still comes through — just tidier than the raw lowercase probe text.
         text = self.body(snapshot(api_ok=False, api_detail="no response in 5s"))
 
-        self.assertIn("no response in 5s", text)
+        self.assertIn("No response in 5s", text)
+
+    def test_a_lowercase_detail_is_capitalised_for_the_card(self):
+        text = self.body(snapshot(database_ok=True))
+
+        self.assertIn("Responding", text)
+        self.assertNotIn("\nresponding", text)
+
+    def test_a_detail_that_starts_with_a_number_is_left_alone(self):
+        # "101 ms to Discord" reads fine; upper-casing a digit would do nothing
+        # and must not mangle the rest.
+        text = self.body(snapshot(latency_ms=101))
+
+        self.assertIn("101 ms to Discord", text)
 
     def test_the_colour_reflects_the_state(self):
         healthy = build_status_embed(snapshot()).color

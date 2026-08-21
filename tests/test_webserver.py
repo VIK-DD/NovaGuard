@@ -83,6 +83,9 @@ class FakeTree:
     def walk_commands(self):
         return iter(())
 
+    def get_commands(self):
+        return []
+
 
 class FakeBot:
     def __init__(self):

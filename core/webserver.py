@@ -296,18 +296,16 @@ def init_web_tables():
             )
 
 
-def count_runnable_commands(tree):
-    """How many slash commands a member can actually invoke.
+def count_visible_commands(tree):
+    """How many commands Discord shows when someone types "/".
 
-    walk_commands() yields every node in the tree — the group containers as
-    well as the leaves inside them — so a group of five subcommands counted as
-    six. That inflated the public number (131 against a real 116): a group like
-    /backup is not itself runnable, only /backup create and its siblings are.
-    Counting only the leaves is the number a person recognises.
+    walk_commands() counted every node — groups and the leaves inside them —
+    giving 131. get_commands() returns the top-level entries, which is what
+    Discord actually registers and what a person sees in the command picker:
+    /backup appears once there, not as its eight subcommands. That number is
+    81, and it matches what the bot logs as "synced N slash commands".
     """
-    from discord import app_commands
-
-    return sum(1 for command in tree.walk_commands() if isinstance(command, app_commands.Command))
+    return sum(1 for _ in tree.get_commands())
 
 
 def db_ping():
@@ -1131,7 +1129,7 @@ class WebServer:
                 "codename": BOT_CODENAME,
                 "guilds": len(guilds),
                 "members": sum(g.member_count or 0 for g in guilds),
-                "commands": count_runnable_commands(self.bot.tree),
+                "commands": count_visible_commands(self.bot.tree),
                 "uptime_seconds": uptime,
                 "ready": self.bot.is_ready(),
             }
@@ -1527,7 +1525,7 @@ class WebServer:
                 "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "uptime_seconds": uptime,
-                "commands": count_runnable_commands(self.bot.tree),
+                "commands": count_visible_commands(self.bot.tree),
                 "guilds": len(self.bot.guilds),
                 "members": sum(g.member_count or 0 for g in self.bot.guilds),
             },
