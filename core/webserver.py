@@ -29,7 +29,6 @@ Enable with WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET.
 """
 
 import asyncio
-import base64
 import hashlib
 import hmac
 import ipaddress
@@ -37,7 +36,6 @@ import json
 import logging
 import os
 import secrets
-import threading
 import time
 from collections import deque
 from datetime import UTC, datetime, timedelta
@@ -52,7 +50,6 @@ from .api_security import API_CONTENT_SECURITY_POLICY
 from .automod_settings import resolve_automod, validate_automod
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import (
-    connect,
     count_open_tickets,
     get_role_panel_record,
     list_ticket_records,
@@ -75,12 +72,18 @@ from .release_versions import current_project_release
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
-
-try:  # at-rest token encryption is optional — degrade gracefully if unavailable
-    from cryptography.fernet import Fernet, InvalidToken
-except ImportError:  # pragma: no cover - exercised only on minimal installs
-    Fernet = None
-    InvalidToken = Exception
+from .web_storage import (
+    _CIPHER,
+    db_add_audit,
+    db_delete_session,
+    db_gc,
+    db_get_audit,
+    db_load_session,
+    db_ping,
+    db_save_session,
+    db_touch_session,
+    init_web_tables,
+)
 
 log = logging.getLogger("novaguard.web")
 
@@ -166,12 +169,8 @@ STATE_TTL = 600
 GUILDS_CACHE_SECONDS = 120
 DISCORD_DNS_CACHE_SECONDS = 300
 DISCORD_REQUEST_TIMEOUT_SECONDS = 10
-MAX_SESSIONS_PER_USER = 5
-AUDIT_KEEP_DAYS = 90
 MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
-TOKEN_PREFIX = "enc:"  # marks an encrypted token column so legacy rows still load
-SCHEMA_VERSION = 1  # bump + add a migration branch in init_web_tables when tables change
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
@@ -198,111 +197,10 @@ ROLE_KEYS = ("autorole", "ticket_staff_role")
 DASHBOARD_VOICE_HISTORY_LIMIT = 5
 DASHBOARD_LEADERBOARD_LIMIT = 5
 
-_DB_LOCK = threading.Lock()
-
 # HMAC key for signing OAuth state tokens. Reuses the client secret so it needs
 # no extra configuration; a per-process random fallback keeps things sane when
 # OAuth is not configured (login is disabled in that case anyway).
 _STATE_SECRET = (CLIENT_SECRET or secrets.token_urlsafe(32)).encode("utf-8")
-
-
-def _cipher_from_secret(secret):
-    """Derive a domain-separated Fernet key without storing the raw secret."""
-    if Fernet is None or not secret:
-        return None
-    key = base64.urlsafe_b64encode(hashlib.sha256(("novaguard-token::" + secret).encode()).digest())
-    return Fernet(key)
-
-
-def _build_ciphers():
-    """Prefer the dedicated key but retain read-only legacy compatibility."""
-    dedicated_secret = os.getenv("WEB_TOKEN_KEY", "").strip()
-    primary = _cipher_from_secret(dedicated_secret or CLIENT_SECRET)
-    legacy = None
-    if dedicated_secret and CLIENT_SECRET and dedicated_secret != CLIENT_SECRET:
-        # Earlier NovaGuard versions always used the Discord client secret even
-        # when WEB_TOKEN_KEY was configured. Keep it only for decrypting those
-        # rows; every subsequent write is encrypted with the dedicated key.
-        legacy = _cipher_from_secret(CLIENT_SECRET)
-    return primary, legacy
-
-
-_CIPHER, _LEGACY_CIPHER = _build_ciphers()
-
-
-def _encrypt_token(value):
-    if value is None or _CIPHER is None:
-        return value
-    return TOKEN_PREFIX + _CIPHER.encrypt(value.encode("utf-8")).decode("ascii")
-
-
-def _decrypt_token(value):
-    if not isinstance(value, str) or not value.startswith(TOKEN_PREFIX):
-        return value  # legacy plaintext (or None) — return unchanged
-    if _CIPHER is None:
-        return None  # encrypted but we lost the key ⇒ treat as unusable
-    token = value[len(TOKEN_PREFIX):].encode("ascii")
-    for cipher in (_CIPHER, _LEGACY_CIPHER):
-        if cipher is None:
-            continue
-        try:
-            return cipher.decrypt(token).decode("utf-8")
-        except InvalidToken:
-            continue
-    return None
-
-
-# ── SQL layer (runs in threads via asyncio.to_thread) ────────────────
-
-def init_web_tables():
-    with _DB_LOCK, connect() as db:
-        db.execute("CREATE TABLE IF NOT EXISTS web_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_sessions (
-                sid_hash TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                user_json TEXT NOT NULL,
-                access_token TEXT NOT NULL,
-                refresh_token TEXT,
-                token_expires_at REAL NOT NULL DEFAULT 0,
-                guilds_json TEXT NOT NULL DEFAULT '{}',
-                guilds_fetched_at REAL NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                expires_at REAL NOT NULL,
-                last_seen_at REAL NOT NULL DEFAULT 0
-            )
-            """
-        )
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id TEXT NOT NULL,
-                user_id TEXT NOT NULL,
-                username TEXT NOT NULL,
-                action TEXT NOT NULL,
-                changes_json TEXT NOT NULL,
-                ip TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        db.execute("CREATE INDEX IF NOT EXISTS idx_web_audit_guild ON web_audit (guild_id, id DESC)")
-        db.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id)")
-
-        # ── schema migrations (dedicated web_meta, never touches the bot's DB) ──
-        row = db.execute("SELECT value FROM web_meta WHERE key = 'schema_version'").fetchone()
-        version = int(row["value"]) if row else 0
-        # future migrations go here, e.g.:
-        #   if version < 2:
-        #       db.execute("ALTER TABLE web_sessions ADD COLUMN ...")
-        if version != SCHEMA_VERSION:
-            db.execute(
-                "INSERT INTO web_meta (key, value) VALUES ('schema_version', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (str(SCHEMA_VERSION),),
-            )
 
 
 def count_visible_commands(tree):
@@ -315,198 +213,6 @@ def count_visible_commands(tree):
     81, and it matches what the bot logs as "synced N slash commands".
     """
     return sum(1 for _ in tree.get_commands())
-
-
-def db_ping():
-    """Cheap connectivity probe for the health endpoint."""
-    try:
-        with _DB_LOCK, connect() as db:
-            db.execute("SELECT 1").fetchone()
-        return True
-    except Exception:
-        return False
-
-
-def _hash_sid(sid):
-    return hashlib.sha256(sid.encode("utf-8")).hexdigest()
-
-
-def db_save_session(sid, entry):
-    with _DB_LOCK, connect() as db:
-        db.execute(
-            """
-            INSERT OR REPLACE INTO web_sessions
-            (sid_hash, user_id, user_json, access_token, refresh_token, token_expires_at,
-             guilds_json, guilds_fetched_at, created_at, expires_at, last_seen_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                _hash_sid(sid),
-                entry["user"]["id"],
-                json.dumps(entry["user"]),
-                _encrypt_token(entry["access_token"]),
-                _encrypt_token(entry.get("refresh_token")),
-                entry.get("token_expires_at", 0),
-                json.dumps(entry.get("guilds", {})),
-                entry.get("guilds_fetched_at", 0),
-                entry.get("created_at") or datetime.now(UTC).isoformat(),
-                entry["expires_at"],
-                time.time(),
-            ),
-        )
-        # keep only the newest sessions per user
-        db.execute(
-            """
-            DELETE FROM web_sessions WHERE user_id = ? AND sid_hash NOT IN (
-                SELECT sid_hash FROM web_sessions WHERE user_id = ?
-                ORDER BY created_at DESC LIMIT ?
-            )
-            """,
-            (entry["user"]["id"], entry["user"]["id"], MAX_SESSIONS_PER_USER),
-        )
-
-
-def db_load_session(sid):
-    with _DB_LOCK, connect() as db:
-        row = db.execute(
-            "SELECT * FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),)
-        ).fetchone()
-    if row is None:
-        return None
-    entry = {
-        "user": json.loads(row["user_json"]),
-        "access_token": _decrypt_token(row["access_token"]),
-        "refresh_token": _decrypt_token(row["refresh_token"]),
-        "token_expires_at": row["token_expires_at"],
-        "guilds": json.loads(row["guilds_json"]),
-        "guilds_fetched_at": row["guilds_fetched_at"],
-        "created_at": row["created_at"],
-        "expires_at": row["expires_at"],
-        "last_seen_at": row["last_seen_at"],
-    }
-    if entry["expires_at"] < time.time():
-        db_delete_session(sid)
-        return None
-    return entry
-
-
-def db_delete_session(sid):
-    with _DB_LOCK, connect() as db:
-        db.execute("DELETE FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),))
-
-
-def db_touch_session(sid, entry):
-    with _DB_LOCK, connect() as db:
-        db.execute(
-            """
-            UPDATE web_sessions SET access_token = ?, refresh_token = ?, token_expires_at = ?,
-                   guilds_json = ?, guilds_fetched_at = ?, last_seen_at = ?
-            WHERE sid_hash = ?
-            """,
-            (
-                _encrypt_token(entry["access_token"]),
-                _encrypt_token(entry.get("refresh_token")),
-                entry.get("token_expires_at", 0),
-                json.dumps(entry.get("guilds", {})),
-                entry.get("guilds_fetched_at", 0),
-                time.time(),
-                _hash_sid(sid),
-            ),
-        )
-
-
-def db_gc():
-    cutoff = datetime.now(UTC).timestamp() - AUDIT_KEEP_DAYS * 86400
-    with _DB_LOCK, connect() as db:
-        db.execute("DELETE FROM web_sessions WHERE expires_at < ?", (time.time(),))
-        db.execute(
-            "DELETE FROM web_audit WHERE created_at < ?",
-            (datetime.fromtimestamp(cutoff, UTC).isoformat(),),
-        )
-
-
-def db_add_audit(guild_id, user, action, changes, ip):
-    with _DB_LOCK, connect() as db:
-        db.execute(
-            """
-            INSERT INTO web_audit (guild_id, user_id, username, action, changes_json, ip, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(guild_id),
-                user["id"],
-                user["username"],
-                action,
-                json.dumps(changes, ensure_ascii=False),
-                ip,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-
-
-def db_get_audit(
-    guild_id,
-    limit,
-    *,
-    cursor=None,
-    kind=None,
-    action=None,
-    actor=None,
-    after=None,
-    before=None,
-):
-    clauses = ["guild_id = ?"]
-    params = [str(guild_id)]
-    if cursor is not None:
-        clauses.append("id < ?")
-        params.append(cursor)
-    if kind == "settings":
-        clauses.append("(action = 'config_update' OR action LIKE 'update_%')")
-    elif kind == "actions":
-        clauses.append("action LIKE 'dashboard_%'")
-    elif kind == "login":
-        clauses.append("action = 'login'")
-    if action:
-        clauses.append("action = ?")
-        params.append(action)
-    if actor:
-        clauses.append("(username LIKE ? OR user_id = ?)")
-        params.extend((f"%{actor}%", actor))
-    if after:
-        clauses.append("created_at >= ?")
-        params.append(after)
-    if before:
-        clauses.append("created_at < ?")
-        params.append(before)
-
-    # Fetch one extra row so the API can advertise a real next page instead
-    # of making the client issue an empty request at the end of the trail.
-    params.append(limit + 1)
-    with _DB_LOCK, connect() as db:
-        rows = db.execute(
-            f"""
-            SELECT id, username, user_id, action, changes_json, created_at
-            FROM web_audit
-            WHERE {' AND '.join(clauses)}
-            ORDER BY id DESC LIMIT ?
-            """,
-            params,
-        ).fetchall()
-    has_more = len(rows) > limit
-    rows = rows[:limit]
-    entries = [
-        {
-            "id": row["id"],
-            "username": row["username"],
-            "user_id": row["user_id"],
-            "action": row["action"],
-            "changes": json.loads(row["changes_json"]),
-            "created_at": row["created_at"],
-        }
-        for row in rows
-    ]
-    next_cursor = entries[-1]["id"] if has_more and entries else None
-    return entries, next_cursor
 
 
 # ── errors ───────────────────────────────────────────────────────────
