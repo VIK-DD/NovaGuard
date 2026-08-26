@@ -10,7 +10,15 @@ from types import SimpleNamespace
 # Keep this standalone test runnable with `python tests/test_voice.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cogs.voice import VoiceReports, active_session_status_lines, build_report_embed, split_lines
+import cogs.voice as voice_cog
+from cogs.voice import VoiceReports
+from core.voice_presenters import (
+    active_session_status_lines,
+    build_report_embed,
+    pending_report_lines,
+    report_to_file,
+    split_lines,
+)
 from core.voice_sessions import (
     MIN_SESSION_SECONDS,
     active_member_ids,
@@ -156,6 +164,56 @@ class VoiceSessionTests(unittest.TestCase):
 
     def test_csv_export_escapes_quotes(self):
         self.assertEqual(csv_escape('Victor "VIK"'), '"Victor ""VIK"""')
+
+    def test_pending_reports_are_newest_first_and_long_errors_are_truncated(self):
+        reports = {
+            "old": {
+                "ended_at": self.started_at.isoformat(),
+                "channel_name": "Old room",
+                "channel_id": "1",
+                "attempts": 1,
+            },
+            "new": {
+                "ended_at": (self.started_at + timedelta(hours=1)).isoformat(),
+                "channel_name": "New room",
+                "channel_id": "2",
+                "attempts": 3,
+                "last_error": "x" * 140,
+            },
+        }
+
+        lines = pending_report_lines(reports)
+
+        self.assertIn("`new`", lines[0])
+        self.assertIn("attempts `3`", lines[0])
+        self.assertIn("...`", lines[0])
+        self.assertIn("`old`", lines[1])
+
+    def test_csv_report_file_has_a_stable_name_and_payload(self):
+        record_member_join(self.session, 1, "Victor", self.started_at)
+        ended_at = self.started_at + timedelta(hours=2)
+        record_member_leave(self.session, 1, ended_at)
+        report = {
+            "channel_id": "123",
+            "channel_name": "Late-night",
+            "ended_at": ended_at.isoformat(),
+            "session": self.session,
+        }
+
+        exported = report_to_file(report, csv=True)
+        try:
+            exported.fp.seek(0)
+            payload = exported.fp.read().decode("utf-8")
+            self.assertEqual(exported.filename, "voice-session-123-20260724-1400.csv")
+            self.assertIn("member_id,display_name,total_seconds", payload)
+            self.assertIn('"1","Victor",7200.0', payload)
+        finally:
+            exported.close()
+
+    def test_old_cog_imports_still_point_to_the_extracted_helpers(self):
+        self.assertIs(voice_cog.build_report_embed, build_report_embed)
+        self.assertIs(voice_cog.pending_report_lines, pending_report_lines)
+        self.assertIs(voice_cog.report_to_file, report_to_file)
 
     def test_parallel_pending_sends_do_not_duplicate_the_report(self):
         async def run_check():
