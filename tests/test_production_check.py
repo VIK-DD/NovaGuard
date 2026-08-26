@@ -43,6 +43,8 @@ HEALTHY_ENV = {
     "LEGAL_BACKUP_PROVIDER": "Test Storage",
     "LEGAL_BACKUP_LOCATION": "Test Backup Region, Test Country",
     "LEGAL_SUPERVISORY_AUTHORITY_URL": "https://authority.example.test/complaints",
+    "HOST_STORAGE_ENCRYPTION_CONFIRMED": "true",
+    "API_EDGE_RATE_LIMIT_CONFIRMED": "true",
 }
 
 
@@ -128,6 +130,8 @@ class ProductionCheckTests(unittest.TestCase):
         self.assertIn("LEGAL_BACKUP_PROVIDER", critical)
         self.assertIn("LEGAL_BACKUP_LOCATION", critical)
         self.assertIn("LEGAL_SUPERVISORY_AUTHORITY_URL", critical)
+        self.assertIn("HOST_STORAGE_ENCRYPTION_CONFIRMED", critical)
+        self.assertIn("API_EDGE_RATE_LIMIT_CONFIRMED", critical)
         self.assertIn("database", critical)
         self.assertIn("deletion ledger", critical)
         self.assertIn("latest backup", critical)
@@ -157,6 +161,46 @@ class ProductionCheckTests(unittest.TestCase):
         critical = {item.name for item in findings if item.level == CRITICAL}
         self.assertIn("PRIVACY_CONTACT_EMAIL", critical)
         self.assertIn("LEGAL_SUPERVISORY_AUTHORITY_URL", critical)
+
+    def test_storage_encryption_attestation_must_be_explicitly_true(self):
+        env = {**HEALTHY_ENV, "HOST_STORAGE_ENCRYPTION_CONFIRMED": "not-verified"}
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ, env, clear=True
+        ):
+            root = Path(temp_dir)
+            db_path, backup_dir = self._healthy_state(root)
+            with mock.patch.object(backups, "BACKUP_DIR", backup_dir), mock.patch.object(
+                backups, "RESTORE_CHECK_DIR", backup_dir / "restore-check"
+            ):
+                findings = production_findings(
+                    env,
+                    base_dir=root,
+                    db_path=db_path,
+                    backup_dir=backup_dir,
+                )
+
+        critical = {item.name for item in findings if item.level == CRITICAL}
+        self.assertIn("HOST_STORAGE_ENCRYPTION_CONFIRMED", critical)
+
+    def test_api_edge_rate_limit_attestation_must_be_explicitly_true(self):
+        env = {**HEALTHY_ENV, "API_EDGE_RATE_LIMIT_CONFIRMED": "0"}
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ, env, clear=True
+        ):
+            root = Path(temp_dir)
+            db_path, backup_dir = self._healthy_state(root)
+            with mock.patch.object(backups, "BACKUP_DIR", backup_dir), mock.patch.object(
+                backups, "RESTORE_CHECK_DIR", backup_dir / "restore-check"
+            ):
+                findings = production_findings(
+                    env,
+                    base_dir=root,
+                    db_path=db_path,
+                    backup_dir=backup_dir,
+                )
+
+        critical = {item.name for item in findings if item.level == CRITICAL}
+        self.assertIn("API_EDGE_RATE_LIMIT_CONFIRMED", critical)
 
 
 if __name__ == "__main__":

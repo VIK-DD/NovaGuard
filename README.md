@@ -225,6 +225,8 @@ NovaGuard loads `.env` automatically at startup.
 | `LEGAL_BACKUP_PROVIDER` | Launch required | Provider that receives encrypted rclone backups |
 | `LEGAL_BACKUP_LOCATION` | Launch required | Disclosed backup location, including `global / region not pinned` when no region is guaranteed |
 | `LEGAL_SUPERVISORY_AUTHORITY_URL` | Launch required | HTTPS complaint link for the competent privacy authority |
+| `HOST_STORAGE_ENCRYPTION_CONFIRMED` | Launch required | Set `true` only after retaining current provider/volume evidence that production host storage is encrypted at rest |
+| `API_EDGE_RATE_LIMIT_CONFIRMED` | Launch required | Set `true` only after retaining evidence of a Cloudflare WAF/rate-limit rule or equivalent edge control on the public dashboard API |
 | `BACKUP_REMOTE_TIMEOUT_SECONDS` | Optional | Off-site upload timeout; defaults to `300` |
 | `ANTHROPIC_API_KEY` | Optional | Enables `/ask` |
 | `ANTHROPIC_MODEL` | Optional | Claude model override |
@@ -249,9 +251,11 @@ Before a public deployment, run the fail-closed host audit:
 venv/bin/python tools/production_check.py --strict
 ```
 
-It verifies launch configuration, legal contact fields, private file modes,
-SQLite integrity, the authenticated deletion ledger, backup freshness and the
-confirmed off-site copy. `NOT READY` means the host should not be launched yet.
+It verifies launch configuration, legal contact fields, the operator's retained
+host-storage encryption and API edge-rate-limit attestations, private file
+modes, SQLite integrity, the authenticated deletion ledger, backup freshness
+and the confirmed off-site copy. `NOT READY` means the host should not be
+launched yet.
 See [docs/INCIDENT-RESPONSE.md](docs/INCIDENT-RESPONSE.md) before handling a
 suspected credential or personal-data incident.
 
@@ -380,7 +384,7 @@ credential incidents.
 - [ ] Add richer repo analytics cards for `/dev`
 - [ ] Add a clean deploy checklist command for Pi admins
 - [ ] Add export/import utilities for more bot state
-- [ ] Add optional web dashboard later if the project grows into it
+- [ ] Split the existing dashboard configuration screen into smaller feature modules
 
 ---
 
@@ -406,10 +410,14 @@ Run the bot locally, verify the slash-command flow, and keep changes friendly to
 
 <p align="center">
   Licensed under the <strong>Apache License 2.0</strong> — see <a href="LICENSE"><strong>LICENSE</strong></a> for details.
+  Project identity is clarified in <a href="NOTICE"><strong>NOTICE</strong></a>.
+  Third-party components and fonts remain under their respective licenses — see
+  <a href="THIRD_PARTY_NOTICES.md"><strong>THIRD_PARTY_NOTICES.md</strong></a>.
 </p>
 
 <p align="center">
-  <strong>Copyright © 2026 VIK &amp; CloudMedia</strong>
+  <strong>Copyright © 2019–2026 VIK-DD</strong><br />
+  Developed under the VIK &amp; CloudMedia creator names
 </p>
 
 <p align="center">

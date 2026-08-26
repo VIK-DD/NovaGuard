@@ -30,6 +30,22 @@ LEGAL_FIELDS = (
 )
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _HTTPS_URL = re.compile(r"^https://[^\s/]+(?:/[^\s]*)?$")
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _operator_attestation_finding(env, name, requirement):
+    confirmed = str(env.get(name) or "").strip().lower() in _TRUE_VALUES
+    if confirmed:
+        return Finding(
+            OK,
+            name,
+            "operator attestation is present; retain the supporting configuration evidence.",
+        )
+    return Finding(
+        CRITICAL,
+        name,
+        f"not attested - retain {requirement}, then set this variable to true.",
+    )
 
 
 def _mode_is_private(path):
@@ -153,6 +169,22 @@ def production_findings(
                 "must be an absolute HTTPS URL.",
             )
         )
+
+    findings.append(
+        _operator_attestation_finding(
+            env,
+            "HOST_STORAGE_ENCRYPTION_CONFIRMED",
+            "current provider/volume encryption evidence",
+        )
+    )
+    findings.append(
+        _operator_attestation_finding(
+            env,
+            "API_EDGE_RATE_LIMIT_CONFIRMED",
+            "a current Cloudflare WAF/rate-limit rule or equivalent edge configuration "
+            "covering the public dashboard API",
+        )
+    )
 
     env_path = base_dir / ".env"
     if not env_path.is_file():

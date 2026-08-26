@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import {
   auditBuildArtifacts,
   auditResponse,
+  isCloudflareChallenge,
   isOurHost,
   worstSeverity,
 } from "./security-audit-rules.mjs";
@@ -27,6 +28,7 @@ const DIST = join(HERE, "..", "dist");
 
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3 };
 const LABEL = { high: "HIGH", medium: "MEDIUM", low: "LOW", info: "INFO" };
+const EDGE_CHALLENGE_RETRY_MS = [250, 750];
 
 function parseArgs(argv) {
   const args = {
@@ -77,7 +79,7 @@ function splitSetCookie(response) {
   return single ? [single] : [];
 }
 
-async function request(url, jar, init = {}) {
+async function request(url, jar, init = {}, edgeAttempt = 0) {
   const headers = { "User-Agent": "NovaGuard-security-audit", ...(init.headers || {}) };
   const cookies = jar.header();
   if (cookies) headers.Cookie = cookies;
@@ -85,7 +87,7 @@ async function request(url, jar, init = {}) {
   const setCookie = splitSetCookie(response);
   jar.store(setCookie);
   const body = await response.text();
-  return {
+  const result = {
     url,
     status: response.status,
     headers: Object.fromEntries([...response.headers.entries()]),
@@ -93,6 +95,11 @@ async function request(url, jar, init = {}) {
     body,
     location: response.headers.get("location"),
   };
+  if (isCloudflareChallenge(result) && edgeAttempt < EDGE_CHALLENGE_RETRY_MS.length) {
+    await new Promise((resolve) => setTimeout(resolve, EDGE_CHALLENGE_RETRY_MS[edgeAttempt]));
+    return request(url, jar, init, edgeAttempt + 1);
+  }
+  return result;
 }
 
 /** True when the response is the soft-launch gate turning the request away. */
@@ -239,6 +246,16 @@ async function main() {
       continue;
     }
     scanned += 1;
+
+    if (isCloudflareChallenge(response)) {
+      findings.push({
+        rule: "edge-challenge",
+        severity: "low",
+        url: target,
+        detail: "Cloudflare repeatedly returned a challenge instead of the page; this target was not audited.",
+      });
+      continue;
+    }
 
     // A redirect to the gate means we are auditing the gate, not the page.
     if (isLoginRedirect(response)) {

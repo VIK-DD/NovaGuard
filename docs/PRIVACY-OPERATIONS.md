@@ -152,13 +152,16 @@ message archive.
 
 ## Cookies and browser storage
 
-The current website uses only first-party storage necessary for a requested
+The application sets only first-party storage necessary for a requested
 security/sign-in flow (`ng_state`, `ng_session`, `ng_gate`, `ng_preview`) and
-explicit theme preferences (`ng-theme`, `ng-maintenance-theme`). It has no
-advertising or analytics tracker. A consent banner would create a false choice
-and is not required for strictly necessary storage; the policy must still
-explain it. Add a real prior-consent control before any non-essential analytics,
-marketing, fingerprinting or cross-site storage is introduced.
+explicit theme preferences (`ng-theme`, `ng-maintenance-theme`). Cloudflare may
+add strictly necessary security cookies such as `__cf_bm`, and its Web Analytics
+RUM beacon is enabled at the edge. The public policy discloses both. Cloudflare
+states that Web Analytics does not collect or use visitors' personal data or
+track people across customer sites; verify that claim and the enabled dashboard
+configuration during each vendor review. Add a real prior-consent control before
+any advertising, marketing, fingerprinting, cross-site tracking or other
+non-essential client storage is introduced.
 
 The strictly-necessary exception is in Article 5(3) of the ePrivacy Directive:
 <https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32002L0058>.
@@ -199,6 +202,12 @@ The operator must complete and retain evidence for every item:
       post it in a visible rules, onboarding or privacy channel.
 - [ ] Identify the competent supervisory authority and complaint route.
 - [ ] Confirm the Oracle region and every rclone backup destination/country.
+- [ ] Retain a current Oracle/provider console screenshot or configuration
+      export proving encryption at rest for production disks, boot volumes and
+      snapshots; only then set `HOST_STORAGE_ENCRYPTION_CONFIRMED=true`.
+- [ ] Retain the current Cloudflare WAF/rate-limit rule or equivalent edge
+      configuration covering the public dashboard API; test a safe burst gets
+      `429`, then set `API_EDGE_RATE_LIMIT_CONFIRMED=true`.
 - [ ] Record the lawful basis and legitimate-interest assessment for every
       enabled purpose.
 - [ ] Execute/review applicable provider DPAs and transfer safeguards.
@@ -218,6 +227,8 @@ Keep a restricted release record with the date, person performing the check and
 result for: the public Privacy Policy and Terms URLs; a screenshot or permalink
 to the adapted server notice; the selected module configuration; a private
 privacy export/deletion test; encrypted backup and off-site verification; and
+provider evidence for production storage encryption at rest; the tested API
+edge rate-limit configuration; plus
 the output of the following command from the production host:
 
 ```bash
@@ -228,8 +239,8 @@ The command demonstrates the host configuration and backup/ledger state. It
 does not replace provider contract review, a legal assessment or the human
 server-administration checks above.
 
-If the operator is established in Moldova, obtain local advice before the
-September launch: Law no. 195/2024 enters into force on 23 August 2026 and
-introduces GDPR-style accountability, transparency, rights, records, DPIAs and
-breach duties. Official CNPDCP summary:
+If the operator is established in Moldova, obtain local advice before public
+launch: Law no. 195/2024 has applied since 23 August 2026 and introduces
+GDPR-style accountability, transparency, rights, records, DPIAs and breach
+duties. Official CNPDCP summary:
 <https://datepersonale.md/legea-nr-195-2024-privind-protectia-datelor-cu-caracter-personal-principalele-prevederi-si-noutati-legislative/>.

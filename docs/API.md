@@ -68,7 +68,7 @@ Public. Bot-wide counters.
 { "version": "2.0", "phase": "open-beta", "phase_label": "Open Beta",
   "release_label": "2.0 Open Beta", "runtime_version": "3.1.0",
   "codename": "Nova", "guilds": 3, "members": 512,
-  "commands": 78, "uptime_seconds": 8123, "ready": true }
+  "commands": 81, "uptime_seconds": 8123, "ready": true }
 ```
 
 ### `GET /updates?limit=50`

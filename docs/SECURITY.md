@@ -1,16 +1,17 @@
 # NovaGuard — Security Audit & Hardening Reference
 
-_Last reviewed: 2026-07-13 · Scope: the Discord bot, its SQLite data layer, and
-the embedded dashboard API (`core/webserver.py`)._
+_Last reviewed: 2026-08-26 · Scope: Discord bot, SQLite/JSON state, backups,
+dashboard API, Astro website, Cloudflare Worker and dependency manifests._
 
 ## Verdict
 
-The backend has **no known remotely-exploitable vulnerabilities**. There is no
-command execution, no SQL/`eval` injection, no deserialization sink, and no
-secret exposure. Authentication, authorization, transport, rate-limiting, data
-at rest, and the software supply chain are all hardened. Residual risk is low
-and is limited to items outside the code (host/network posture, secret
-rotation), documented in the runbook below.
+This document records implemented controls and checks; it is not a guarantee
+that the service has no vulnerabilities. As of the review date, the locked
+Python dependencies and Node dependencies pass their configured audits, and
+the test suite covers the high-risk authorization, restore and edge-auth paths.
+Residual risk still includes deployment posture, provider configuration,
+credential handling, new dependency advisories and defects not represented by
+the tests. Re-run the checks below for every release.
 
 ## Threat model
 
@@ -28,7 +29,7 @@ JSON API for a web dashboard. The adversaries we design against:
 
 | Area | Control | Status |
 |------|---------|--------|
-| RCE / shell | No `subprocess`/`os.system`/`eval`/`exec`; update engine only hashes files | ✅ none |
+| RCE / shell | No `eval`/`exec` or shell invocation; the bounded rclone call uses an argv list and fixed operation | ✅ guarded |
 | Deserialization | No `pickle`/`yaml.load`/`__import__` of untrusted data | ✅ none |
 | SQL injection | 100% parameterized queries (`?` placeholders) | ✅ none |
 | Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs | ✅ |
@@ -70,8 +71,10 @@ JSON API for a web dashboard. The adversaries we design against:
 - `requirements.lock` = fully resolved, **hash-pinned** (`pip-compile
   --generate-hashes`). Production installs from the lock so a tampered or
   swapped package fails the hash check.
-- CI runs `pip-audit` (known-CVE gate) and a job that installs the lock with
-  `--require-hashes` and imports the bot, proving reproducibility.
+- CI audits both the direct version ranges and the exact production lock, then
+  installs the lock with `--require-hashes` and imports the bot. Auditing the
+  lock separately prevents a stale production pin from hiding behind a newer
+  version selected from `requirements.txt`.
 - GitHub Actions are pinned to commit SHAs; Dependabot keeps deps + Actions
   fresh via weekly PRs.
 
@@ -96,8 +99,9 @@ Note the middle one: `/cdn-cgi/*` is on our hostname but is served by Cloudflare
 edge **before** the Worker runs, so nothing in `website-3/worker/` can set headers
 on it. The `beacon.min.js` hit is Cloudflare Web Analytics, injected at the edge —
 it is not in our source either. Turning Web Analytics off in the Cloudflare
-dashboard is the only way to drop that one, and it is a product decision, not a
-vulnerability.
+dashboard is the only way to drop that one. While it remains enabled, its
+performance measurements and Cloudflare's stated privacy properties are
+disclosed in the public privacy policy.
 
 The Low and Informational rows split the same way. What was genuinely ours has
 been fixed; the rest is either another host's or not a defect at all:
@@ -150,8 +154,8 @@ pm2 restart pythonbot
 ```
 Regenerate the lock only when you change `requirements.txt`:
 ```bash
-pip install pip-tools
-pip-compile --generate-hashes -o requirements.lock requirements.txt
+pip install uv
+uv pip compile --universal --generate-hashes --python-version 3.11 -o requirements.lock requirements.txt
 ```
 
 ## 2. Expose the API safely — Cloudflare Tunnel + WAF

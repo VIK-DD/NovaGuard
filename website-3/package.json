@@ -1,5 +1,6 @@
 {
   "name": "novaguard-website",
+  "version": "3.1.0",
   "type": "module",
   "private": true,
   "scripts": {
@@ -10,6 +11,7 @@
     "preview": "astro preview",
     "deploy": "npm run build && wrangler deploy",
     "security:audit": "node scripts/security-audit.mjs",
+    "sbom": "npm sbom --sbom-format cyclonedx --omit dev --package-lock-only",
     "test": "vitest run",
     "test:watch": "vitest"
   },

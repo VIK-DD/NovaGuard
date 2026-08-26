@@ -5,6 +5,9 @@ import worker from "./index.js";
 
 const env = {
   AUTH_PASSWORD: "test-password",
+  LOGIN_RATE_LIMITER: {
+    limit: async () => ({ success: true }),
+  },
   ASSETS: {
     fetch: async (request) => new Response(new URL(request.url).pathname, { status: 200 }),
   },
@@ -206,25 +209,36 @@ describe("production observability", () => {
 });
 
 describe("password session", () => {
-  it("can temporarily open private pages for a security scan", async () => {
+  it("does not let an environment switch bypass authentication", async () => {
     const response = await worker.fetch(
       new Request("https://novaguard.fun/home/"),
       { ...env, SECURITY_SCAN_OPEN: "true" },
     );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, max-age=60");
-    await expect(response.text()).resolves.toBe("/home/");
-  });
-
-  it("keeps private pages closed when the security scan switch is off", async () => {
-    const response = await worker.fetch(
-      new Request("https://novaguard.fun/home/"),
-      { ...env, SECURITY_SCAN_OPEN: "off" },
-    );
-
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toContain("/login/?next=%2Fhome%2F");
+  });
+
+  it("rate limits password guesses at the edge", async () => {
+    const limit = vi.fn(async () => ({ success: false }));
+    const response = await worker.fetch(loginRequest(), {
+      ...env,
+      LOGIN_RATE_LIMITER: { limit },
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(limit).toHaveBeenCalledWith({ key: "password-gate" });
+  });
+
+  it("fails login closed when its rate-limit binding is unavailable", async () => {
+    const { LOGIN_RATE_LIMITER: _missing, ...withoutLimiter } = env;
+    const response = await worker.fetch(loginRequest(), withoutLimiter);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("Set-Cookie")).toBeNull();
   });
 
   it("serves the landing page to a session, and never from a shared cache", async () => {
@@ -253,13 +267,7 @@ describe("password session", () => {
     const login = await worker.fetch(loginRequest(), env);
     const cookie = login.headers.get("set-cookie").split(";")[0];
 
-    for (const path of [
-      "/commands/",
-      "/setup/",
-      "/privacy/",
-      "/terms/",
-      "/server-admin-notice/",
-    ]) {
+    for (const path of ["/commands/", "/setup/"]) {
       const response = await worker.fetch(
         new Request(`https://novaguard.fun${path}`, { headers: { cookie } }),
         env,
@@ -267,6 +275,24 @@ describe("password session", () => {
       expect(response.status, path).toBe(200);
       expect(response.headers.get("Cache-Control"), path).toBe("private, max-age=60");
       expect(response.headers.get("Cache-Control"), path).not.toContain("public");
+    }
+  });
+
+  it("keeps every legal notice public during soft launch", async () => {
+    for (const path of [
+      "/privacy",
+      "/privacy/",
+      "/terms",
+      "/terms/",
+      "/server-admin-notice",
+      "/server-admin-notice/",
+    ]) {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), env);
+      expect(response.status, `${path} should be public`).toBe(200);
+      expect(response.headers.get("Location"), path).toBeNull();
+      expect(response.headers.get("Cache-Control"), path).toBe(
+        "public, max-age=300, stale-while-revalidate=3600",
+      );
     }
   });
 
@@ -757,12 +783,22 @@ describe("maintenance sync", () => {
     expect(response.status).toBe(200);
   });
 
-  it("closes every page, not just the dashboard", async () => {
+  it("closes every non-legal page, not just the dashboard", async () => {
     vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true, message: "Music Update" } }));
 
-    for (const path of ["/", "/home/", "/updates/", "/terms/"]) {
+    for (const path of ["/", "/home/", "/updates/"]) {
       const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), apiEnv);
       expect(response.status, `${path} should be closed`).toBe(503);
+    }
+  });
+
+  it("keeps legal notices available during maintenance", async () => {
+    vi.stubGlobal("fetch", healthStub({ maintenance: { enabled: true, message: "Music Update" } }));
+
+    for (const path of ["/privacy/", "/terms/", "/server-admin-notice/"]) {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), apiEnv);
+      expect(response.status, `${path} should remain available`).toBe(200);
+      expect(response.headers.get("Cache-Control"), path).toContain("public");
     }
   });
 

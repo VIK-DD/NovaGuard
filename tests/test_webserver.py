@@ -454,21 +454,20 @@ async def main():
 
         async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/dashboard", cookies=cookies) as r:
             data = await r.json()
-            offsite = data.get("backup", {}).get("offsite", {})
             await check(
-                "dashboard exposes sanitized off-site backup health",
-                r.status == 200
-                and {
-                    "configured",
-                    "matches_backup",
-                    "latest_ok",
-                    "uploaded_at",
-                    "check_ok",
-                    "checked_at",
-                }
-                == set(offsite)
-                and "destination" not in offsite
-                and "remote_path" not in offsite,
+                "guild dashboard does not expose instance backup state",
+                r.status == 200 and "backup" not in data,
+            )
+
+        async with http.post(
+            f"{V1}/guilds/{TEST_GUILD_ID}/actions/backup_check",
+            json={},
+            cookies=cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "guild dashboard rejects instance backup actions",
+                r.status == 404 and data.get("code") == "unknown_action",
             )
 
         # ── CSRF Origin guard on mutations (fix #8) ───────────────────

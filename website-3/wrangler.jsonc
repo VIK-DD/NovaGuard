@@ -7,6 +7,18 @@
   "secrets": {
     "required": ["AUTH_PASSWORD"]
   },
+  // Ten password submissions per minute in each Cloudflare location. The
+  // Worker fails login closed if this binding is ever missing or unavailable.
+  "ratelimits": [
+    {
+      "name": "LOGIN_RATE_LIMITER",
+      "namespace_id": "2026082601",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ],
   // Keep enough production telemetry to diagnose edge/API failures without
   // retaining every static-asset request. Traces are automatic once enabled.
   "observability": {

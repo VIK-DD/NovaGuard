@@ -46,6 +46,22 @@ describe("public legal identity", () => {
     expect(footer).toContain("&copy;");
   });
 
+  it("keeps the publishing name distinct from its creator-name credits", () => {
+    const root = resolve(process.cwd(), "..");
+    const license = readFileSync(resolve(root, "LICENSE"), "utf8");
+    const notice = readFileSync(resolve(root, "NOTICE"), "utf8");
+    const readme = readFileSync(resolve(root, "README.md"), "utf8");
+    const footer = readFileSync(resolve(process.cwd(), "src/components/Footer.astro"), "utf8");
+
+    for (const document of [license, notice, readme, footer]) {
+      expect(document).toContain("VIK-DD");
+    }
+    expect(notice).toContain("Breabin Victor");
+    expect(notice).toContain("same person");
+    expect(readme).toContain("VIK &amp; CloudMedia creator names");
+    expect(footer).toContain("VIK &amp; CloudMedia names");
+  });
+
   it("keeps privacy and terms wired to the shared legal identity", () => {
     const privacy = readFileSync(resolve(process.cwd(), "src/pages/privacy.astro"), "utf8");
     const terms = readFileSync(resolve(process.cwd(), "src/pages/terms.astro"), "utf8");

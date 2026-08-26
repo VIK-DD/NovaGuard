@@ -11,4 +11,7 @@ data/
 !website-3/src/data/
 !website-3/src/data/**
 backups/
+# Private launch evidence can include provider screenshots, contracts and
+# personal data. Use the public template, but never commit completed records.
+/compliance-evidence/
 .DS_Store

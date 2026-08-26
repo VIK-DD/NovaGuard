@@ -194,7 +194,9 @@ def check_config(env=None, *, file_exists=None):
                     "must contain only exact HTTPS origins without wildcards, paths, queries or fragments.",
                 )
             )
-        if not _enabled(env, "WEB_TRUST_PROXY"):
+        web_host = _value(env, "WEB_HOST") or "0.0.0.0"
+        trust_proxy = _enabled(env, "WEB_TRUST_PROXY")
+        if not trust_proxy:
             findings.append(
                 Finding(
                     WARN,
@@ -202,7 +204,14 @@ def check_config(env=None, *, file_exists=None):
                     "off - behind Cloudflare, audit and rate limits will not use the real visitor IP.",
                 )
             )
-        web_host = _value(env, "WEB_HOST") or "0.0.0.0"
+        elif web_host not in {"127.0.0.1", "::1", "localhost"}:
+            findings.append(
+                Finding(
+                    CRITICAL,
+                    "WEB_TRUST_PROXY",
+                    "cannot be enabled on a non-loopback bind; direct clients could forge forwarded IP headers.",
+                )
+            )
         if web_host not in {"127.0.0.1", "::1", "localhost"}:
             findings.append(
                 Finding(

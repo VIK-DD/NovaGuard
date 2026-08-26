@@ -284,24 +284,6 @@ export const DashboardSchema = z.object({
       }),
     ),
   }),
-  backup: z.object({
-    available: z.boolean(),
-    latest_name: z.string().nullable(),
-    latest_size: z.number(),
-    latest_size_text: z.string().nullable(),
-    latest_at: z.string().nullable(),
-    ok: z.boolean(),
-    warnings: z.array(z.string()),
-    errors: z.array(z.string()),
-    offsite: z.object({
-      configured: z.boolean(),
-      matches_backup: z.boolean(),
-      latest_ok: z.boolean(),
-      uploaded_at: z.string().nullable(),
-      check_ok: z.boolean().nullable(),
-      checked_at: z.string().nullable(),
-    }),
-  }),
   updates: z.array(
     z.object({
       build: z.number().optional(),
@@ -336,15 +318,6 @@ export const DashboardActionSchema = z.object({
       description: z.string(),
       role_ids: z.array(z.string()),
       updated_at: z.string(),
-    })
-    .optional(),
-  backup: z
-    .object({
-      name: z.string(),
-      size_text: z.string(),
-      ok: z.boolean(),
-      warnings: z.array(z.string()),
-      errors: z.array(z.string()),
     })
     .optional(),
 });

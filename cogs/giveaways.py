@@ -2,8 +2,8 @@
 
 import logging
 import asyncio
-import random
 import re
+import secrets
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -40,6 +40,26 @@ async def save_giveaways_async(entries):
 # concurrent button clicks (or a click racing the watcher) both read the same
 # list and the second save silently drops the first one's change.
 _STORE_LOCK = asyncio.Lock()
+
+
+def draw_winners(entrants, count, *, exclude=()):
+    """Draw unique winners with the operating system's secure random source.
+
+    Rerolls prefer people who did not win the previous draw. Previous winners
+    remain a fallback only when there are not enough other entrants to fill all
+    advertised winner slots.
+    """
+    unique = list(dict.fromkeys(entrants))
+    excluded = set(exclude)
+    fresh = [entrant for entrant in unique if entrant not in excluded]
+    fallback = [entrant for entrant in unique if entrant in excluded]
+    wanted = min(max(int(count), 0), len(unique))
+    selected = secrets.SystemRandom().sample(fresh, min(wanted, len(fresh)))
+    if len(selected) < wanted:
+        selected.extend(
+            secrets.SystemRandom().sample(fallback, wanted - len(selected))
+        )
+    return selected
 
 
 def validate_giveaway_input(duration, prize, winners):
@@ -244,8 +264,7 @@ class Giveaways(commands.Cog):
                 return None
             entry["ended"] = True
             entrants = entry.get("entrants", [])
-            count = min(entry["winners"], len(entrants))
-            winner_ids = random.sample(entrants, count) if count else []
+            winner_ids = draw_winners(entrants, entry["winners"])
             entry["winner_ids"] = winner_ids
             await save_giveaways_async(entries)
 
@@ -285,8 +304,11 @@ class Giveaways(commands.Cog):
             entrants = entry.get("entrants", [])
             if not entrants:
                 return entry, [], False
-            count = min(entry["winners"], len(entrants))
-            winner_ids = random.sample(entrants, count)
+            winner_ids = draw_winners(
+                entrants,
+                entry["winners"],
+                exclude=entry.get("winner_ids", []),
+            )
             entry["winner_ids"] = winner_ids
             await save_giveaways_async(entries)
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   auditBuildArtifacts,
   auditResponse,
+  isCloudflareChallenge,
   isOurHost,
   worstSeverity,
 } from "./security-audit-rules.mjs";
@@ -197,6 +198,18 @@ describe("information disclosure in the body", () => {
     expect(rules(auditResponse(clean({ body: "?t=1755267600" })))).toContain("unix-timestamp");
   });
 
+  it("flags a semantically named unix timestamp in JSON", () => {
+    expect(
+      rules(auditResponse(clean({ body: '{"expires":1787735000}' }))),
+    ).toContain("unix-timestamp");
+  });
+
+  it("does not mistake an unexplained third-party edge value for our timestamp", () => {
+    expect(
+      rules(auditResponse(clean({ body: "edge generated value 1787735000" }))),
+    ).not.toContain("unix-timestamp");
+  });
+
   it("flags an inline event handler", () => {
     expect(rules(auditResponse(clean({ body: '<button onclick="go()">x</button>' })))).toContain(
       "inline-event-handler",
@@ -213,6 +226,22 @@ describe("information disclosure in the body", () => {
     expect(
       rules(auditResponse(clean({ body: '<script src="http://cdn.example.test/a.js"></script>' }))),
     ).toContain("mixed-content");
+  });
+});
+
+describe("Cloudflare challenge detection", () => {
+  it("recognises the documented cf-mitigated response header", () => {
+    expect(isCloudflareChallenge(clean({ headers: { "cf-mitigated": "challenge" } }))).toBe(true);
+  });
+
+  it("recognises an interstitial body when an intermediary strips the header", () => {
+    expect(
+      isCloudflareChallenge(clean({ body: "<script>window._cf_chl_opt={cITimeS:1787735000}</script>" })),
+    ).toBe(true);
+  });
+
+  it("does not classify an ordinary NovaGuard page as a challenge", () => {
+    expect(isCloudflareChallenge(clean())).toBe(false);
   });
 });
 

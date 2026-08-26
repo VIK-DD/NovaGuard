@@ -169,6 +169,56 @@ class BackupIntegrityTests(unittest.TestCase):
         self.assertIn("symbolic link", report["errors"][0])
         self.assertFalse(backups.RESTORE_CHECK_DIR.exists())
 
+    def test_restore_rejects_too_many_archive_members(self):
+        clear_path = backups.BACKUP_DIR / "too-many.zip"
+        with zipfile.ZipFile(clear_path, "w") as archive:
+            for index in range(3):
+                archive.writestr(f"data/{index}.json", "{}")
+
+        with mock.patch.object(backups, "MAX_ARCHIVE_MEMBERS", 2):
+            report = backups.inspect_backup(clear_path, extract=True)
+
+        self.assertFalse(report["ok"])
+        self.assertIn("too many members", report["errors"][0])
+        self.assertFalse(backups.RESTORE_CHECK_DIR.exists())
+
+    def test_restore_rejects_excessive_uncompressed_size(self):
+        clear_path = backups.BACKUP_DIR / "too-large.zip"
+        with zipfile.ZipFile(clear_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("data/padding.txt", "x" * 128)
+
+        with mock.patch.object(backups, "MAX_ARCHIVE_UNCOMPRESSED_BYTES", 64):
+            report = backups.inspect_backup(clear_path, extract=True)
+
+        self.assertFalse(report["ok"])
+        self.assertIn("maximum uncompressed size", report["errors"][0])
+        self.assertFalse(backups.RESTORE_CHECK_DIR.exists())
+
+    def test_restore_rejects_unsafe_compression_ratio(self):
+        clear_path = backups.BACKUP_DIR / "compression-bomb.zip"
+        with zipfile.ZipFile(clear_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("data/padding.txt", "x" * 4096)
+
+        with mock.patch.object(backups, "MIN_COMPRESSION_RATIO_CHECK_BYTES", 1024), mock.patch.object(
+            backups, "MAX_ARCHIVE_COMPRESSION_RATIO", 2
+        ):
+            report = backups.inspect_backup(clear_path, extract=True)
+
+        self.assertFalse(report["ok"])
+        self.assertIn("unsafe compression ratio", report["errors"][0])
+        self.assertFalse(backups.RESTORE_CHECK_DIR.exists())
+
+    def test_inspection_does_not_load_oversized_json_into_memory(self):
+        clear_path = backups.BACKUP_DIR / "large-json.zip"
+        with zipfile.ZipFile(clear_path, "w") as archive:
+            archive.writestr("data/large.json", '{"padding":"' + "x" * 64 + '"}')
+
+        with mock.patch.object(backups, "MAX_JSON_MEMBER_BYTES", 32):
+            report = backups.inspect_backup(clear_path)
+
+        self.assertFalse(report["ok"])
+        self.assertIn("too large to validate safely", report["errors"][0])
+
     def test_list_backups_returns_newest_first_with_human_sizes(self):
         old_backup = self.write_backup("novaguard-backup-old.zip")
         new_backup = self.write_backup("novaguard-full-new.zip")

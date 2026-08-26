@@ -21,27 +21,7 @@ describe("dashboard API schemas", () => {
     expect(parsed.next_cursor).toBe(41);
   });
 
-  it("keeps the sanitized off-site backup health contract", () => {
-    const parsed = DashboardSchema.shape.backup.parse({
-      available: true,
-      latest_name: "novaguard-full.zip",
-      latest_size: 1024,
-      latest_size_text: "1 KB",
-      latest_at: "2026-08-11T20:00:00+00:00",
-      ok: true,
-      warnings: [],
-      errors: [],
-      offsite: {
-        configured: true,
-        matches_backup: true,
-        latest_ok: true,
-        uploaded_at: "2026-08-11T20:01:00+00:00",
-        check_ok: true,
-        checked_at: "2026-08-11T20:02:00+00:00",
-      },
-    });
-
-    expect(parsed.offsite.matches_backup).toBe(true);
-    expect(parsed.offsite.check_ok).toBe(true);
+  it("does not expose instance-wide backup state in a guild contract", () => {
+    expect("backup" in DashboardSchema.shape).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 # NovaGuard Website
 
-Editorial landing page and administration dashboard built with Astro 5 and a
+Editorial landing page and administration dashboard built with Astro 7 and a
 React 19 dashboard island. The site exports to static files and is served by a
 Cloudflare Worker that protects private routes with a shared password.
 
@@ -38,8 +38,10 @@ npm run build:launch
 ## Deploy to Cloudflare
 
 The Worker serves `dist/`, validates the signed password cookie, and sends
-unauthenticated visitors to `/login/`. The root Coming Soon page and its assets
-remain public.
+unauthenticated visitors to `/login/`. The root Coming Soon page, legal notices,
+and their assets remain public. Password submissions are capped by the
+`LOGIN_RATE_LIMITER` binding configured in `wrangler.jsonc`; login fails closed
+if that binding is unavailable.
 
 Set the password once, then deploy:
 
@@ -73,8 +75,9 @@ npx wrangler secret put MAINTENANCE_MODE
 ```
 
 Accepted enabled values are `1`, `true`, `on`, `enabled`, `protected` and
-`private`. When enabled, users still enter the password first, then private
-routes serve `/maintenance/`.
+`private`. When enabled, private routes serve `/maintenance/` before the
+password gate. The privacy policy, terms and server-admin notice remain
+available.
 
 Cloudflare Access applications must be disabled for this hostname because the
 custom Worker performs the access check.

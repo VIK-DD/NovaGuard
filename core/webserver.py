@@ -32,6 +32,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -49,7 +50,6 @@ from . import shop
 from .ai_settings import resolve_ai, validate_ai
 from .api_security import API_CONTENT_SECURITY_POLICY
 from .automod_settings import resolve_automod, validate_automod
-from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import (
     connect,
@@ -141,7 +141,16 @@ if COOKIE_SAMESITE not in {"Lax", "Strict", "None"}:
     COOKIE_SAMESITE = "Lax"
 if COOKIE_SAMESITE == "None":
     COOKIE_SECURE = True
-TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
+_TRUST_PROXY_REQUESTED = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+# Forwarded client addresses are trustworthy only when the API cannot also be
+# reached directly. Cloudflare Tunnel connects through loopback; a public bind
+# would let any client forge CF-Connecting-IP and evade per-address controls.
+TRUST_PROXY = _TRUST_PROXY_REQUESTED and WEB_HOST in {"127.0.0.1", "::1", "localhost"}
 INVITE_PERMISSIONS = (
     os.getenv("WEB_INVITE_PERMISSIONS", DEFAULT_INVITE_PERMISSIONS).strip()
     or DEFAULT_INVITE_PERMISSIONS
@@ -671,17 +680,26 @@ class WebServer:
 
     # ── request plumbing ─────────────────────────────────────────────
 
+    @staticmethod
+    def _normalized_ip(value):
+        try:
+            return str(ipaddress.ip_address(str(value or "").strip()))
+        except ValueError:
+            return None
+
     def _client_ip(self, request):
         if TRUST_PROXY:
             # CF-Connecting-IP is set by Cloudflare and cannot be spoofed by the
             # client through the tunnel; fall back to the first X-Forwarded-For hop.
-            cf_ip = request.headers.get("CF-Connecting-IP", "").strip()
+            cf_ip = self._normalized_ip(request.headers.get("CF-Connecting-IP"))
             if cf_ip:
                 return cf_ip
             forwarded = request.headers.get("X-Forwarded-For", "")
             if forwarded:
-                return forwarded.split(",")[0].strip()
-        return request.remote or "?"
+                forwarded_ip = self._normalized_ip(forwarded.split(",", 1)[0])
+                if forwarded_ip:
+                    return forwarded_ip
+        return self._normalized_ip(request.remote) or "?"
 
     def _rate_limit(self, request, scope):
         limit, window = RATE_LIMITS[scope]
@@ -1022,7 +1040,7 @@ class WebServer:
             assert self.http is not None
             if entry.get("access_token"):
                 try:
-                    await self.http.post(
+                    async with self.http.post(
                         f"{DISCORD_API}/oauth2/token/revoke",
                         data={
                             "client_id": CLIENT_ID,
@@ -1031,8 +1049,11 @@ class WebServer:
                             "token_type_hint": "access_token",
                         },
                         headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                except aiohttp.ClientError:
+                    ) as upstream:
+                        # Discord returns no useful body here, but consuming it
+                        # releases the connection back to aiohttp's pool.
+                        await upstream.read()
+                except (aiohttp.ClientError, asyncio.TimeoutError):
                     pass
             await asyncio.to_thread(db_delete_session, sid)
             self._session_locks.pop(sid, None)
@@ -1447,30 +1468,6 @@ class WebServer:
                 }
             )
 
-        backups = await asyncio.to_thread(list_backups, 1)
-        newest_backup = backups[0] if backups else None
-        backup_report = await asyncio.to_thread(inspect_backup, newest_backup["path"]) if newest_backup else None
-        offsite_status = await asyncio.to_thread(
-            remote_backup_status,
-            newest_backup["name"] if newest_backup else None,
-        )
-        offsite_latest = offsite_status.get("latest") or {}
-        offsite_check = offsite_status.get("latest_remote_check") or offsite_latest.get("check") or {}
-        offsite_backup = {
-            # Deliberately omit destination, remote_path, stdout and stderr.
-            # A Manage Server user needs health, not host storage internals.
-            "configured": bool(offsite_status.get("configured")),
-            "matches_backup": bool(offsite_status.get("matches_backup")),
-            "latest_ok": bool(offsite_latest.get("ok")),
-            "uploaded_at": offsite_latest.get("uploaded_at")
-            if isinstance(offsite_latest.get("uploaded_at"), str)
-            else None,
-            "check_ok": bool(offsite_check.get("ok")) if offsite_check else None,
-            "checked_at": offsite_check.get("checked_at")
-            if isinstance(offsite_check.get("checked_at"), str)
-            else None,
-        }
-
         update_state = load_update_state()
         update_feed = merged_update_feed(
             limit=5,
@@ -1559,17 +1556,6 @@ class WebServer:
                 "pending_count": len(guild_voice_pending) if isinstance(guild_voice_pending, dict) else 0,
                 "recent_reports": voice_reports,
             },
-            "backup": {
-                "available": bool(newest_backup),
-                "latest_name": newest_backup["name"] if newest_backup else None,
-                "latest_size": newest_backup["size"] if newest_backup else 0,
-                "latest_size_text": newest_backup["size_text"] if newest_backup else None,
-                "latest_at": newest_backup["mtime"].isoformat() if newest_backup else None,
-                "ok": bool(backup_report and backup_report.get("ok")),
-                "warnings": backup_report.get("warnings", []) if backup_report else [],
-                "errors": backup_report.get("errors", []) if backup_report else [],
-                "offsite": offsite_backup,
-            },
             "updates": update_feed[:5],
         }
 
@@ -1592,41 +1578,6 @@ class WebServer:
             changes or {},
             self._client_ip(request),
         )
-
-    async def _handle_backup_check_action(self):
-        backups = await asyncio.to_thread(list_backups, 1)
-        latest = backups[0] if backups else None
-        if latest is None:
-            raise ApiError(404, "No backup archive exists yet.", code="backup_not_found")
-
-        report = await asyncio.to_thread(inspect_backup, latest["path"], extract=True)
-        if not report.get("ok"):
-            return {
-                "ok": False,
-                "action": "backup_check",
-                "message": f"Backup check finished with {len(report.get('errors', []))} error(s).",
-                "backup": {
-                    "name": latest["name"],
-                    "size_text": latest["size_text"],
-                    "ok": False,
-                    "warnings": report.get("warnings", []),
-                    "errors": report.get("errors", []),
-                },
-            }
-
-        warnings = report.get("warnings", [])
-        return {
-            "ok": True,
-            "action": "backup_check",
-            "message": "Latest backup passed the restore check.",
-            "backup": {
-                "name": latest["name"],
-                "size_text": latest["size_text"],
-                "ok": True,
-                "warnings": warnings,
-                "errors": [],
-            },
-        }
 
     async def _handle_voice_test_action(self, guild, entry):
         import discord
@@ -2035,9 +1986,7 @@ class WebServer:
         _, entry, guild = await self._authorized_guild(request)
         action = request.match_info["action"].replace("-", "_")
 
-        if action == "backup_check":
-            payload = await self._handle_backup_check_action()
-        elif action == "voice_test":
+        if action == "voice_test":
             payload = await self._handle_voice_test_action(guild, entry)
         elif action == "update_preview":
             payload = await self._handle_update_preview_action(guild)

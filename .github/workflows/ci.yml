@@ -64,6 +64,13 @@ jobs:
       - name: Import smoke test (locked versions)
         run: python -c "import bot; print('cogs', len(bot.COGS))"
 
+      # Audit the artifact installed in production, not only the version ranges
+      # in requirements.txt. A stale lock can otherwise pass the range audit.
+      - name: Security audit (production lock)
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.lock
+
   website:
     runs-on: ubuntu-latest
     defaults:

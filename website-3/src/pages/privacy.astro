@@ -54,9 +54,10 @@ import { LEGAL_INFRASTRUCTURE, LEGAL_OPERATOR, MOLDOVA_AUTHORITY } from "../data
     <aside class="mt-5 rounded-lg border border-line bg-card p-5" aria-label="Privacy summary">
       <p class="font-display text-lg font-semibold">The short version</p>
       <p class="mt-2 leading-relaxed text-ink-muted">
-        NovaGuard has no advertising, does not sell personal data and uses no third-party
-        analytics. Ordinary messages and AI questions are not kept as a NovaGuard history. The
-        website uses only storage required for security, sign-in, or a theme you explicitly select.
+        NovaGuard has no advertising, does not sell personal data and does not use behavioral or
+        cross-site analytics. Cloudflare Web Analytics provides aggregate page-performance and
+        usage measurements; Cloudflare states that this service does not collect or use visitors'
+        personal data. Ordinary messages and AI questions are not kept as a NovaGuard history.
       </p>
     </aside>
 
@@ -91,8 +92,31 @@ import { LEGAL_INFRASTRUCTURE, LEGAL_OPERATOR, MOLDOVA_AUTHORITY } from "../data
     <section class="mt-14 border-t border-line pt-8">
       <p class="text-xs tracking-[0.2em] text-primary uppercase">02 · Data inventory</p>
       <h2 class="font-display mt-3 text-2xl">Information NovaGuard processes</h2>
-      <div class="mt-6 overflow-x-auto rounded-lg border border-line">
-        <table class="w-full min-w-[64rem] border-collapse text-left text-sm">
+      <ul class="mt-6 grid gap-4 lg:hidden" aria-label="Personal data categories">
+        {
+          DATA_CATEGORIES.map((row) => (
+            <li class="rounded-lg border border-line bg-card p-5">
+              <h3 class="font-display text-lg font-semibold text-ink">{row.name}</h3>
+              <dl class="mt-4 space-y-4 text-sm">
+                <div>
+                  <dt class="font-medium text-ink">What it includes</dt>
+                  <dd class="mt-1 leading-relaxed text-ink-muted">{row.data}</dd>
+                </div>
+                <div>
+                  <dt class="font-medium text-ink">Purpose</dt>
+                  <dd class="mt-1 leading-relaxed text-ink-muted">{row.use}</dd>
+                </div>
+                <div>
+                  <dt class="font-medium text-ink">Basis</dt>
+                  <dd class="mt-1 leading-relaxed text-ink-muted">{row.basis}</dd>
+                </div>
+              </dl>
+            </li>
+          ))
+        }
+      </ul>
+      <div class="mt-6 hidden overflow-x-auto rounded-lg border border-line lg:block">
+        <table class="w-full table-fixed border-collapse text-left text-sm">
           <thead class="bg-bg-subtle text-ink">
             <tr>
               <th class="px-4 py-3 font-medium">Category</th>
@@ -121,13 +145,43 @@ import { LEGAL_INFRASTRUCTURE, LEGAL_OPERATOR, MOLDOVA_AUTHORITY } from "../data
       <p class="text-xs tracking-[0.2em] text-primary uppercase">03 · Cookies</p>
       <h2 class="font-display mt-3 text-2xl">Essential cookies only</h2>
       <p class="mt-3 max-w-2xl leading-relaxed text-ink-muted">
-        These first-party cookies are not used for advertising or cross-site tracking. They use{" "}
+        NovaGuard sets the first-party cookies listed below. They are not used for advertising or
+        cross-site tracking. They use{" "}
         <code>HttpOnly</code> and <code>SameSite</code> protections, and production cookies travel
         over HTTPS. Because they are strictly necessary for a flow you request, NovaGuard does not
         show a misleading accept/reject banner. Blocking one prevents that flow from working.
       </p>
-      <div class="mt-6 overflow-x-auto rounded-lg border border-line">
-        <table class="w-full min-w-[42rem] border-collapse text-left text-sm">
+      <p class="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted">
+        Depending on the Cloudflare protections active for a request, Cloudflare may also set
+        strictly necessary security cookies such as <code>__cf_bm</code>. Cloudflare documents that
+        cookie as expiring after 30 minutes of continuous inactivity and as separate for each site.
+        Cloudflare Web Analytics itself is disclosed below under providers.
+      </p>
+      <ul class="mt-6 grid gap-4 md:hidden" aria-label="Essential cookies">
+        {
+          ESSENTIAL_COOKIES.map((row) => (
+            <li class="rounded-lg border border-line bg-card p-5">
+              <h3><code class="text-sm text-ink">{row.name}</code></h3>
+              <dl class="mt-4 space-y-3 text-sm">
+                <div>
+                  <dt class="font-medium text-ink">Used for</dt>
+                  <dd class="mt-1 text-ink-muted">{row.when}</dd>
+                </div>
+                <div>
+                  <dt class="font-medium text-ink">Purpose</dt>
+                  <dd class="mt-1 leading-relaxed text-ink-muted">{row.purpose}</dd>
+                </div>
+                <div>
+                  <dt class="font-medium text-ink">Lifetime</dt>
+                  <dd class="mt-1 text-ink-muted">{row.lifetime}</dd>
+                </div>
+              </dl>
+            </li>
+          ))
+        }
+      </ul>
+      <div class="mt-6 hidden overflow-x-auto rounded-lg border border-line md:block">
+        <table class="w-full table-fixed border-collapse text-left text-sm">
           <thead class="bg-bg-subtle text-ink">
             <tr>
               <th class="px-4 py-3 font-medium">Cookie</th>
