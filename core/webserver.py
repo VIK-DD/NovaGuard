@@ -1288,7 +1288,8 @@ class WebServer:
     async def _handle_voice_test_action(self, guild, entry):
         import discord
 
-        from cogs.voice import build_report_embed, new_session, now_utc, record_member_join, record_member_leave
+        from cogs.voice import build_report_embed
+        from .voice_sessions import new_session, now_utc, record_member_join, record_member_leave
 
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         channel_id = settings.get("voice_report_channel")
