@@ -267,6 +267,7 @@ class WebServer:
         # (method, path, handler) — registered under /api/v1 and legacy /api
         routes = [
             ("GET", "/health", self.handle_health),
+            ("GET", "/ready", self.handle_ready),
             ("GET", "/stats", self.handle_stats),
             ("GET", "/updates", self.handle_updates),
             ("POST", "/maintenance/preview", self.handle_maintenance_preview),
@@ -769,7 +770,7 @@ class WebServer:
 
     # ── public endpoints ─────────────────────────────────────────────
 
-    async def handle_health(self, request):
+    async def _health_payload(self):
         db_ok = await asyncio.to_thread(db_ping)
         # The website reads this to decide whether to close the dashboard, so
         # it is a small file read — off the event loop, like db_ping above.
@@ -781,17 +782,25 @@ class WebServer:
             # window opened — and the website binds preview cookies to it, so a
             # code from a previous window stops working on its own.
             maintenance["since"] = state.get("updated_at")
-        payload = {
+        bot_ready = self.bot.is_ready()
+        return {
             # Maintenance is deliberately absent from `ok`: this endpoint
             # answers "is the API alive", not "is the site open". Folding them
             # together would make the public status widget cry outage during a
             # routine update.
-            "ok": bool(db_ok and self.bot.is_ready()),
-            "bot_ready": self.bot.is_ready(),
+            "ok": bool(db_ok and bot_ready),
+            "bot_ready": bot_ready,
             "db_ok": db_ok,
             "maintenance": maintenance,
         }
-        return web.json_response(payload, status=200 if db_ok else 503)
+
+    async def handle_health(self, request):
+        payload = await self._health_payload()
+        return web.json_response(payload, status=200 if payload["db_ok"] else 503)
+
+    async def handle_ready(self, request):
+        payload = await self._health_payload()
+        return web.json_response(payload, status=200 if payload["ok"] else 503)
 
     async def handle_maintenance_preview(self, request):
         # "auth" is 10 requests per 60 s, keyed on the visitor's real address —

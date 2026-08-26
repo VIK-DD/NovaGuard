@@ -62,6 +62,11 @@ Public. `200` when the DB is reachable, `503` otherwise.
 { "ok": true, "bot_ready": true, "db_ok": true }
 ```
 
+### `GET /ready`
+Public readiness probe. Returns the same payload as `/health`, but responds
+`200` only when both the database and Discord bot are ready; otherwise `503`.
+Use this endpoint for deploy gates and monitors that rely on HTTP status.
+
 ### `GET /stats`
 Public. Bot-wide counters.
 ```json

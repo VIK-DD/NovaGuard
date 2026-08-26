@@ -205,6 +205,34 @@ async def main():
             await check("security headers present", r.headers.get("X-Content-Type-Options") == "nosniff")
         await check("db_ping direct", db_ping() is True)
 
+        # Liveness remains readable while Discord connects; readiness must
+        # stay closed until both Discord and SQLite are actually available.
+        server.bot.ready = False
+        try:
+            async with http.get(f"{V1}/health") as r:
+                data = await r.json()
+                await check(
+                    "health stays live while the bot connects",
+                    r.status == 200 and data["ok"] is False and data["bot_ready"] is False,
+                )
+            async with http.get(f"{V1}/ready") as r:
+                data = await r.json()
+                await check(
+                    "ready is 503 while the bot connects",
+                    r.status == 503 and data["ok"] is False and data["db_ok"] is True,
+                )
+            async with http.get(f"{LEGACY}/ready") as r:
+                await check("legacy /api/ready alias works", r.status == 503)
+        finally:
+            server.bot.ready = True
+
+        async with http.get(f"{V1}/ready") as r:
+            data = await r.json()
+            await check(
+                "ready is 200 only after all checks pass",
+                r.status == 200 and data["ok"] is True and data["bot_ready"] is True,
+            )
+
         # ── maintenance state rides along on /health ──────────────────
         # Saved and restored around the checks: this writes the real
         # data/maintenance.json, and a test must not leave the bot shut down.
