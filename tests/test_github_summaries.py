@@ -15,7 +15,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cogs.developer import (  # noqa: E402
+from core.github_insights import (  # noqa: E402
     build_languages_text,
     compute_health_score,
     detect_top_language,
