@@ -484,6 +484,43 @@ async def main():
                 "guild dashboard does not expose instance backup state",
                 r.status == 200 and "backup" not in data,
             )
+            await check(
+                "guild dashboard preserves the website payload contract",
+                set(data) == {
+                    "status",
+                    "guild",
+                    "setup",
+                    "modules",
+                    "automod",
+                    "levels",
+                    "voice",
+                    "updates",
+                }
+                and set(data["setup"])
+                == {
+                    "configured_channels",
+                    "total_channels",
+                    "recommended_done",
+                    "recommended_total",
+                }
+                and set(data["levels"])
+                == {"enabled", "tracked_members", "total_xp", "leaderboard"}
+                and set(data["voice"])
+                == {"configured", "report_channel_id", "pending_count", "recent_reports"}
+                and [module["key"] for module in data["modules"]]
+                == [
+                    "welcome",
+                    "moderation",
+                    "levels",
+                    "voice",
+                    "tickets",
+                    "roles",
+                    "giveaways",
+                    "ai",
+                    "economy",
+                    "updates",
+                ],
+            )
 
         async with http.post(
             f"{V1}/guilds/{TEST_GUILD_ID}/actions/backup_check",

@@ -59,9 +59,14 @@ from .database import (
     load_voice_store,
     save_role_panel_record,
 )
+from .dashboard_insights import (
+    dashboard_levels_summary,
+    dashboard_module_summary,
+    dashboard_setup_summary,
+    dashboard_voice_summary,
+)
 from .economy_settings import resolve_economy, validate_economy
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
-from .level_curve import level_from_xp
 from .levels_settings import resolve_levels, validate_levels
 from .maintenance import (
     DEFAULT_MAINTENANCE_MESSAGE,
@@ -194,8 +199,6 @@ NATIVE_MANAGER_CHANNEL_KEYS = (
 )
 CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
-DASHBOARD_VOICE_HISTORY_LIMIT = 5
-DASHBOARD_LEADERBOARD_LIMIT = 5
 
 # HMAC key for signing OAuth state tokens. Reuses the client secret so it needs
 # no extra configuration; a per-process random fallback keeps things sane when
@@ -1105,83 +1108,33 @@ class WebServer:
             ],
         }
 
-    @staticmethod
-    def _dashboard_level_from_xp(total_xp):
-        return level_from_xp(total_xp)[0]
-
-    @staticmethod
-    def _dashboard_seconds_between(started_at, ended_at):
-        if not started_at or not ended_at:
-            return 0
-        try:
-            start = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
-            end = datetime.fromisoformat(str(ended_at).replace("Z", "+00:00"))
-        except ValueError:
-            return 0
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=UTC)
-        return max(int((end.astimezone(UTC) - start.astimezone(UTC)).total_seconds()), 0)
-
     async def _dashboard_payload(self, guild):
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         levels_settings = resolve_levels(settings)
         launched_at = getattr(self.bot, "launched_at", None)
         uptime = int((datetime.now(UTC) - launched_at).total_seconds()) if launched_at else 0
 
-        configured_channels = sum(1 for key in CHANNEL_KEYS if settings.get(key))
-        recommended_keys = ["update_channel", "error_log_channel", "log_channel", "welcome_channel"]
-        if github_config.watch_repos or github_config.primary_repo:
-            recommended_keys.append("github_event_channel")
-        recommended_done = sum(1 for key in recommended_keys if settings.get(key))
+        setup_summary = dashboard_setup_summary(
+            settings,
+            CHANNEL_KEYS,
+            github_watch_configured=bool(
+                github_config.watch_repos or github_config.primary_repo
+            ),
+        )
 
         levels_data = await asyncio.to_thread(load_levels_data)
         guild_levels = levels_data.get(str(guild.id), {})
-        total_xp = sum(max(int(record.get("xp", 0) or 0), 0) for record in guild_levels.values())
-        leaderboard = []
-        for position, (user_id, record) in enumerate(
-            sorted(guild_levels.items(), key=lambda item: item[1].get("xp", 0), reverse=True)[
-                :DASHBOARD_LEADERBOARD_LIMIT
-            ],
-            start=1,
-        ):
-            member = guild.get_member(int(user_id)) if str(user_id).isdigit() else None
-            xp = int(record.get("xp", 0) or 0)
-            leaderboard.append(
-                {
-                    "position": position,
-                    "user_id": str(user_id),
-                    "display_name": member.display_name if member else f"User {user_id}",
-                    "xp": xp,
-                    "messages": int(record.get("messages", 0) or 0),
-                    "level": self._dashboard_level_from_xp(xp),
-                }
-            )
+        levels_summary = dashboard_levels_summary(guild, guild_levels)
 
         voice_history = await asyncio.to_thread(load_voice_store, "voice_report_history", {})
         voice_pending = await asyncio.to_thread(load_voice_store, "voice_pending_reports", {})
         guild_voice_history = voice_history.get(str(guild.id), []) if isinstance(voice_history, dict) else []
         guild_voice_pending = voice_pending.get(str(guild.id), {}) if isinstance(voice_pending, dict) else {}
-        voice_reports = []
-        for report in guild_voice_history[:DASHBOARD_VOICE_HISTORY_LIMIT]:
-            session = report.get("session") or {}
-            members = session.get("members") if isinstance(session, dict) else {}
-            started_at = session.get("started_at") if isinstance(session, dict) else None
-            ended_at = report.get("ended_at")
-            voice_reports.append(
-                {
-                    "id": str(report.get("id") or ""),
-                    "channel_id": str(report.get("channel_id") or ""),
-                    "channel_name": report.get("channel_name") or "Voice session",
-                    "started_at": started_at,
-                    "ended_at": ended_at,
-                    "sent_at": report.get("sent_at"),
-                    "duration_seconds": self._dashboard_seconds_between(started_at, ended_at),
-                    "unique_members": len(members) if isinstance(members, dict) else 0,
-                    "peak_members": int(session.get("peak_members", 0) or 0) if isinstance(session, dict) else 0,
-                }
-            )
+        voice_summary = dashboard_voice_summary(
+            settings,
+            guild_voice_history,
+            guild_voice_pending,
+        )
 
         update_state = load_update_state()
         update_feed = merged_update_feed(
@@ -1192,40 +1145,13 @@ class WebServer:
         release = current_project_release(update_state)
 
         automod = resolve_automod(settings)
-        modules = [
-            {
-                "key": "welcome",
-                "label": "Welcome",
-                "enabled": bool(
-                    settings.get("welcome_channel")
-                    or settings.get("goodbye_channel")
-                    or settings.get("autorole")
-                ),
-            },
-            {
-                "key": "moderation",
-                "label": "Moderation",
-                "enabled": bool(
-                    settings.get("log_channel")
-                    or settings.get("error_log_channel")
-                    or automod.get("invites")
-                    or automod.get("spam")
-                    or automod.get("badwords")
-                ),
-            },
-            {"key": "levels", "label": "Levels", "enabled": bool(levels_settings.get("enabled"))},
-            {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
-            {"key": "tickets", "label": "Tickets", "enabled": bool(settings.get("ticket_staff_role"))},
-            {"key": "roles", "label": "Role panels", "enabled": bool(settings.get("role_panel_channel"))},
-            {"key": "giveaways", "label": "Giveaways", "enabled": bool(settings.get("giveaway_channel"))},
-            {"key": "ai", "label": "AI assistant", "enabled": bool(resolve_ai(settings)["enabled"])},
-            {"key": "economy", "label": "Economy", "enabled": bool(resolve_economy(settings)["enabled"])},
-            {
-                "key": "updates",
-                "label": "Updates",
-                "enabled": bool(settings.get("update_channel") or settings.get("github_event_channel")),
-            },
-        ]
+        modules = dashboard_module_summary(
+            settings,
+            automod,
+            levels_settings,
+            resolve_ai(settings),
+            resolve_economy(settings),
+        )
 
         return {
             "status": {
@@ -1247,12 +1173,7 @@ class WebServer:
                 "icon": str(guild.icon) if guild.icon else None,
                 "member_count": guild.member_count or 0,
             },
-            "setup": {
-                "configured_channels": configured_channels,
-                "total_channels": len(CHANNEL_KEYS),
-                "recommended_done": recommended_done,
-                "recommended_total": len(recommended_keys),
-            },
+            "setup": setup_summary,
             "modules": modules,
             "automod": {
                 "invites": bool(automod.get("invites")),
@@ -1261,16 +1182,9 @@ class WebServer:
             },
             "levels": {
                 "enabled": bool(levels_settings.get("enabled")),
-                "tracked_members": len(guild_levels),
-                "total_xp": total_xp,
-                "leaderboard": leaderboard,
+                **levels_summary,
             },
-            "voice": {
-                "configured": bool(settings.get("voice_report_channel")),
-                "report_channel_id": str(settings.get("voice_report_channel")) if settings.get("voice_report_channel") else None,
-                "pending_count": len(guild_voice_pending) if isinstance(guild_voice_pending, dict) else 0,
-                "recent_reports": voice_reports,
-            },
+            "voice": voice_summary,
             "updates": update_feed[:5],
         }
 
