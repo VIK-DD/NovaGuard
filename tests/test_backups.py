@@ -504,6 +504,33 @@ class RemoteRetentionTests(unittest.TestCase):
 
 
 class AutomaticBackupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_successful_guild_exports_are_logged_as_info(self):
+        cog = object.__new__(system_cog.System)
+        cog.bot = mock.Mock(guilds=[])
+        backup = {
+            "name": "novaguard-full-test.zip.ngbackup",
+            "created_at": "2026-08-14T04:00:55+00:00",
+            "remote": {"configured": True, "ok": True, "check": {"ok": True}},
+            "retention": {},
+        }
+        cog._upload_guild_exports = mock.AsyncMock(
+            return_value={"configured": True, "uploaded": 6, "failed": 0}
+        )
+
+        with (
+            mock.patch.object(system_cog, "create_backup", return_value=backup),
+            mock.patch.object(system_cog.log, "info") as log_info,
+            mock.patch.object(system_cog.log, "warning") as log_warning,
+            mock.patch.object(system_cog, "send_error_digest", new_callable=mock.AsyncMock) as send_digest,
+        ):
+            await cog._run_automatic_backup()
+
+        self.assertTrue(
+            any("6 uploaded, 0 failed" in call.args[0] for call in log_info.call_args_list)
+        )
+        log_warning.assert_not_called()
+        send_digest.assert_not_awaited()
+
     async def test_remote_failure_defers_guild_exports(self):
         cog = object.__new__(system_cog.System)
         cog.bot = mock.Mock(guilds=[mock.Mock(), mock.Mock()])

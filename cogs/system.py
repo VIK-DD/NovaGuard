@@ -512,7 +512,8 @@ class System(commands.Cog):
                 )
             guild_exports = await self._upload_guild_exports(backup, created_at)
             if guild_exports.get("configured"):
-                log.warning(
+                log_method = log.warning if guild_exports["failed"] else log.info
+                log_method(
                     "Guild backup exports finished: "
                     f"{guild_exports['uploaded']} uploaded, {guild_exports['failed']} failed"
                 )
