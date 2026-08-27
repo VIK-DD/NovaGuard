@@ -65,6 +65,13 @@ from core.health_report import (
     warn_line,
 )
 from core.storage import DATA_DIR, get_guild_settings, load_data
+from core.system_presenters import (
+    build_botinfo_embed,
+    build_ping_embed,
+    build_uptime_embed,
+    ping_profile,
+    summarize_loop_lag,
+)
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
 
@@ -121,45 +128,7 @@ class System(commands.Cog):
             self.startup_update_task.cancel()
 
     def loop_lag_snapshot(self):
-        samples = list(self.loop_lag_samples)
-        if not samples:
-            return {
-                "label": "Warming up",
-                "line": info_line("Event loop", "collecting lag samples"),
-                "details": "Collecting samples",
-                "color": Palette.INFO,
-                "latest": 0,
-                "average": 0,
-                "peak": 0,
-            }
-
-        latest = samples[-1]
-        average = sum(samples) / len(samples)
-        peak = max(samples)
-
-        details = f"latest `{latest:.0f}ms` • avg `{average:.0f}ms` • peak `{peak:.0f}ms`"
-        if peak >= 3000 or average >= 1000:
-            label = "High lag"
-            line = fail_line("Event loop", details)
-            color = Palette.DANGER
-        elif peak >= 800 or average >= 250:
-            label = "Small lag"
-            line = warn_line("Event loop", details)
-            color = Palette.WARNING
-        else:
-            label = "Healthy"
-            line = ok_line("Event loop", details)
-            color = Palette.SUCCESS
-
-        return {
-            "label": label,
-            "line": line,
-            "details": details.replace("`", ""),
-            "color": color,
-            "latest": latest,
-            "average": average,
-            "peak": peak,
-        }
+        return summarize_loop_lag(self.loop_lag_samples)
 
     def maintenance_state(self):
         return load_maintenance_state()
@@ -621,35 +590,13 @@ class System(commands.Cog):
         await defer_interaction(interaction)
         rest_ms = round((time.perf_counter() - started) * 1000)
 
-        if gateway_ms < 150:
-            color, mood = Palette.SUCCESS, "Feeling fast today ⚡"
-        elif gateway_ms < 300:
-            color, mood = Palette.WARNING, "A little sleepy 😴"
-        else:
-            color, mood = Palette.DANGER, "Running through molasses 🐌"
-
-        embed = make_embed("🏓 Pong!", mood, color=color)
-        embed.add_field(name="🛰️ Gateway", value=f"`{gateway_ms}ms`", inline=True)
-        embed.add_field(name="⚡ REST", value=f"`{rest_ms}ms`", inline=True)
-        embed.add_field(
-            name="⏱️ Uptime",
-            value=f"`{format_timedelta(datetime.now(UTC) - self.bot.launched_at)}`",
-            inline=True,
-        )
-        brand_footer(embed, "Pulse check")
-        await respond(interaction, embed)
+        uptime = datetime.now(UTC) - self.bot.launched_at
+        await respond(interaction, build_ping_embed(gateway_ms, rest_ms, uptime))
 
     @app_commands.command(name="uptime", description="How long the bot has been online")
     async def uptime(self, interaction: discord.Interaction):
         await defer_interaction(interaction)
-        delta = datetime.now(UTC) - self.bot.launched_at
-        embed = make_embed(
-            "⏱️ Uptime",
-            f"Online for **{format_timedelta(delta)}**\nBooted {discord.utils.format_dt(self.bot.launched_at, 'R')}",
-            color=Palette.TEAL,
-        )
-        brand_footer(embed, "Still going strong")
-        await respond(interaction, embed)
+        await respond(interaction, build_uptime_embed(self.bot.launched_at))
 
     @app_commands.command(name="botinfo", description="Version, build, runtime and live stats")
     async def botinfo(self, interaction: discord.Interaction):
@@ -659,43 +606,20 @@ class System(commands.Cog):
         total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
         command_count = len(list(self.bot.tree.walk_commands()))
 
-        embed = make_embed(
-            f"🤖 {self.bot.user.name}",
-            f"v`{release['version']}` **{release['phase_label']}** — the slash-command era.",
-            color=Palette.PRIMARY,
+        embed = build_botinfo_embed(
+            bot_name=self.bot.user.name,
+            avatar_url=self.bot.user.display_avatar.url if self.bot.user.display_avatar else None,
+            release=release,
+            build_count=len(history),
+            server_count=len(self.bot.guilds),
+            total_members=total_members,
+            command_count=command_count,
+            category_count=len(self.bot.cogs),
+            python_version=platform.python_version(),
+            discord_version=discord.__version__,
+            gateway_ms=round(self.bot.latency * 1000),
+            uptime=datetime.now(UTC) - self.bot.launched_at,
         )
-        if self.bot.user.display_avatar:
-            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
-        embed.add_field(
-            name="🏗️ Build",
-            value=f"Builds shipped: `{len(history)}`\nAuto-changelog: `Active`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🌍 Reach",
-            value=f"Servers: `{len(self.bot.guilds)}`\nMembers: `{total_members:,}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🧩 Commands",
-            value=f"Slash commands: `{command_count}`\nCategories: `{len(self.bot.cogs)}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🐍 Runtime",
-            value=(
-                f"Python `{platform.python_version()}`\n"
-                f"discord.py `{discord.__version__}`\n"
-                f"Gateway `{round(self.bot.latency * 1000)}ms`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="⏱️ Uptime",
-            value=f"`{format_timedelta(datetime.now(UTC) - self.bot.launched_at)}`",
-            inline=True,
-        )
-        brand_footer(embed, "Bot info")
         await respond(interaction, embed)
 
     @app_commands.command(name="status", description="Public bot status: uptime, latency and project links")
