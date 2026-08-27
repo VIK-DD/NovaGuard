@@ -14,6 +14,15 @@ from cogs.admin import require_admin
 from core import shop
 from core.admin_auth import record_audit
 from core.database import load_economy_data, upsert_economy_wallets
+from core.economy_helpers import (
+    SLOT_REELS,
+    SlotOutcome,
+    economy_status_payload,
+    get_wallet,
+    parse_saved_datetime,
+    slot_outcome,
+    wallet_snapshot,
+)
 from core.economy_settings import ECONOMY_DEFAULTS, resolve_economy
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -28,7 +37,6 @@ WORK_COOLDOWN = timedelta(minutes=ECONOMY_DEFAULTS["work_cooldown_minutes"])
 # How late a claim can be and still continue a streak. Past this the streak
 # resets - unless a shield is spent.
 STREAK_GRACE = timedelta(hours=48)
-SLOT_REELS = ["🍒", "🍋", "🍇", "💎", "7️⃣"]
 WORK_FLAVORS = [
     "You debugged production at 3 AM",
     "You wrote documentation nobody will read",
@@ -39,33 +47,9 @@ WORK_FLAVORS = [
     "You renamed `data2_final_FINAL.py` responsibly",
     "You centered a div on the first try",
 ]
-
-
-def parse_saved_datetime(value):
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
 # How often the in-memory wallets are written back to SQLite as a safety net.
 # Mutating commands also flush right away, so this only covers missed paths.
 ECONOMY_FLUSH_SECONDS = 60
-
-
-def get_wallet(data, guild_id, user_id):
-    guild_data = data.setdefault(str(guild_id), {})
-    return guild_data.setdefault(
-        str(user_id),
-        {"coins": 0, "daily_streak": 0, "last_daily": None, "last_work": None, "trophies": []},
-    )
-
-
 class Economy(commands.Cog):
     """Server currency with daily rewards, work and games of chance."""
 
@@ -140,41 +124,7 @@ class Economy(commands.Cog):
         return None
 
     def status_payload(self, guild):
-        guild_data = self.data.get(str(guild.id), {})
-        wallets = [
-            (user_id, wallet)
-            for user_id, wallet in guild_data.items()
-            if isinstance(wallet, dict)
-        ]
-        ordered = sorted(wallets, key=lambda item: int(item[1].get("coins", 0) or 0), reverse=True)
-        leaderboard = []
-        for position, (user_id, wallet) in enumerate(ordered[:10], 1):
-            member = guild.get_member(int(user_id)) if str(user_id).isdigit() else None
-            leaderboard.append(
-                {
-                    "position": position,
-                    "user_id": str(user_id),
-                    "display_name": member.display_name if member else f"Member {user_id}",
-                    "coins": max(0, int(wallet.get("coins", 0) or 0)),
-                    "daily_streak": max(0, int(wallet.get("daily_streak", 0) or 0)),
-                }
-            )
-        return {
-            "tracked_wallets": len(wallets),
-            "total_coins": sum(max(0, int(wallet.get("coins", 0) or 0)) for _, wallet in wallets),
-            "leaderboard": leaderboard,
-            "shop": [
-                {
-                    "key": item["key"],
-                    "label": item["label"],
-                    "icon": item.get("icon") or "🪙",
-                    "price": int(item["price"]),
-                    "kind": item["kind"],
-                    "description": item.get("description"),
-                }
-                for item in shop.catalog()
-            ],
-        }
+        return economy_status_payload(self.data, guild)
 
     def wallet_snapshot(self, guild_id, user_id):
         """Read a wallet without creating one.
@@ -183,7 +133,7 @@ class Economy(commands.Cog):
         write an empty wallet for every member who ever sent a message, which
         is a lot of rows for a question that is almost always "nothing".
         """
-        return self.data.get(str(guild_id), {}).get(str(user_id))
+        return wallet_snapshot(self.data, guild_id, user_id)
 
     def xp_multiplier(self, guild_id, user_id) -> float:
         """How much XP a member currently earns per message, as a factor."""
@@ -459,16 +409,13 @@ class Economy(commands.Cog):
         reels = [random.choice(SLOT_REELS) for _ in range(3)]
         display = " | ".join(reels)
 
-        if reels[0] == reels[1] == reels[2]:
-            multiplier = 10 if reels[0] == "7️⃣" else 5
-            net = amount * multiplier - amount
-            title, color = f"🎰 JACKPOT x{multiplier}!", Palette.GOLD
-        elif reels[0] == reels[1] or reels[1] == reels[2] or reels[0] == reels[2]:
-            # 1.5x payout keeps the long-run house edge at ~4% (a 2x pair made slots player-positive)
-            net = amount // 2
+        outcome = slot_outcome(reels, amount)
+        net = outcome.net
+        if outcome.kind == "jackpot":
+            title, color = f"🎰 JACKPOT x{outcome.multiplier}!", Palette.GOLD
+        elif outcome.kind == "pair":
             title, color = "🎰 Two of a kind!", Palette.SUCCESS
         else:
-            net = -amount
             title, color = "🎰 No luck…", Palette.DANGER
 
         wallet["coins"] += net
