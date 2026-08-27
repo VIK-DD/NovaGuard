@@ -1,8 +1,10 @@
 """Discord cards for read-only utility commands."""
 
+from collections import Counter
+
 import discord
 
-from .theme import Palette, brand_footer, make_embed
+from .theme import Palette, brand_footer, make_embed, progress_bar
 
 
 BADGE_LABELS = {
@@ -18,6 +20,40 @@ BADGE_LABELS = {
     "verified_bot_developer": "Early Verified Bot Dev",
     "active_developer": "Active Developer",
 }
+
+TIMESTAMP_STYLES = [
+    ("t", "Short time"),
+    ("T", "Long time"),
+    ("d", "Short date"),
+    ("D", "Long date"),
+    ("f", "Short date/time"),
+    ("F", "Long date/time"),
+    ("R", "Relative"),
+]
+
+
+def build_poll_embed(question, options, votes, author_name, closed=False):
+    total = len(votes)
+    counts = Counter(votes.values())
+    lines = []
+    for index, option in enumerate(options):
+        count = counts.get(index, 0)
+        percent = round(count / total * 100) if total else 0
+        bar = progress_bar(count, total or 1, slots=12)
+        lines.append(f"**{option}**\n{bar} `{count} vote(s) • {percent}%`")
+
+    title = ("🏁 " if closed else "📊 ") + question
+    embed = make_embed(
+        title,
+        "\n\n".join(lines),
+        color=Palette.SUCCESS if closed else Palette.INFO,
+    )
+    status = "Final results" if closed else "Vote by clicking a button below"
+    brand_footer(
+        embed,
+        f"Poll by {author_name} • {total} vote(s) • {status} • temporary 24h",
+    )
+    return embed
 
 
 def build_userinfo_embed(target):
@@ -143,4 +179,40 @@ def build_roleinfo_embed(role):
         inline=False,
     )
     brand_footer(embed, "Role info")
+    return embed
+
+
+def build_timestamp_embed(moment):
+    unix = int(moment.timestamp())
+    lines = [
+        f"`<t:{unix}:{code}>` → <t:{unix}:{code}> — {label}"
+        for code, label in TIMESTAMP_STYLES
+    ]
+    embed = make_embed("🕐 Timestamp generator", "\n".join(lines), color=Palette.TEAL)
+    brand_footer(embed, "Copy the code, paste anywhere")
+    return embed
+
+
+def build_choice_embed(choices, winner):
+    embed = make_embed(
+        "🎯 The wheel of fate has spoken",
+        f"Out of {', '.join(f'`{choice}`' for choice in choices)}…\n\n# 🏆 {winner}",
+        color=Palette.FUN,
+    )
+    brand_footer(embed, "Destiny delivered")
+    return embed
+
+
+def build_color_embed(hex_digits):
+    value = int(hex_digits, 16)
+    red, green, blue = (
+        (value >> 16) & 0xFF,
+        (value >> 8) & 0xFF,
+        value & 0xFF,
+    )
+    embed = make_embed(f"🎨 #{hex_digits.upper()}", color=value)
+    embed.add_field(name="RGB", value=f"`{red}, {green}, {blue}`", inline=True)
+    embed.add_field(name="Int", value=f"`{value}`", inline=True)
+    embed.set_image(url=f"https://singlecolorimage.com/get/{hex_digits}/400x100")
+    brand_footer(embed, "Color preview")
     return embed

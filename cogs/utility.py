@@ -5,7 +5,6 @@ import asyncio
 import random
 import re
 import uuid
-from collections import Counter
 from datetime import UTC, datetime
 
 import discord
@@ -14,12 +13,17 @@ from discord.ext import commands, tasks
 
 from core.loop_guard import keep_running
 from core.storage import load_data, save_data
-from core.theme import Palette, brand_footer, make_embed, progress_bar
+from core.theme import Palette, brand_footer, make_embed
 from core.utility_presenters import (
     BADGE_LABELS,
+    TIMESTAMP_STYLES,
     build_avatar_embed,
+    build_choice_embed,
+    build_color_embed,
+    build_poll_embed,
     build_roleinfo_embed,
     build_serverinfo_embed,
+    build_timestamp_embed,
     build_userinfo_embed,
 )
 from core.utils import format_timedelta, parse_duration, respond, truncate
@@ -28,15 +32,6 @@ log = logging.getLogger(__name__)
 
 
 HEX_COLOR_PATTERN = re.compile(r"^#?([0-9a-fA-F]{6})$")
-TIMESTAMP_STYLES = [
-    ("t", "Short time"),
-    ("T", "Long time"),
-    ("d", "Short date"),
-    ("D", "Long date"),
-    ("f", "Short date/time"),
-    ("F", "Long date/time"),
-    ("R", "Relative"),
-]
 # Serialises load -> mutate -> save on the reminders file so concurrent
 # /remind calls (or a cancel racing the delivery loop) cannot drop entries.
 _REMINDERS_LOCK = asyncio.Lock()
@@ -85,20 +80,13 @@ class PollView(discord.ui.View):
         self.add_item(PollEndButton())
 
     def build_embed(self, closed=False):
-        total = len(self.votes)
-        counts = Counter(self.votes.values())
-        lines = []
-        for index, option in enumerate(self.options):
-            count = counts.get(index, 0)
-            percent = round(count / total * 100) if total else 0
-            bar = progress_bar(count, total or 1, slots=12)
-            lines.append(f"**{option}**\n{bar} `{count} vote(s) • {percent}%`")
-
-        title = ("🏁 " if closed else "📊 ") + self.question
-        embed = make_embed(title, "\n\n".join(lines), color=Palette.SUCCESS if closed else Palette.INFO)
-        status = "Final results" if closed else "Vote by clicking a button below"
-        brand_footer(embed, f"Poll by {self.author_name} • {total} vote(s) • {status} • temporary 24h")
-        return embed
+        return build_poll_embed(
+            self.question,
+            self.options,
+            self.votes,
+            self.author_name,
+            closed,
+        )
 
     async def on_timeout(self):
         for child in self.children:
@@ -349,11 +337,7 @@ class Utility(commands.Cog):
         else:
             moment = datetime.now(UTC)
 
-        unix = int(moment.timestamp())
-        lines = [f"`<t:{unix}:{code}>` → <t:{unix}:{code}> — {label}" for code, label in TIMESTAMP_STYLES]
-        embed = make_embed("🕐 Timestamp generator", "\n".join(lines), color=Palette.TEAL)
-        brand_footer(embed, "Copy the code, paste anywhere")
-        await respond(interaction, embed, ephemeral=True)
+        await respond(interaction, build_timestamp_embed(moment), ephemeral=True)
 
     @app_commands.command(name="choose", description="Can't decide? Let fate pick for you")
     @app_commands.describe(options="Options separated by commas, e.g. pizza, sushi, tacos")
@@ -365,13 +349,7 @@ class Utility(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         winner = random.choice(choices)
-        embed = make_embed(
-            "🎯 The wheel of fate has spoken",
-            f"Out of {', '.join(f'`{choice}`' for choice in choices)}…\n\n# 🏆 {winner}",
-            color=Palette.FUN,
-        )
-        brand_footer(embed, "Destiny delivered")
-        await respond(interaction, embed)
+        await respond(interaction, build_choice_embed(choices, winner))
 
     @app_commands.command(name="color", description="Preview any hex color")
     @app_commands.describe(hex_code="Hex color, e.g. #5865F2")
@@ -382,14 +360,7 @@ class Utility(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        value = int(match.group(1), 16)
-        red, green, blue = (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF
-        embed = make_embed(f"🎨 #{match.group(1).upper()}", color=value)
-        embed.add_field(name="RGB", value=f"`{red}, {green}, {blue}`", inline=True)
-        embed.add_field(name="Int", value=f"`{value}`", inline=True)
-        embed.set_image(url=f"https://singlecolorimage.com/get/{match.group(1)}/400x100")
-        brand_footer(embed, "Color preview")
-        await respond(interaction, embed)
+        await respond(interaction, build_color_embed(match.group(1)))
 
 
 async def setup(bot):
