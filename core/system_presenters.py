@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from .health_report import fail_line, info_line, ok_line, warn_line
+from .health_report import clamp_field, fail_line, info_line, ok_line, warn_line
 from .theme import Palette, brand_footer, make_embed
 from .utils import format_timedelta
 
@@ -204,4 +204,173 @@ def build_public_status_embed(
         inline=True,
     )
     brand_footer(embed, "Public status")
+    return embed
+
+
+def build_doctor_runtime_lines(
+    *,
+    gateway_ms,
+    ack_ms,
+    lag_line,
+    uptime,
+    python_version,
+    discord_version,
+    cog_count,
+    command_count,
+):
+    return [
+        ok_line("Gateway", f"{gateway_ms}ms")
+        if gateway_ms < 300
+        else warn_line("Gateway", f"{gateway_ms}ms, a little slow"),
+        ok_line("Discord ACK", f"{ack_ms}ms")
+        if ack_ms < 1000
+        else warn_line("Discord ACK", f"{ack_ms}ms, slow response"),
+        lag_line,
+        ok_line("Uptime", format_timedelta(uptime)),
+        ok_line("Runtime", f"Python {python_version} • discord.py {discord_version}"),
+        ok_line("Loaded", f"{cog_count} cogs • {command_count} slash commands"),
+    ]
+
+
+def build_doctor_config_lines(
+    *,
+    token_configured,
+    env_found,
+    guild_id,
+    update_channel_id,
+    github_channel_id,
+    github_token_configured,
+    anthropic_configured,
+    error_channel_id,
+):
+    return [
+        ok_line("TOKEN", "configured") if token_configured else fail_line("TOKEN", "missing"),
+        ok_line(".env", "found")
+        if env_found
+        else warn_line(".env", "not found; using shell env only"),
+        ok_line("GUILD_ID", f"{guild_id} (use /resync server for instant updates)")
+        if guild_id
+        else warn_line("GUILD_ID", "global sync can be slower"),
+        ok_line("Update channel", f"<#{update_channel_id}>")
+        if update_channel_id
+        else warn_line("Update channel", "not configured; run /setup"),
+        ok_line("GitHub feed", f"<#{github_channel_id}>")
+        if github_channel_id
+        else warn_line("GitHub feed", "not configured; run /setup"),
+        ok_line("GITHUB_TOKEN", "configured")
+        if github_token_configured
+        else warn_line("GITHUB_TOKEN", "optional, but recommended for rate limits"),
+        ok_line("ANTHROPIC_API_KEY", "configured")
+        if anthropic_configured
+        else warn_line("ANTHROPIC_API_KEY", "/ask disabled until configured"),
+        ok_line("Error digest channel", f"<#{error_channel_id}>")
+        if error_channel_id
+        else info_line("Error digest channel", "optional; run /setup to enable"),
+    ]
+
+
+def build_doctor_permission_lines(permission_checks):
+    return [
+        ok_line(label, "available") if granted else warn_line(label, "missing or channel-limited")
+        for label, granted in permission_checks
+    ]
+
+
+def build_doctor_github_lines(*, username, primary_repo, watch_repos, poll_seconds):
+    return [
+        ok_line("Username", username) if username else warn_line("Username", "not configured"),
+        ok_line("Primary Repo", primary_repo)
+        if primary_repo
+        else warn_line("Primary Repo", "not configured"),
+        ok_line("Watcher Repos", ", ".join(watch_repos))
+        if watch_repos
+        else warn_line("Watcher Repos", "none configured"),
+        ok_line("Polling", f"every {poll_seconds}s"),
+    ]
+
+
+def build_doctor_feature_lines(
+    *,
+    maintenance_state,
+    stream_running,
+    stream_interval_seconds,
+    update_channel_id,
+    github_watcher_running,
+    error_digest_line,
+):
+    maintenance_enabled = bool(maintenance_state.get("enabled"))
+    if stream_running and not maintenance_enabled:
+        stream_line = ok_line("Streaming status", f"rotating every {stream_interval_seconds}s")
+    elif maintenance_enabled:
+        stream_line = info_line("Streaming status", "paused while maintenance is active")
+    else:
+        stream_line = warn_line("Streaming status", "loop stopped")
+
+    return [
+        warn_line("Maintenance mode", maintenance_state.get("message"))
+        if maintenance_enabled
+        else ok_line("Maintenance mode", "inactive"),
+        stream_line,
+        ok_line("Startup updates", "background-safe")
+        if update_channel_id
+        else warn_line("Startup updates", "no channel set"),
+        ok_line("GitHub watcher", "running")
+        if github_watcher_running
+        else warn_line("GitHub watcher", "stopped or not configured"),
+        ok_line("Giveaways/Roles/Tickets", "persistent buttons"),
+        error_digest_line,
+        info_line("Polls", "temporary by design; buttons expire after restart/24h"),
+    ]
+
+
+def doctor_profile(*sections):
+    lines = [line for section in sections for line in section]
+    error_count = sum(line.startswith("❌") for line in lines)
+    warning_count = sum(line.startswith("⚠️") for line in lines)
+
+    if error_count:
+        return (
+            "🩺 Doctor Check • Needs attention",
+            f"Found **{error_count} issue(s)** and **{warning_count} note(s)**.",
+            Palette.DANGER,
+        )
+    if warning_count:
+        return (
+            "🩺 Doctor Check • Healthy with notes",
+            f"No critical issues. **{warning_count} note(s)** are worth knowing.",
+            Palette.WARNING,
+        )
+    return (
+        "🩺 Doctor Check • All systems healthy",
+        "Everything looks clean. The little Raspberry Pi is vibing.",
+        Palette.SUCCESS,
+    )
+
+
+def build_doctor_embed(
+    *,
+    runtime_lines,
+    config_lines,
+    storage_lines,
+    permission_lines,
+    github_lines,
+    feature_lines,
+):
+    sections = (
+        runtime_lines,
+        config_lines,
+        storage_lines,
+        permission_lines,
+        github_lines,
+        feature_lines,
+    )
+    title, description, color = doctor_profile(*sections)
+    embed = make_embed(title, description, color=color)
+    for name, lines in zip(
+        ("Pulse", "Configuration", "Storage", "Permissions", "GitHub", "Feature Notes"),
+        sections,
+        strict=True,
+    ):
+        embed.add_field(name=name, value=clamp_field(lines), inline=False)
+    brand_footer(embed, "Doctor diagnostics")
     return embed

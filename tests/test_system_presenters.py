@@ -19,6 +19,13 @@ class SystemCompatibilityTests(unittest.TestCase):
             "public_status_profile",
             "public_status_links",
             "build_public_status_embed",
+            "build_doctor_runtime_lines",
+            "build_doctor_config_lines",
+            "build_doctor_permission_lines",
+            "build_doctor_github_lines",
+            "build_doctor_feature_lines",
+            "doctor_profile",
+            "build_doctor_embed",
         ):
             with self.subTest(name=name):
                 self.assertIs(getattr(system_cog, name), getattr(system_presenters, name))
@@ -142,6 +149,109 @@ class SystemCardTests(unittest.TestCase):
         self.assertIn("81", fields["Build"])
         self.assertIn("VIK-DD/NovaGuard", fields["Project"])
         self.assertIn("Streaming", fields["Project"])
+
+
+class DoctorPresenterTests(unittest.TestCase):
+    def test_runtime_thresholds_preserve_gateway_and_ack_severity(self):
+        healthy = system_presenters.build_doctor_runtime_lines(
+            gateway_ms=299,
+            ack_ms=999,
+            lag_line="✅ **Event loop** — healthy",
+            uptime=timedelta(hours=2),
+            python_version="3.14.0",
+            discord_version="2.6.4",
+            cog_count=22,
+            command_count=81,
+        )
+        slow = system_presenters.build_doctor_runtime_lines(
+            gateway_ms=300,
+            ack_ms=1000,
+            lag_line="⚠️ **Event loop** — small lag",
+            uptime=timedelta(),
+            python_version="3.14.0",
+            discord_version="2.6.4",
+            cog_count=22,
+            command_count=81,
+        )
+
+        self.assertTrue(healthy[0].startswith("✅"))
+        self.assertTrue(healthy[1].startswith("✅"))
+        self.assertTrue(slow[0].startswith("⚠️"))
+        self.assertTrue(slow[1].startswith("⚠️"))
+        self.assertIn("22 cogs • 81 slash commands", healthy[-1])
+
+    def test_config_permissions_and_github_lines_keep_missing_states(self):
+        config = system_presenters.build_doctor_config_lines(
+            token_configured=False,
+            env_found=False,
+            guild_id=None,
+            update_channel_id=None,
+            github_channel_id=None,
+            github_token_configured=False,
+            anthropic_configured=False,
+            error_channel_id=None,
+        )
+        permissions = system_presenters.build_doctor_permission_lines(
+            [("Send Messages", True), ("Manage Roles", False)]
+        )
+        github = system_presenters.build_doctor_github_lines(
+            username=None,
+            primary_repo=None,
+            watch_repos=(),
+            poll_seconds=90,
+        )
+
+        self.assertTrue(config[0].startswith("❌"))
+        self.assertTrue(config[-1].startswith("ℹ️"))
+        self.assertTrue(permissions[0].startswith("✅"))
+        self.assertTrue(permissions[1].startswith("⚠️"))
+        self.assertEqual(github[-1], "✅ **Polling** — every 90s")
+
+    def test_feature_lines_prioritize_maintenance_over_stream_loop(self):
+        lines = system_presenters.build_doctor_feature_lines(
+            maintenance_state={"enabled": True, "message": "Deploying"},
+            stream_running=True,
+            stream_interval_seconds=60,
+            update_channel_id=123,
+            github_watcher_running=True,
+            error_digest_line="✅ **Error digest** — ready",
+        )
+
+        self.assertEqual(lines[0], "⚠️ **Maintenance mode** — Deploying")
+        self.assertEqual(lines[1], "ℹ️ **Streaming status** — paused while maintenance is active")
+        self.assertTrue(lines[2].startswith("✅"))
+        self.assertTrue(lines[3].startswith("✅"))
+
+    def test_doctor_profile_counts_only_errors_and_warnings(self):
+        danger = system_presenters.doctor_profile(
+            ["❌ broken", "⚠️ note", "ℹ️ context", "✅ fine"]
+        )
+        warning = system_presenters.doctor_profile(["⚠️ note", "ℹ️ context"])
+        healthy = system_presenters.doctor_profile(["ℹ️ context", "✅ fine"])
+
+        self.assertEqual(danger[2], Palette.DANGER)
+        self.assertIn("1 issue(s)", danger[1])
+        self.assertIn("1 note(s)", danger[1])
+        self.assertEqual(warning[2], Palette.WARNING)
+        self.assertEqual(healthy[2], Palette.SUCCESS)
+
+    def test_doctor_card_preserves_section_order_and_footer(self):
+        embed = system_presenters.build_doctor_embed(
+            runtime_lines=["✅ pulse"],
+            config_lines=["✅ config"],
+            storage_lines=["✅ storage"],
+            permission_lines=["✅ permissions"],
+            github_lines=["✅ github"],
+            feature_lines=["✅ features"],
+        )
+
+        self.assertEqual(embed.title, "🩺 Doctor Check • All systems healthy")
+        self.assertEqual(embed.color.value, Palette.SUCCESS)
+        self.assertEqual(
+            [field.name for field in embed.fields],
+            ["Pulse", "Configuration", "Storage", "Permissions", "GitHub", "Feature Notes"],
+        )
+        self.assertEqual(embed.footer.text, "Developed by VIK & CloudMedia")
 
 
 if __name__ == "__main__":
