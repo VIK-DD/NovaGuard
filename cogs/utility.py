@@ -15,6 +15,13 @@ from discord.ext import commands, tasks
 from core.loop_guard import keep_running
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed, progress_bar
+from core.utility_presenters import (
+    BADGE_LABELS,
+    build_avatar_embed,
+    build_roleinfo_embed,
+    build_serverinfo_embed,
+    build_userinfo_embed,
+)
 from core.utils import format_timedelta, parse_duration, respond, truncate
 
 log = logging.getLogger(__name__)
@@ -33,21 +40,6 @@ TIMESTAMP_STYLES = [
 # Serialises load -> mutate -> save on the reminders file so concurrent
 # /remind calls (or a cancel racing the delivery loop) cannot drop entries.
 _REMINDERS_LOCK = asyncio.Lock()
-
-BADGE_LABELS = {
-    "staff": "Discord Staff",
-    "partner": "Partner",
-    "hypesquad": "HypeSquad Events",
-    "bug_hunter": "Bug Hunter",
-    "bug_hunter_level_2": "Bug Hunter Gold",
-    "hypesquad_bravery": "Bravery",
-    "hypesquad_brilliance": "Brilliance",
-    "hypesquad_balance": "Balance",
-    "early_supporter": "Early Supporter",
-    "verified_bot_developer": "Early Verified Bot Dev",
-    "active_developer": "Active Developer",
-}
-
 
 class PollVoteButton(discord.ui.Button):
     def __init__(self, index, label):
@@ -317,126 +309,28 @@ class Utility(commands.Cog):
     @app_commands.guild_only()
     async def userinfo(self, interaction: discord.Interaction, member: discord.Member | None = None):
         target = member or interaction.user
-        badges = [BADGE_LABELS[name] for name, value in target.public_flags if value and name in BADGE_LABELS]
-        roles = [role.mention for role in reversed(target.roles[1:])][:5]
-
-        color = target.color.value if target.color.value else Palette.PRIMARY
-        embed = make_embed(f"👤 {target.display_name}", f"{target.mention} • `{target.id}`", color=color)
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(
-            name="📅 Dates",
-            value=(
-                f"Created: {discord.utils.format_dt(target.created_at, 'R')}\n"
-                f"Joined: {discord.utils.format_dt(target.joined_at, 'R') if target.joined_at else 'Unknown'}"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="🎭 Identity",
-            value=(
-                f"Bot: `{('Yes 🤖' if target.bot else 'No')}`\n"
-                f"Top role: {target.top_role.mention if target.top_role else '`None`'}"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name=f"🏷️ Roles ({max(len(target.roles) - 1, 0)})",
-            value=" ".join(roles) if roles else "`No roles`",
-            inline=False,
-        )
-        if badges:
-            embed.add_field(name="✨ Badges", value=" • ".join(badges), inline=False)
-        brand_footer(embed, "User info")
-        await respond(interaction, embed)
+        await respond(interaction, build_userinfo_embed(target))
 
     @app_commands.command(name="serverinfo", description="Everything about this server in one card")
     @app_commands.guild_only()
     async def serverinfo(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        text_channels = len(guild.text_channels)
-        voice_channels = len(guild.voice_channels)
-
-        embed = make_embed(f"🏰 {guild.name}", guild.description or "A great place to be.", color=Palette.PURPLE)
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(
-            name="👥 People",
-            value=(
-                f"Members: `{guild.member_count:,}`\n"
-                f"Owner: {guild.owner.mention if guild.owner else 'Unknown'}"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="💬 Channels",
-            value=f"Text: `{text_channels}`\nVoice: `{voice_channels}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🎨 Flair",
-            value=f"Roles: `{len(guild.roles)}`\nEmojis: `{len(guild.emojis)}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🚀 Boosts",
-            value=f"Level: `{guild.premium_tier}`\nBoosts: `{guild.premium_subscription_count or 0}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="📅 Created",
-            value=discord.utils.format_dt(guild.created_at, "D"),
-            inline=True,
-        )
-        if guild.banner:
-            embed.set_image(url=guild.banner.url)
-        brand_footer(embed, f"Server ID: {guild.id}")
-        await respond(interaction, embed)
+        await respond(interaction, build_serverinfo_embed(interaction.guild))
 
     @app_commands.command(name="avatar", description="Full-size avatar of a member")
     @app_commands.describe(user="Whose avatar? (defaults to you)")
     async def avatar(self, interaction: discord.Interaction, user: discord.User | None = None):
         target = user or interaction.user
-        asset = target.display_avatar.with_size(1024)
-
-        embed = make_embed(f"🖼️ {target.display_name}'s avatar", color=Palette.FUN)
-        embed.set_image(url=asset.url)
-        brand_footer(embed, "Avatar viewer")
+        embed, asset_url = build_avatar_embed(target)
 
         view = discord.ui.View(timeout=None)
-        view.add_item(discord.ui.Button(label="Open original", url=asset.url))
+        view.add_item(discord.ui.Button(label="Open original", url=asset_url))
         await respond(interaction, embed, view=view)
 
     @app_commands.command(name="roleinfo", description="Details about a role")
     @app_commands.describe(role="Which role?")
     @app_commands.guild_only()
     async def roleinfo(self, interaction: discord.Interaction, role: discord.Role):
-        color = role.color.value if role.color.value else Palette.PRIMARY
-        embed = make_embed(f"🏷️ {role.name}", f"{role.mention} • `{role.id}`", color=color)
-        embed.add_field(
-            name="Details",
-            value=(
-                f"Members: `{len(role.members)}`\n"
-                f"Position: `{role.position}`\n"
-                f"Color: `#{role.color.value:06X}`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="Flags",
-            value=(
-                f"Hoisted: `{('Yes' if role.hoist else 'No')}`\n"
-                f"Mentionable: `{('Yes' if role.mentionable else 'No')}`\n"
-                f"Managed: `{('Yes' if role.managed else 'No')}`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="📅 Created",
-            value=discord.utils.format_dt(role.created_at, "R"),
-            inline=False,
-        )
-        brand_footer(embed, "Role info")
-        await respond(interaction, embed)
+        await respond(interaction, build_roleinfo_embed(role))
 
     @app_commands.command(name="timestamp", description="Generate Discord timestamp codes")
     @app_commands.describe(date="Optional: YYYY-MM-DD HH:MM (UTC). Defaults to now.")
