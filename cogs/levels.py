@@ -6,7 +6,7 @@ import random
 import time
 from collections import Counter
 from copy import deepcopy
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
@@ -21,6 +21,29 @@ from core.level_curve import (
     level_from_xp,
     xp_needed,
 )
+from core.level_helpers import (
+    BACKFILL_DEFAULT_CAP_PER_USER,
+    BACKFILL_DEFAULT_DAYS,
+    BACKFILL_DEFAULT_XP_PER_MESSAGE,
+    BACKFILL_MAX_DAYS,
+    MIN_XP_MESSAGE_CHARS,
+    backfill_window,
+    boosted_xp,
+    meaningful_historical_message,
+    meaningful_message,
+    parse_saved_datetime,
+    rank_position,
+    replace_backfill_for_guild,
+    xp_from_message_counts,
+)
+from core.level_presenters import (
+    MEDALS,
+    RANK_COLORS,
+    backfill_top_lines,
+    build_backfill_embed,
+    build_level_up_embed,
+    readable_dt,
+)
 from core.levels_settings import resolve_levels
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -32,213 +55,9 @@ log = logging.getLogger(__name__)
 # live in core/levels_settings.LEVELS_DEFAULTS. Keeping a second copy here is how
 # AUTOMOD_DEFAULTS ended up declared twice, so there is deliberately none.
 XP_FLUSH_SECONDS = 30
-MIN_XP_MESSAGE_CHARS = 4
 # Compatibility name for integrations that imported the old constant. It now
 # means the first-level requirement; later levels use core.level_curve.
 XP_PER_LEVEL = BASE_LEVEL_XP
-BACKFILL_DEFAULT_DAYS = 700
-BACKFILL_MAX_DAYS = 700
-BACKFILL_DEFAULT_XP_PER_MESSAGE = 2
-BACKFILL_DEFAULT_CAP_PER_USER = 20_000
-RANK_COLORS = {1: Palette.GOLD, 2: 0xBDC3C7, 3: 0xCD7F32}
-MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
-
-
-def parse_saved_datetime(value):
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def meaningful_message(message: discord.Message):
-    content = (message.content or "").strip()
-    if len(content) >= MIN_XP_MESSAGE_CHARS:
-        return True
-    return bool(message.attachments or message.stickers)
-
-
-def meaningful_historical_message(message: discord.Message):
-    if message.content:
-        return meaningful_message(message)
-    return True
-
-
-def rank_position(guild_data, user_id):
-    ordered = sorted(guild_data.items(), key=lambda kv: kv[1].get("xp", 0), reverse=True)
-    position = next((index for index, (uid, _) in enumerate(ordered, 1) if uid == str(user_id)), 0)
-    return position, len(ordered)
-
-
-def backfill_window(days, now=None):
-    """Return the exact recent calendar window, hard-capped at 700 days."""
-    before = now or datetime.now(UTC)
-    bounded_days = min(max(int(days), 1), BACKFILL_MAX_DAYS)
-    return before - timedelta(days=bounded_days), before
-
-
-def boosted_xp(base, multiplier):
-    """Apply an XP booster to one message's gain.
-
-    Rounded rather than truncated: with the mild multiplier the shop sells,
-    flooring would quietly eat most of what was paid for on small gains.
-    """
-    try:
-        factor = max(1.0, float(multiplier))
-    except (TypeError, ValueError):
-        factor = 1.0
-    return max(1, round(int(base) * factor))
-
-
-def xp_from_message_counts(message_counts, xp_per_message, cap_per_user):
-    return {
-        user_id: min(count * xp_per_message, cap_per_user)
-        for user_id, count in message_counts.items()
-        if count > 0
-    }
-
-
-def replace_backfill_for_guild(guild_data, message_counts, xp_by_user):
-    """Replace a guild's XP data with one complete historical scan."""
-    applied_xp = 0
-    applied_messages = 0
-
-    guild_data.clear()
-    for user_id, xp_amount in xp_by_user.items():
-        if xp_amount <= 0:
-            continue
-        record = {
-            "xp": int(xp_amount),
-            "messages": int(message_counts.get(user_id, 0)),
-            "last_gain": None,
-        }
-        guild_data[user_id] = record
-        applied_xp += int(xp_amount)
-        applied_messages += int(message_counts.get(user_id, 0))
-
-    return applied_xp, applied_messages
-
-
-def backfill_top_lines(xp_by_user, message_counts, limit=10):
-    ranked = sorted(xp_by_user.items(), key=lambda item: item[1], reverse=True)
-    lines = []
-    for index, (user_id, xp_amount) in enumerate(ranked[:limit], 1):
-        medal = MEDALS.get(index, f"`#{index}`")
-        lines.append(
-            f"{medal} <@{user_id}> — `{humanize_number(xp_amount)} XP` "
-            f"from `{humanize_number(message_counts.get(user_id, 0))}` message(s)"
-        )
-    return lines
-
-
-def readable_dt(value):
-    return discord.utils.format_dt(value, "f")
-
-
-def build_backfill_embed(
-    *,
-    guild,
-    mode,
-    stats,
-    xp_by_user,
-    message_counts,
-    after,
-    before,
-    days,
-    xp_per_message,
-    cap_per_user,
-    backup=None,
-):
-    total_xp = sum(xp_by_user.values())
-    title = "XP rebuild preview" if mode == "preview" else "XP rebuild applied"
-    description = (
-        f"Scanned historical messages in **{guild.name}**.\n"
-        f"Window: {readable_dt(after)} -> {readable_dt(before)}\n"
-        "Existing XP and message totals are replaced, never added to."
-    )
-    embed = make_embed(title, description, color=Palette.INFO if mode == "preview" else Palette.SUCCESS)
-    embed.add_field(
-        name="Scan",
-        value=(
-            f"`{stats['channels_scanned']}` channel(s) scanned\n"
-            f"`{stats['channels_skipped']}` skipped/no access\n"
-            f"`{humanize_number(stats['messages_seen'])}` message(s) read\n"
-            f"`{humanize_number(stats['eligible_messages'])}` eligible message(s)"
-        ),
-        inline=True,
-    )
-    embed.add_field(
-        name="XP",
-        value=(
-            f"`{humanize_number(len(xp_by_user))}` member(s)\n"
-            f"`{humanize_number(total_xp)}` XP rebuilt\n"
-            f"`{xp_per_message}` XP/message\n"
-            f"`{humanize_number(cap_per_user)}` XP cap/user"
-        ),
-        inline=True,
-    )
-    embed.add_field(
-        name="Safety",
-        value=(
-            f"Latest `{days}` day window (`{BACKFILL_MAX_DAYS}` max)\n"
-            "Rebuilds this server's XP from scratch\n"
-            "No per-channel message cap\n"
-            f"`{stats['errors']}` channel error(s)\n"
-            + (f"Backup: `{backup['name']}`" if backup else "No data changed")
-        ),
-        inline=False,
-    )
-
-    lines = backfill_top_lines(xp_by_user, message_counts)
-    embed.add_field(
-        name="Top rebuilt totals",
-        value="\n".join(lines) if lines else "`No eligible historical messages found.`",
-        inline=False,
-    )
-    if mode == "preview" and xp_by_user:
-        embed.add_field(
-            name="Apply",
-            value="Run `/levels backfill run confirm:true` with the same options to replace the current XP totals.",
-            inline=False,
-        )
-    brand_footer(embed, "Levels backfill")
-    return embed
-
-
-def build_level_up_embed(member, guild, record, new_level, xp_gain, position, ranked_count):
-    total_xp = record.get("xp", 0)
-    into_level = level_from_xp(total_xp)[1]
-    needed = xp_needed(new_level)
-
-    embed = make_embed(
-        f"Level {new_level} unlocked",
-        (
-            f"You leveled up in **{guild.name}**.\n"
-            "Nice, quiet progress. No channel spam, just your own XP card."
-        ),
-        color=Palette.GOLD,
-    )
-    embed.set_thumbnail(url=member.display_avatar.url)
-    if new_level >= MAX_LEVEL:
-        embed.add_field(name="Level cap", value=f"`Level {MAX_LEVEL}` is the maximum.", inline=False)
-    else:
-        bar = progress_bar(into_level, needed, slots=14)
-        embed.add_field(
-            name="Next level",
-            value=f"{bar}\n`{humanize_number(into_level)} / {humanize_number(needed)} XP`",
-            inline=False,
-        )
-    embed.add_field(name="Total XP", value=f"`{humanize_number(total_xp)}`", inline=True)
-    embed.add_field(name="Reward", value=f"`+{xp_gain} XP`", inline=True)
-    if position:
-        embed.add_field(name="Server rank", value=f"`#{position}` of `{ranked_count}`", inline=True)
-    brand_footer(embed, "Private level-up")
-    return embed
 
 
 class Levels(commands.Cog):
