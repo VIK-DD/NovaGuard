@@ -114,8 +114,11 @@ Developer Policy before implementation:
    verify control of the relevant Discord account or authority over the guild.
    Collect no more proof than necessary.
 4. Record received time, scope, verification, searches performed, decision,
-   delivery time and any refusal reason in a restricted case log. Target 30
-   calendar days; escalate immediately if the applicable law is stricter.
+   delivery time and any refusal reason in a restricted case log. Under
+   Moldova's Law no. 195/2024, respond without undue delay and within one month.
+   Complexity or request volume can justify up to two additional months, but
+   the requester must be told about the extension and its reasons within the
+   first month. Escalate immediately if another applicable law is stricter.
 5. Deliver exports privately. Never place them in support channels, public issue
    trackers or ordinary logs.
 6. Live erasure writes a signed pseudonymous deletion token. Restore and host
@@ -242,5 +245,7 @@ server-administration checks above.
 If the operator is established in Moldova, obtain local advice before public
 launch: Law no. 195/2024 has applied since 23 August 2026 and introduces
 GDPR-style accountability, transparency, rights, records, DPIAs and breach
-duties. Official CNPDCP summary:
+duties. It does not restore the former general notification/register system;
+the operator must instead retain evidence of its own risk-based compliance.
+Official CNPDCP summary:
 <https://datepersonale.md/legea-nr-195-2024-privind-protectia-datelor-cu-caracter-personal-principalele-prevederi-si-noutati-legislative/>.

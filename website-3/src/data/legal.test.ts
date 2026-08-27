@@ -13,7 +13,7 @@ import {
 
 describe("public legal identity", () => {
   it("contains the operator-confirmed identity and infrastructure", () => {
-    expect(LEGAL_EFFECTIVE_DATE).toBe("August 12, 2026");
+    expect(LEGAL_EFFECTIVE_DATE).toBe("August 27, 2026");
     expect(LEGAL_OPERATOR).toEqual({
       name: "Breabin Victor",
       contactAddress: "support@novaguard.fun",
@@ -73,6 +73,10 @@ describe("public legal identity", () => {
     }
     expect(privacy).toContain("PRIVACY_EFFECTIVE_DATE");
     expect(terms).toContain("LEGAL_EFFECTIVE_DATE");
+    expect(privacy).toContain("has applied since August 23, 2026");
+    expect(privacy).not.toContain("enters into force on August 23, 2026");
+    expect(privacy).toContain("two additional months");
+    expect(privacy).toContain("within the first month");
     expect(privacy).toContain('id="your-choices"');
     expect(privacy.indexOf('id="your-choices"')).toBeGreaterThan(privacy.indexOf("05 · Providers"));
   });

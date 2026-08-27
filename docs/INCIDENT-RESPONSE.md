@@ -57,13 +57,14 @@ For each affected system, answer:
 ## Personal-data breach decision
 
 This is an operational checklist, not a substitute for jurisdiction-specific
-legal advice. If GDPR applies, Article 33 requires the controller to notify the
-competent supervisory authority without undue delay and, where feasible, within
+legal advice. Because the operator is established in Moldova, Article 33 of
+[Law no. 195/2024](https://datepersonale.md/data-controllers/data-breach-notification/)
+requires notification to CNPDCP without undue delay and, where feasible, within
 72 hours after awareness unless the breach is unlikely to risk people's rights
 and freedoms. Article 34 requires communication to affected people without
-undue delay when high risk is likely. Document the assessment even when the
-decision is not to notify. See the official
-[GDPR Articles 33–34 text](https://eur-lex.europa.eu/eli/reg/2016/679/oj).
+undue delay when high risk is likely. GDPR Articles 33–34 impose the same core
+timing and risk tests where GDPR also applies. Document the assessment even
+when the decision is not to notify.
 
 The incident record should contain the nature of the breach, affected data and
 people, likely consequences, containment/remediation, decision maker, timeline,
