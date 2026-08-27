@@ -37,7 +37,10 @@ jobs:
       - name: Test suite
         run: |
           python -m pip install pytest
-          python -m pytest tests -q
+          # The API smoke script starts a real server during import. Run it in
+          # a fresh process so earlier test imports cannot cache its env config.
+          python -m pytest tests --ignore=tests/test_webserver.py -q
+          python tests/test_webserver.py
 
       - name: Security audit (pip-audit)
         run: |

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from core import shop
 
 
+CURRENCY = "🪙"
 SLOT_REELS = ("🍒", "🍋", "🍇", "💎", "7️⃣")
 
 
@@ -93,6 +94,19 @@ def economy_status_payload(data, guild):
             for item in shop.catalog()
         ],
     }
+
+
+def ranked_wallets(data, guild_id, *, limit=10):
+    """Return positive balances in descending order, ignoring malformed rows."""
+    guild_data = data.get(str(guild_id), {})
+    wallets = []
+    for user_id, wallet in guild_data.items():
+        if not isinstance(wallet, dict):
+            continue
+        coins = _non_negative_integer(wallet.get("coins"))
+        if coins:
+            wallets.append((str(user_id), coins))
+    return sorted(wallets, key=lambda item: item[1], reverse=True)[:limit]
 
 
 def slot_outcome(reels, amount):
