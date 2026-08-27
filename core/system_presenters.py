@@ -138,3 +138,70 @@ def build_botinfo_embed(
     )
     brand_footer(embed, "Bot info")
     return embed
+
+
+def public_status_profile(gateway_ms, lag_label, maintenance_active):
+    if maintenance_active:
+        return (
+            Palette.WARNING,
+            "Maintenance mode is active. Core systems are online, but commands are limited.",
+        )
+    if gateway_ms >= 500 or lag_label == "High lag":
+        return Palette.DANGER, "Online, but the Raspberry Pi is feeling pressure."
+    if gateway_ms >= 250 or lag_label == "Small lag":
+        return Palette.WARNING, "Online with a little latency wobble."
+    return Palette.SUCCESS, "Online, responsive and ready."
+
+
+def public_status_links(primary_repo=None, username=None, uptime_url=None):
+    buttons = []
+    if primary_repo:
+        buttons.append(("Repository", f"https://github.com/{primary_repo}"))
+    if username:
+        buttons.append(("GitHub Profile", f"https://github.com/{username}"))
+    if uptime_url:
+        buttons.append(("Uptime", uptime_url))
+    return buttons
+
+
+def build_public_status_embed(
+    *,
+    bot_name,
+    avatar_url,
+    gateway_ms,
+    uptime,
+    lag,
+    maintenance_active,
+    release,
+    command_count,
+    project_label,
+):
+    color, mood = public_status_profile(gateway_ms, lag["label"], maintenance_active)
+    embed = make_embed(f"🟢 {bot_name} Status", mood, color=color)
+    if avatar_url:
+        embed.set_thumbnail(url=avatar_url)
+    embed.add_field(name="Gateway", value=f"`{gateway_ms}ms`", inline=True)
+    embed.add_field(
+        name="Event Loop",
+        value=f"`{lag['label']}`\n{lag['details']}",
+        inline=True,
+    )
+    embed.add_field(name="Uptime", value=f"`{format_timedelta(uptime)}`", inline=True)
+    embed.add_field(
+        name="Build",
+        value=(
+            f"v`{release['version']}` **{release['phase_label']}**\n"
+            f"Slash commands: `{command_count}`"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="Project",
+        value=(
+            f"GitHub: `{project_label or 'Not configured'}`\n"
+            f"Presence: `{'Maintenance' if maintenance_active else 'Streaming'}`"
+        ),
+        inline=True,
+    )
+    brand_footer(embed, "Public status")
+    return embed

@@ -68,8 +68,11 @@ from core.storage import DATA_DIR, get_guild_settings, load_data
 from core.system_presenters import (
     build_botinfo_embed,
     build_ping_embed,
+    build_public_status_embed,
     build_uptime_embed,
     ping_profile,
+    public_status_links,
+    public_status_profile,
     summarize_loop_lag,
 )
 from core.theme import Palette, brand_footer, make_embed
@@ -631,54 +634,22 @@ class System(commands.Cog):
         lag = self.loop_lag_snapshot()
         maintenance_active = self.maintenance_state().get("enabled")
 
-        if maintenance_active:
-            color = Palette.WARNING
-            mood = "Maintenance mode is active. Core systems are online, but commands are limited."
-        elif gateway_ms >= 500 or lag["label"] == "High lag":
-            color = Palette.DANGER
-            mood = "Online, but the Raspberry Pi is feeling pressure."
-        elif gateway_ms >= 250 or lag["label"] == "Small lag":
-            color = Palette.WARNING
-            mood = "Online with a little latency wobble."
-        else:
-            color = Palette.SUCCESS
-            mood = "Online, responsive and ready."
-
-        embed = make_embed(
-            f"🟢 {self.bot.user.name} Status",
-            mood,
-            color=color,
+        embed = build_public_status_embed(
+            bot_name=self.bot.user.name,
+            avatar_url=self.bot.user.display_avatar.url if self.bot.user.display_avatar else None,
+            gateway_ms=gateway_ms,
+            uptime=uptime,
+            lag=lag,
+            maintenance_active=maintenance_active,
+            release=release,
+            command_count=len(list(self.bot.tree.walk_commands())),
+            project_label=github_config.primary_repo or github_config.username,
         )
-        if self.bot.user.display_avatar:
-            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
-        embed.add_field(name="Gateway", value=f"`{gateway_ms}ms`", inline=True)
-        embed.add_field(name="Event Loop", value=f"`{lag['label']}`\n{lag['details']}", inline=True)
-        embed.add_field(name="Uptime", value=f"`{format_timedelta(uptime)}`", inline=True)
-        embed.add_field(
-            name="Build",
-            value=(
-                f"v`{release['version']}` **{release['phase_label']}**\n"
-                f"Slash commands: `{len(list(self.bot.tree.walk_commands()))}`"
-            ),
-            inline=True,
+        buttons = public_status_links(
+            github_config.primary_repo,
+            github_config.username,
+            github_config.uptime_url,
         )
-        embed.add_field(
-            name="Project",
-            value=(
-                f"GitHub: `{github_config.primary_repo or github_config.username or 'Not configured'}`\n"
-                f"Presence: `{'Maintenance' if maintenance_active else 'Streaming'}`"
-            ),
-            inline=True,
-        )
-        brand_footer(embed, "Public status")
-
-        buttons = []
-        if github_config.primary_repo:
-            buttons.append(("Repository", f"https://github.com/{github_config.primary_repo}"))
-        if github_config.username:
-            buttons.append(("GitHub Profile", f"https://github.com/{github_config.username}"))
-        if github_config.uptime_url:
-            buttons.append(("Uptime", github_config.uptime_url))
         await respond(interaction, embed, view=build_link_view(buttons))
 
     @app_commands.command(name="doctor", description="Deep health check for the bot, config and integrations")

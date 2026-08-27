@@ -16,6 +16,9 @@ class SystemCompatibilityTests(unittest.TestCase):
             "build_ping_embed",
             "build_uptime_embed",
             "build_botinfo_embed",
+            "public_status_profile",
+            "public_status_links",
+            "build_public_status_embed",
         ):
             with self.subTest(name=name):
                 self.assertIs(getattr(system_cog, name), getattr(system_presenters, name))
@@ -92,6 +95,53 @@ class SystemCardTests(unittest.TestCase):
         self.assertIn("81", fields["🧩 Commands"])
         self.assertIn("Python `3.14.0`", fields["🐍 Runtime"])
         self.assertEqual(embed.thumbnail.url, "https://example.com/bot.png")
+
+    def test_public_status_priority_is_maintenance_then_pressure_then_healthy(self):
+        profile = system_presenters.public_status_profile
+
+        self.assertEqual(profile(900, "High lag", True)[0], Palette.WARNING)
+        self.assertIn("Maintenance", profile(900, "High lag", True)[1])
+        self.assertEqual(profile(500, "Healthy", False)[0], Palette.DANGER)
+        self.assertEqual(profile(50, "High lag", False)[0], Palette.DANGER)
+        self.assertEqual(profile(250, "Healthy", False)[0], Palette.WARNING)
+        self.assertEqual(profile(50, "Small lag", False)[0], Palette.WARNING)
+        self.assertEqual(profile(50, "Healthy", False)[0], Palette.SUCCESS)
+
+    def test_public_status_links_include_only_configured_destinations(self):
+        self.assertEqual(
+            system_presenters.public_status_links(
+                "VIK-DD/NovaGuard",
+                "VIK-DD",
+                "https://status.example.com",
+            ),
+            [
+                ("Repository", "https://github.com/VIK-DD/NovaGuard"),
+                ("GitHub Profile", "https://github.com/VIK-DD"),
+                ("Uptime", "https://status.example.com"),
+            ],
+        )
+        self.assertEqual(system_presenters.public_status_links(), [])
+
+    def test_public_status_card_preserves_health_build_and_project_details(self):
+        embed = system_presenters.build_public_status_embed(
+            bot_name="NovaGuard",
+            avatar_url="https://example.com/bot.png",
+            gateway_ms=80,
+            uptime=timedelta(hours=4),
+            lag={"label": "Healthy", "details": "latest 3ms • avg 2ms • peak 8ms"},
+            maintenance_active=False,
+            release={"version": "2.8", "phase_label": "Open Beta"},
+            command_count=81,
+            project_label="VIK-DD/NovaGuard",
+        )
+        fields = {field.name: field.value for field in embed.fields}
+
+        self.assertEqual(embed.title, "🟢 NovaGuard Status")
+        self.assertEqual(embed.color.value, Palette.SUCCESS)
+        self.assertIn("Healthy", fields["Event Loop"])
+        self.assertIn("81", fields["Build"])
+        self.assertIn("VIK-DD/NovaGuard", fields["Project"])
+        self.assertIn("Streaming", fields["Project"])
 
 
 if __name__ == "__main__":
