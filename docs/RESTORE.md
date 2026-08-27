@@ -33,7 +33,10 @@ Use these in Discord before touching files:
 /backup restore
 ```
 
-`/backup test` extracts the newest archive into `backups/restore-check/` only. It does not overwrite live data.
+`/backup test` authenticates and extracts the newest archive into a unique
+temporary directory, applies the signed deletion ledger, reruns SQLite
+integrity and foreign-key checks, and then removes the plaintext test files. It
+does not overwrite live data and fails if the ledger is absent or invalid.
 `/backup restore` prints a safe manual restore plan only; it does not overwrite live data.
 
 ## Manual Restore

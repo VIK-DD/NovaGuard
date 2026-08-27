@@ -33,6 +33,7 @@ from core.backup_presenters import (
 from cogs.admin import require_admin
 from core.config import github_config
 from core.privacy import export_guild_data
+from core.restore_drill import run_restore_drill
 from core.storage import get_guild_settings, reset_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
 from core.utils import defer_interaction, respond
@@ -569,7 +570,7 @@ class Setup(commands.Cog):
         latest = latest_backup()
         if not latest:
             return await respond(interaction, backup_status_embed(None), ephemeral=True)
-        report = await asyncio.to_thread(inspect_backup, latest["path"], extract=True)
+        report = await asyncio.to_thread(run_restore_drill, latest["path"])
         await respond(interaction, backup_test_embed(latest, report), ephemeral=True)
 
     @backup.command(name="restore", description="Show a safe manual restore plan for a backup")

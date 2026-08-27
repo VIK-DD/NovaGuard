@@ -29,6 +29,11 @@ HEALTHY_REPORT = {
     "included": ["data/novaguard.sqlite3", "data/settings.json"],
     "json_files": ["data/settings.json"],
     "extracted_files": 2,
+    "ledger_applied": True,
+    "ledger_entries": 3,
+    "privacy_removed": 1,
+    "post_restore_sqlite": "ok",
+    "post_restore_foreign_keys": 0,
 }
 HEALTHY_REMOTE = {
     "configured": True,
@@ -210,6 +215,9 @@ class BackupEmbedTests(unittest.TestCase):
 
         self.assertIn(LATEST["name"], field_value(list_embed, "Latest first"))
         self.assertIn("nothing decrypted is left", field_value(test_embed, "Result"))
+        self.assertIn("Deletion ledger: `enforced`", field_value(test_embed, "Result"))
+        self.assertIn("SQLite after ledger: `ok`", field_value(test_embed, "Result"))
+        self.assertIn("foreign-key violations: `0`", field_value(test_embed, "Result"))
         self.assertIn("data/settings.json", field_value(inspect_embed, "Contents"))
         self.assertIn("SQLite integrity: `ok`", field_value(inspect_embed, "Archive"))
 

@@ -216,8 +216,9 @@ The operator must complete and retain evidence for every item:
 - [ ] Execute/review applicable provider DPAs and transfer safeguards.
 - [ ] Decide whether organisational server customers need a NovaGuard data
       processing addendum; do not represent one as signed when it is not.
-- [ ] Test `/privacy export`, `/privacy delete`, server export/delete and a
-      restore that reapplies the deletion ledger.
+- [ ] Test `/privacy export`, `/privacy delete`, server export/delete and run
+      `/backup test`; retain the result showing that the authenticated deletion
+      ledger was enforced and post-restore SQLite checks passed.
 - [ ] Generate an encrypted backup, verify the off-site copy and pass
       `venv/bin/python tools/production_check.py --strict`.
 - [ ] Assign a person who monitors the privacy inbox and incident alerts.

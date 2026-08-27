@@ -360,11 +360,18 @@ def backup_test_embed(latest, report):
         color=color,
     )
     extracted = report.get("extracted_files") or 0
+    ledger_applied = report.get("ledger_applied") is True
+    ledger_entries = report.get("ledger_entries") or 0
+    privacy_removed = report.get("privacy_removed") or 0
     embed.add_field(
         name="Result",
         value=(
             f"{backup_integrity_line(report)}\n"
-            f"SQLite: `{report.get('sqlite') or 'not included'}`\n"
+            f"SQLite before restore: `{report.get('sqlite') or 'not included'}`\n"
+            f"Deletion ledger: `{'enforced' if ledger_applied else 'not enforced'}` "
+            f"(`{ledger_entries}` signed deletion(s), `{privacy_removed}` restored reference(s) scrubbed)\n"
+            f"SQLite after ledger: `{report.get('post_restore_sqlite') or 'not tested'}`; "
+            f"foreign-key violations: `{report.get('post_restore_foreign_keys') if report.get('post_restore_foreign_keys') is not None else 'not tested'}`\n"
             + (
                 f"Unpacked `{extracted}` file(s), then removed them — "
                 "nothing decrypted is left on disk."
