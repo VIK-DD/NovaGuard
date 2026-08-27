@@ -20,13 +20,21 @@ from core.utility_presenters import (
     build_avatar_embed,
     build_choice_embed,
     build_color_embed,
+    build_invalid_reminder_duration_embed,
+    build_no_reminders_embed,
     build_poll_embed,
+    build_reminder_cancelled_embed,
+    build_reminder_delivery_embed,
+    build_reminder_select_options,
+    build_reminder_set_embed,
+    build_reminder_too_far_embed,
+    build_reminders_embed,
     build_roleinfo_embed,
     build_serverinfo_embed,
     build_timestamp_embed,
     build_userinfo_embed,
 )
-from core.utils import format_timedelta, parse_duration, respond, truncate
+from core.utils import parse_duration, respond, truncate
 
 log = logging.getLogger(__name__)
 
@@ -100,18 +108,10 @@ class PollView(discord.ui.View):
 
 class ReminderCancelSelect(discord.ui.Select):
     def __init__(self, user_id, items):
-        options = []
-        for item in items[:25]:
-            due = datetime.fromisoformat(item["due_at"])
-            options.append(
-                discord.SelectOption(
-                    label=truncate(item["message"], 90),
-                    value=item["id"],
-                    description=f"in {format_timedelta(due - datetime.now(UTC))}",
-                    emoji="⏰",
-                )
-            )
-        super().__init__(placeholder="Cancel a reminder…", options=options)
+        super().__init__(
+            placeholder="Cancel a reminder…",
+            options=build_reminder_select_options(items),
+        )
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction):
@@ -123,9 +123,10 @@ class ReminderCancelSelect(discord.ui.Select):
             reminders = [item for item in reminders if item.get("id") != self.values[0]]
             await asyncio.to_thread(save_data, "reminders", reminders)
 
-        embed = make_embed("🗑️ Reminder cancelled", "That reminder will not fire anymore.", color=Palette.SUCCESS)
-        brand_footer(embed)
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(
+            embed=build_reminder_cancelled_embed(),
+            view=None,
+        )
 
 
 class Utility(commands.Cog):
@@ -187,10 +188,11 @@ class Utility(commands.Cog):
                         item.get("channel_id"),
                     )
                     continue
-            embed = make_embed("⏰ Reminder", item["message"], color=Palette.WARNING)
-            brand_footer(embed, "You asked me to remind you")
             try:
-                await channel.send(content=f"<@{item['user_id']}>", embed=embed)
+                await channel.send(
+                    content=f"<@{item['user_id']}>",
+                    embed=build_reminder_delivery_embed(item["message"]),
+                )
             except discord.HTTPException:
                 log.warning(
                     "Reminder %s dropped: could not post in channel %s",
@@ -233,18 +235,18 @@ class Utility(commands.Cog):
     async def remind(self, interaction: discord.Interaction, duration: str, message: str):
         delta = parse_duration(duration)
         if not delta:
-            embed = make_embed(
-                "🤔 I did not get that",
-                "Use formats like `10m`, `1h30m`, `2d`, `1w`.",
-                color=Palette.WARNING,
+            return await respond(
+                interaction,
+                build_invalid_reminder_duration_embed(),
+                ephemeral=True,
             )
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
 
         if delta.days > 90:
-            embed = make_embed("📅 Too far away", "Reminders max out at 90 days.", color=Palette.WARNING)
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
+            return await respond(
+                interaction,
+                build_reminder_too_far_embed(),
+                ephemeral=True,
+            )
 
         due_at = datetime.now(UTC) + delta
         async with _REMINDERS_LOCK:
@@ -261,13 +263,11 @@ class Utility(commands.Cog):
             )
             await asyncio.to_thread(save_data, "reminders", reminders)
 
-        embed = make_embed(
-            "⏰ Reminder set!",
-            f"I'll ping you {discord.utils.format_dt(due_at, 'R')} about:\n> {message}",
-            color=Palette.SUCCESS,
+        await respond(
+            interaction,
+            build_reminder_set_embed(due_at, message),
+            ephemeral=True,
         )
-        brand_footer(embed, "Reminder saved")
-        await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="reminders", description="See and cancel your pending reminders")
     async def reminders(self, interaction: discord.Interaction):
@@ -277,20 +277,20 @@ class Utility(commands.Cog):
             key=lambda item: item["due_at"],
         )
         if not mine:
-            embed = make_embed("💤 Nothing pending", "You have no reminders. Set one with `/remind`!", color=Palette.INFO)
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
+            return await respond(
+                interaction,
+                build_no_reminders_embed(),
+                ephemeral=True,
+            )
 
-        lines = []
-        for item in mine[:15]:
-            due = datetime.fromisoformat(item["due_at"])
-            lines.append(f"⏰ {discord.utils.format_dt(due, 'R')} — {truncate(item['message'], 80)}")
-
-        embed = make_embed("🗓️ Your reminders", "\n".join(lines), color=Palette.INFO)
-        brand_footer(embed, f"{len(mine)} pending")
         view = discord.ui.View(timeout=180)
         view.add_item(ReminderCancelSelect(interaction.user.id, mine))
-        await respond(interaction, embed, view=view, ephemeral=True)
+        await respond(
+            interaction,
+            build_reminders_embed(mine),
+            view=view,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="userinfo", description="Detailed profile card for a member")
     @app_commands.describe(member="Whose profile? (defaults to you)")

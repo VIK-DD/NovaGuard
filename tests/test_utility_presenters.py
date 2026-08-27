@@ -1,7 +1,7 @@
 """Contracts for read-only utility command cards."""
 
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import cogs.utility as utility_cog
@@ -44,6 +44,14 @@ class UtilityCompatibilityTests(unittest.TestCase):
             "BADGE_LABELS",
             "TIMESTAMP_STYLES",
             "build_poll_embed",
+            "build_reminder_select_options",
+            "build_reminder_cancelled_embed",
+            "build_reminder_delivery_embed",
+            "build_invalid_reminder_duration_embed",
+            "build_reminder_too_far_embed",
+            "build_reminder_set_embed",
+            "build_no_reminders_embed",
+            "build_reminders_embed",
             "build_userinfo_embed",
             "build_serverinfo_embed",
             "build_avatar_embed",
@@ -204,6 +212,58 @@ class UtilityPresenterTests(unittest.TestCase):
             embed.image.url,
             "https://singlecolorimage.com/get/a1B2c3/400x100",
         )
+
+    def test_reminder_select_options_are_bounded_and_use_supplied_clock(self):
+        items = [
+            {
+                "id": f"item-{index}",
+                "message": "x" * 120,
+                "due_at": (NOW + timedelta(minutes=10 + index)).isoformat(),
+            }
+            for index in range(30)
+        ]
+
+        options = utility_presenters.build_reminder_select_options(items, NOW)
+
+        self.assertEqual(len(options), 25)
+        self.assertEqual(options[0].value, "item-0")
+        self.assertEqual(options[0].label, "...")
+        self.assertEqual(options[0].description, "in 10m")
+
+    def test_reminder_state_cards_preserve_titles_messages_and_colors(self):
+        cancelled = utility_presenters.build_reminder_cancelled_embed()
+        delivery = utility_presenters.build_reminder_delivery_embed("stand up")
+        invalid = utility_presenters.build_invalid_reminder_duration_embed()
+        too_far = utility_presenters.build_reminder_too_far_embed()
+        reminder_set = utility_presenters.build_reminder_set_embed(NOW, "drink water")
+        empty = utility_presenters.build_no_reminders_embed()
+
+        self.assertEqual(cancelled.title, "🗑️ Reminder cancelled")
+        self.assertEqual(cancelled.color.value, Palette.SUCCESS)
+        self.assertEqual(delivery.description, "stand up")
+        self.assertEqual(delivery.color.value, Palette.WARNING)
+        self.assertIn("10m", invalid.description)
+        self.assertIn("90 days", too_far.description)
+        self.assertIn(f"<t:{int(NOW.timestamp())}:R>", reminder_set.description)
+        self.assertIn("drink water", reminder_set.description)
+        self.assertIn("/remind", empty.description)
+
+    def test_pending_reminders_card_limits_rows_and_truncates_messages(self):
+        items = [
+            {
+                "id": f"item-{index}",
+                "message": f"message-{index}-" + "x" * 100,
+                "due_at": (NOW + timedelta(minutes=index)).isoformat(),
+            }
+            for index in range(20)
+        ]
+
+        embed = utility_presenters.build_reminders_embed(items)
+
+        self.assertEqual(embed.title, "🗓️ Your reminders")
+        self.assertEqual(len(embed.description.splitlines()), 15)
+        self.assertIn("message-0-", embed.description)
+        self.assertNotIn("message-15-", embed.description)
 
 
 if __name__ == "__main__":

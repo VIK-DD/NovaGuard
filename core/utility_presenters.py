@@ -1,10 +1,12 @@
 """Discord cards for read-only utility commands."""
 
 from collections import Counter
+from datetime import UTC, datetime
 
 import discord
 
 from .theme import Palette, brand_footer, make_embed, progress_bar
+from .utils import format_timedelta, truncate
 
 
 BADGE_LABELS = {
@@ -30,6 +32,90 @@ TIMESTAMP_STYLES = [
     ("F", "Long date/time"),
     ("R", "Relative"),
 ]
+
+
+def build_reminder_select_options(items, checked_at=None):
+    checked_at = checked_at or datetime.now(UTC)
+    options = []
+    for item in items[:25]:
+        due = datetime.fromisoformat(item["due_at"])
+        options.append(
+            discord.SelectOption(
+                label=truncate(item["message"], 90),
+                value=item["id"],
+                description=f"in {format_timedelta(due - checked_at)}",
+                emoji="⏰",
+            )
+        )
+    return options
+
+
+def build_reminder_cancelled_embed():
+    embed = make_embed(
+        "🗑️ Reminder cancelled",
+        "That reminder will not fire anymore.",
+        color=Palette.SUCCESS,
+    )
+    brand_footer(embed)
+    return embed
+
+
+def build_reminder_delivery_embed(message):
+    embed = make_embed("⏰ Reminder", message, color=Palette.WARNING)
+    brand_footer(embed, "You asked me to remind you")
+    return embed
+
+
+def build_invalid_reminder_duration_embed():
+    embed = make_embed(
+        "🤔 I did not get that",
+        "Use formats like `10m`, `1h30m`, `2d`, `1w`.",
+        color=Palette.WARNING,
+    )
+    brand_footer(embed)
+    return embed
+
+
+def build_reminder_too_far_embed():
+    embed = make_embed(
+        "📅 Too far away",
+        "Reminders max out at 90 days.",
+        color=Palette.WARNING,
+    )
+    brand_footer(embed)
+    return embed
+
+
+def build_reminder_set_embed(due_at, message):
+    embed = make_embed(
+        "⏰ Reminder set!",
+        f"I'll ping you {discord.utils.format_dt(due_at, 'R')} about:\n> {message}",
+        color=Palette.SUCCESS,
+    )
+    brand_footer(embed, "Reminder saved")
+    return embed
+
+
+def build_no_reminders_embed():
+    embed = make_embed(
+        "💤 Nothing pending",
+        "You have no reminders. Set one with `/remind`!",
+        color=Palette.INFO,
+    )
+    brand_footer(embed)
+    return embed
+
+
+def build_reminders_embed(items):
+    lines = []
+    for item in items[:15]:
+        due = datetime.fromisoformat(item["due_at"])
+        lines.append(
+            f"⏰ {discord.utils.format_dt(due, 'R')} — {truncate(item['message'], 80)}"
+        )
+    embed = make_embed("🗓️ Your reminders", "\n".join(lines), color=Palette.INFO)
+    brand_footer(embed, f"{len(items)} pending")
+    return embed
 
 
 def build_poll_embed(question, options, votes, author_name, closed=False):
