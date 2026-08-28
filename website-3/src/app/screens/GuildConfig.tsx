@@ -5,12 +5,17 @@ import { ApiError, apiFetch } from "../../lib/api/client";
 import {
   GuildConfigSchema,
   DashboardActionSchema,
-  type AnnounceMode,
   type GuildSettings,
   type SettingsPatch,
 } from "../../lib/api/schemas";
-import BadwordsEditor from "../components/BadwordsEditor";
 import ChannelSelect from "../components/ChannelSelect";
+import {
+  LevelsSection,
+  ModerationSection,
+  UpdatesSection,
+  VoiceSection,
+  WelcomeSection,
+} from "../components/ConfigCoreSections";
 import { ModuleNav, NumberField, Section, Toggle } from "../components/ConfigPrimitives";
 import IgnoreListEditor from "../components/IgnoreListEditor";
 import RoleSelect from "../components/RoleSelect";
@@ -317,6 +322,10 @@ export default function GuildConfig() {
     [setAutomod],
   );
   const onLevelsEnabledChange = useCallback((v: boolean) => setLevels({ enabled: v }), [setLevels]);
+  const onAnnounceChange = useCallback(
+    (value: GuildSettings["levels"]["announce"]) => setLevels({ announce: value }),
+    [setLevels],
+  );
   const onAnnounceChannelChange = useCallback(
     (v: string | null) => setLevels({ announce_channel: v }),
     [setLevels],
@@ -494,240 +503,60 @@ export default function GuildConfig() {
 
         <div className="mt-8 grid gap-5">
           {selectedModule?.key === "welcome" && (
-            <Section
-            id="welcome"
-            icon="users-three"
-            kicker="Welcome"
-            description="Greet new members, announce departures and assign a starter role."
-            active={isModuleActive(draft, "welcome")}
-          >
-            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-              <ChannelSelect
-                label="Welcome channel"
-                value={draft.welcome_channel}
-                channels={channels}
-                error={fieldErrors.welcome_channel}
-                onChange={channelFieldHandlers.welcome_channel}
-              />
-              <ChannelSelect
-                label="Goodbye channel"
-                value={draft.goodbye_channel}
-                channels={channels}
-                error={fieldErrors.goodbye_channel}
-                onChange={channelFieldHandlers.goodbye_channel}
-              />
-              <RoleSelect
-                label="Auto-role for newcomers"
-                value={draft.autorole}
-                roles={roles.filter((role) => role.assignable)}
-                error={fieldErrors.autorole}
-                onChange={onAutoroleChange}
-              />
-            </div>
-            </Section>
+            <WelcomeSection
+              settings={draft}
+              channels={channels}
+              roles={roles}
+              fieldErrors={fieldErrors}
+              onWelcomeChannelChange={channelFieldHandlers.welcome_channel}
+              onGoodbyeChannelChange={channelFieldHandlers.goodbye_channel}
+              onAutoroleChange={onAutoroleChange}
+            />
           )}
 
           {selectedModule?.key === "moderation" && (
-            <Section
-            id="moderation"
-            icon="shield-check"
-            kicker="Moderation"
-            description="Filter unwanted messages and keep staff-facing activity in the right channels."
-            active={isModuleActive(draft, "moderation")}
-          >
-            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-              <ChannelSelect
-                label="Server log channel"
-                value={draft.log_channel}
-                channels={channels}
-                error={fieldErrors.log_channel}
-                onChange={channelFieldHandlers.log_channel}
-              />
-              <ChannelSelect
-                label="Error log channel"
-                value={draft.error_log_channel}
-                channels={channels}
-                error={fieldErrors.error_log_channel}
-                onChange={channelFieldHandlers.error_log_channel}
-              />
-            </div>
-            <div className="mt-6 border-t border-line pt-2">
-              <Toggle
-                label="Block Discord invites"
-                checked={draft.automod.invites}
-                onChange={onInvitesChange}
-              />
-              <Toggle label="Anti-spam" checked={draft.automod.spam} onChange={onSpamChange} />
-              <div className="border-t border-line pt-4">
-                <BadwordsEditor
-                  value={draft.automod.badwords}
-                  error={
-                    fieldErrors["automod.badwords"] ?? fieldErrors.badwords ?? fieldErrors.automod
-                  }
-                  onChange={onBadwordsChange}
-                />
-              </div>
-              <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-3">
-                <NumberField
-                  label="Messages"
-                  suffix="to trigger"
-                  value={draft.automod.spam_messages}
-                  min={3}
-                  max={20}
-                  error={fieldErrors["automod.spam_messages"]}
-                  onChange={onSpamMessagesChange}
-                />
-                <NumberField
-                  label="Detection window"
-                  suffix="seconds"
-                  value={draft.automod.spam_window_seconds}
-                  min={2}
-                  max={60}
-                  error={fieldErrors["automod.spam_window_seconds"]}
-                  onChange={onSpamWindowChange}
-                />
-                <NumberField
-                  label="Timeout"
-                  suffix="seconds"
-                  value={draft.automod.spam_timeout_seconds}
-                  min={10}
-                  max={86400}
-                  error={fieldErrors["automod.spam_timeout_seconds"]}
-                  onChange={onSpamTimeoutChange}
-                />
-              </div>
-              <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-                <IgnoreListEditor
-                  label="Channels exempt from AutoMod"
-                  prefix="#"
-                  value={draft.automod.ignored_channels}
-                  options={channels}
-                  error={fieldErrors["automod.ignored_channels"]}
-                  onChange={onAutomodIgnoredChannelsChange}
-                />
-                <IgnoreListEditor
-                  label="Roles exempt from AutoMod"
-                  prefix="@"
-                  value={draft.automod.ignored_roles}
-                  options={roles}
-                  error={fieldErrors["automod.ignored_roles"]}
-                  onChange={onAutomodIgnoredRolesChange}
-                />
-              </div>
-            </div>
-            </Section>
+            <ModerationSection
+              settings={draft}
+              channels={channels}
+              roles={roles}
+              fieldErrors={fieldErrors}
+              onLogChannelChange={channelFieldHandlers.log_channel}
+              onErrorLogChannelChange={channelFieldHandlers.error_log_channel}
+              onInvitesChange={onInvitesChange}
+              onSpamChange={onSpamChange}
+              onBadwordsChange={onBadwordsChange}
+              onIgnoredChannelsChange={onAutomodIgnoredChannelsChange}
+              onIgnoredRolesChange={onAutomodIgnoredRolesChange}
+              onSpamMessagesChange={onSpamMessagesChange}
+              onSpamWindowChange={onSpamWindowChange}
+              onSpamTimeoutChange={onSpamTimeoutChange}
+            />
           )}
 
           {selectedModule?.key === "levels" && (
-            <Section
-            id="levels"
-            icon="trophy"
-            kicker="Levels"
-            description="Reward server activity with XP and level-up announcements."
-            active={isModuleActive(draft, "levels")}
-          >
-            <Toggle
-              label="Give XP for messages"
-              checked={draft.levels.enabled}
-              onChange={onLevelsEnabledChange}
+            <LevelsSection
+              settings={draft}
+              channels={channels}
+              roles={roles}
+              fieldErrors={fieldErrors}
+              onEnabledChange={onLevelsEnabledChange}
+              onAnnounceChange={onAnnounceChange}
+              onAnnounceChannelChange={onAnnounceChannelChange}
+              onXpMinChange={onXpMinChange}
+              onXpMaxChange={onXpMaxChange}
+              onCooldownChange={onCooldownChange}
+              onIgnoredChannelsChange={onIgnoredChannelsChange}
+              onIgnoredRolesChange={onIgnoredRolesChange}
             />
-            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-              <label className="block">
-                <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-                  Level-up announcement
-                </span>
-                <select
-                  value={draft.levels.announce}
-                  aria-invalid={fieldErrors["levels.announce"] ? true : undefined}
-                  onChange={(event) => setLevels({ announce: event.target.value as AnnounceMode })}
-                  className={`mt-1.5 w-full rounded-md border bg-card px-3 py-2 text-sm outline-none focus:border-ink ${
-                    fieldErrors["levels.announce"] ? "border-primary" : "border-line"
-                  }`}
-                >
-                  <option value="dm">Direct message</option>
-                  <option value="channel">In a channel</option>
-                  <option value="off">Don't announce</option>
-                </select>
-                {fieldErrors["levels.announce"] && (
-                  <p className="text-primary mt-1 text-xs">{fieldErrors["levels.announce"]}</p>
-                )}
-              </label>
-              {draft.levels.announce === "channel" && (
-                <ChannelSelect
-                  label="Announcement channel"
-                  value={draft.levels.announce_channel}
-                  channels={channels}
-                  error={fieldErrors["levels.announce_channel"]}
-                  onChange={onAnnounceChannelChange}
-                />
-              )}
-            </div>
-            <div className="mt-5 grid gap-5 sm:grid-cols-3">
-              <NumberField
-                label="XP minimum"
-                value={draft.levels.xp_min}
-                min={1}
-                max={100}
-                error={fieldErrors["levels.xp_min"]}
-                onChange={onXpMinChange}
-              />
-              <NumberField
-                label="XP maximum"
-                value={draft.levels.xp_max}
-                min={1}
-                max={100}
-                error={fieldErrors["levels.xp_max"]}
-                onChange={onXpMaxChange}
-              />
-              <NumberField
-                label="Cooldown"
-                suffix="seconds"
-                value={draft.levels.cooldown}
-                min={0}
-                max={3600}
-                error={fieldErrors["levels.cooldown"]}
-                onChange={onCooldownChange}
-              />
-            </div>
-            <div className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-              <IgnoreListEditor
-                label="Channels without XP"
-                prefix="#"
-                value={draft.levels.ignored_channels}
-                options={channels}
-                error={fieldErrors["levels.ignored_channels"]}
-                onChange={onIgnoredChannelsChange}
-              />
-              <IgnoreListEditor
-                label="Roles without XP"
-                prefix="@"
-                value={draft.levels.ignored_roles}
-                options={roles}
-                error={fieldErrors["levels.ignored_roles"]}
-                onChange={onIgnoredRolesChange}
-              />
-            </div>
-            </Section>
           )}
 
           {selectedModule?.key === "voice" && (
-            <Section
-            id="voice"
-            icon="users-three"
-            kicker="Voice reports"
-            description="Choose where completed voice-session reports are published."
-            active={isModuleActive(draft, "voice")}
-          >
-            <div className="max-w-md border-t border-line pt-6">
-              <ChannelSelect
-                label="Voice report channel"
-                value={draft.voice_report_channel}
-                channels={channels}
-                error={fieldErrors.voice_report_channel}
-                onChange={channelFieldHandlers.voice_report_channel}
-              />
-            </div>
-            </Section>
+            <VoiceSection
+              settings={draft}
+              channels={channels}
+              fieldErrors={fieldErrors}
+              onChange={channelFieldHandlers.voice_report_channel}
+            />
           )}
 
           {selectedModule?.key === "tickets" && (
@@ -1560,30 +1389,13 @@ export default function GuildConfig() {
           )}
 
           {selectedModule?.key === "updates" && (
-            <Section
-            id="updates"
-            icon="arrows-clockwise"
-            kicker="Updates"
-            description="Route NovaGuard releases and repository activity into this server."
-            active={isModuleActive(draft, "updates")}
-          >
-            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-              <ChannelSelect
-                label="NovaGuard update channel"
-                value={draft.update_channel}
-                channels={channels}
-                error={fieldErrors.update_channel}
-                onChange={channelFieldHandlers.update_channel}
-              />
-              <ChannelSelect
-                label="GitHub event channel"
-                value={draft.github_event_channel}
-                channels={channels}
-                error={fieldErrors.github_event_channel}
-                onChange={channelFieldHandlers.github_event_channel}
-              />
-            </div>
-            </Section>
+            <UpdatesSection
+              settings={draft}
+              channels={channels}
+              fieldErrors={fieldErrors}
+              onUpdateChannelChange={channelFieldHandlers.update_channel}
+              onGithubChannelChange={channelFieldHandlers.github_event_channel}
+            />
           )}
         </div>
 
