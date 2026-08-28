@@ -54,10 +54,9 @@ import { LEGAL_INFRASTRUCTURE, LEGAL_OPERATOR, MOLDOVA_AUTHORITY } from "../data
     <aside class="mt-5 rounded-lg border border-line bg-card p-5" aria-label="Privacy summary">
       <p class="font-display text-lg font-semibold">The short version</p>
       <p class="mt-2 leading-relaxed text-ink-muted">
-        NovaGuard has no advertising, does not sell personal data and does not use behavioral or
-        cross-site analytics. Cloudflare Web Analytics provides aggregate page-performance and
-        usage measurements; Cloudflare states that this service does not collect or use visitors'
-        personal data. Ordinary messages and AI questions are not kept as a NovaGuard history.
+        NovaGuard has no advertising, does not sell personal data and does not use behavioral,
+        cross-site or client-side analytics. Cloudflare Web Analytics/RUM is disabled. Ordinary
+        messages and AI questions are not kept as a NovaGuard history.
       </p>
     </aside>
 
@@ -155,7 +154,8 @@ import { LEGAL_INFRASTRUCTURE, LEGAL_OPERATOR, MOLDOVA_AUTHORITY } from "../data
         Depending on the Cloudflare protections active for a request, Cloudflare may also set
         strictly necessary security cookies such as <code>__cf_bm</code>. Cloudflare documents that
         cookie as expiring after 30 minutes of continuous inactivity and as separate for each site.
-        Cloudflare Web Analytics itself is disclosed below under providers.
+        Cloudflare Web Analytics/RUM is disabled; Cloudflare's network-level processing is
+        disclosed below under providers.
       </p>
       <ul class="mt-6 grid gap-4 md:hidden" aria-label="Essential cookies">
         {

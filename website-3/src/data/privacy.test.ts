@@ -29,10 +29,11 @@ describe("privacy inventory", () => {
     expect(inventory).toContain("/ask");
   });
 
-  it("discloses the Cloudflare analytics beacon and conditional security cookie", () => {
+  it("discloses disabled Cloudflare analytics and the conditional security cookie", () => {
     const inventory = JSON.stringify({ DATA_CATEGORIES, THIRD_PARTIES });
     expect(inventory).toContain("Cloudflare Web Analytics");
-    expect(inventory).toContain("page-performance");
+    expect(inventory).toContain("disabled");
+    expect(inventory).not.toContain("measures aggregate page usage");
     expect(inventory).toContain("__cf_bm");
     expect(inventory).toContain("30 minutes");
   });

@@ -1,6 +1,6 @@
 // Zod schemas mirroring docs/API.md — the single source of truth for the
 // dashboard's view of the bot API. Update alongside the contract.
-import { z } from "zod";
+import { z } from "./zod";
 
 export const StatsSchema = z.object({
   version: z.string(),

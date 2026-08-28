@@ -35,8 +35,8 @@ export const DATA_CATEGORIES = [
   },
   {
     name: "Security and operations",
-    data: "Dashboard IP address, Discord user ID, action, changed setting and timestamp; limited website request/error metadata at Cloudflare. Cloudflare Web Analytics measures page path, referrer host, country, device/browser/operating-system categories and page-performance timings. When you use a privacy command, the request type, outcome and time are recorded with a keyed digest of your ID rather than the ID itself.",
-    use: "Prevent abuse, diagnose failures, measure aggregate website reliability and performance, provide an accountable dashboard audit trail, and be able to show that a rights request was answered.",
+    data: "Dashboard IP address, Discord user ID, action, changed setting and timestamp; limited website request/error metadata at Cloudflare. When you use a privacy command, the request type, outcome and time are recorded with a keyed digest of your ID rather than the ID itself.",
+    use: "Prevent abuse, diagnose failures, provide an accountable dashboard audit trail, and be able to show that a rights request was answered.",
     basis: "Legitimate interests in security, fraud prevention, accountability and service reliability; legal obligations where applicable.",
   },
 ] as const;
@@ -150,7 +150,7 @@ export const THIRD_PARTIES = [
   {
     name: "Cloudflare",
     href: "https://www.cloudflare.com/privacypolicy/",
-    detail: "Hosts and protects the website at the network edge and may process IP address and request metadata. Its injected Web Analytics beacon measures aggregate page usage and performance; Cloudflare states that Web Analytics does not collect or use visitors' personal data and does not track people across customer sites. Cloudflare security features may set strictly necessary cookies such as __cf_bm (30 minutes after inactivity).",
+    detail: "Hosts and protects the website at the network edge and may process IP address and request metadata. Cloudflare Web Analytics/RUM is disabled, so NovaGuard does not inject its client-side analytics beacon. Cloudflare security features may still set strictly necessary cookies such as __cf_bm (30 minutes after inactivity).",
   },
   {
     name: "Oracle Cloud Infrastructure",

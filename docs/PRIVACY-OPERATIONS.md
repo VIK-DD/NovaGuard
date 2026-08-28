@@ -158,13 +158,11 @@ message archive.
 The application sets only first-party storage necessary for a requested
 security/sign-in flow (`ng_state`, `ng_session`, `ng_gate`, `ng_preview`) and
 explicit theme preferences (`ng-theme`, `ng-maintenance-theme`). Cloudflare may
-add strictly necessary security cookies such as `__cf_bm`, and its Web Analytics
-RUM beacon is enabled at the edge. The public policy discloses both. Cloudflare
-states that Web Analytics does not collect or use visitors' personal data or
-track people across customer sites; verify that claim and the enabled dashboard
-configuration during each vendor review. Add a real prior-consent control before
-any advertising, marketing, fingerprinting, cross-site tracking or other
-non-essential client storage is introduced.
+add strictly necessary security cookies such as `__cf_bm`. Cloudflare Web
+Analytics/RUM was disabled in the dashboard on 28 August 2026, so its client-side
+beacon is not injected. Verify that state during each vendor review. Add a real
+prior-consent control before any advertising, marketing, fingerprinting,
+cross-site tracking or other non-essential client storage is introduced.
 
 The strictly-necessary exception is in Article 5(3) of the ePrivacy Directive:
 <https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32002L0058>.

@@ -97,11 +97,11 @@ under an alert before touching any code:
 
 Note the middle one: `/cdn-cgi/*` is on our hostname but is served by Cloudflare's
 edge **before** the Worker runs, so nothing in `website-3/worker/` can set headers
-on it. The `beacon.min.js` hit is Cloudflare Web Analytics, injected at the edge —
-it is not in our source either. Turning Web Analytics off in the Cloudflare
-dashboard is the only way to drop that one. While it remains enabled, its
-performance measurements and Cloudflare's stated privacy properties are
-disclosed in the public privacy policy.
+on it. The `beacon.min.js` hit came from Cloudflare Web Analytics, injected at
+the edge — it was never in our source. Web Analytics/RUM was disabled in the
+Cloudflare dashboard on 28 August 2026, so new responses no longer receive the
+beacon after edge propagation. The public privacy policy records that disabled
+state while continuing to disclose Cloudflare's network-level processing.
 
 The Low and Informational rows split the same way. What was genuinely ours has
 been fixed; the rest is either another host's or not a defect at all:
