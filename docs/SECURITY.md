@@ -177,9 +177,26 @@ Then in `.env`: `WEB_COOKIE_SECURE=true`, `WEB_TRUST_PROXY=true`, and
 
 **WAF & rate limiting (Cloudflare dashboard → your domain → Security)**
 - **WAF → Managed Rules:** enable the Cloudflare Managed Ruleset (OWASP core).
-- **Rate limiting rules:** add a rule on `api.novaguard.app/api/*` →
-  e.g. 100 requests / 10s per IP → *Block* for 1 min. This sits *in front of*
-  the app's own per-IP limiter (defense in depth).
+- **Rate limiting rules (Free-plan compatible):** create one rule named
+  `NovaGuard public API burst guard` whose path starts with `/api/v1/`.
+  Count by IP, trigger at 30 requests per 10 seconds, choose *Block*, and use a
+  10-second mitigation timeout. Cloudflare Free currently exposes only Path
+  and Verified Bot in the match expression, one IP counting characteristic,
+  a 10-second counting period, a 10-second mitigation timeout and one rule.
+  The path-only match is safe for the current `novaguard.fun` zone because the
+  website Worker does not expose its own endpoints below `/api/v1/`; revisit
+  the rule if that routing changes. This sits in front of the app's separate
+  auth/read/write per-IP limiters (defense in depth).
+- **Verify before attesting:** send a controlled burst only to the public
+  health endpoint and confirm that at least one response is `429`:
+  ```bash
+  for i in {1..40}; do
+    curl -sS -o /dev/null -w '%{http_code}\n' \
+      https://api.novaguard.fun/api/v1/health
+  done | sort | uniq -c
+  ```
+  Wait at least 10 seconds afterwards. Retain a screenshot/configuration export
+  and the sanitized result, then set `API_EDGE_RATE_LIMIT_CONFIRMED=true`.
 - **Bot Fight Mode:** on (blocks known bad bots).
 - **Security Level:** Medium/High; enable **Always Use HTTPS** and **HSTS** at
   the edge too.
