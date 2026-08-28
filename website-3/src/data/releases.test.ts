@@ -148,6 +148,17 @@ describe("open beta", () => {
     expect(stamped[UPDATES_PER_VERSION].release).toBe("2.1");
   });
 
+  it("continues from 2.9 to 2.10 until a deliberate major release", () => {
+    const releases = [
+      ...history(31),
+      ...Array.from({ length: UPDATES_PER_VERSION * 10 + 1 }, (_, i) =>
+        betaEntry(i + 1, [FEATURE]),
+      ),
+    ];
+
+    expect(beta(releases).at(-1)?.release).toBe("2.10");
+  });
+
   it("lets ordinary work fill a version too", () => {
     // The threshold used to count only feature work, which parked the number
     // for weeks whenever a run of fixes landed. Every published update counts

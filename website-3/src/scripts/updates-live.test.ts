@@ -177,9 +177,18 @@ describe("live release cards", () => {
     expect(previous.hasAttribute("data-open")).toBe(false);
     expect(latest.open).toBe(true);
     expect(latest.hasAttribute("data-open")).toBe(true);
-    expect(previous.querySelector<HTMLElement>("[data-current-release-marker]")?.hidden).toBe(true);
-    expect(latest.querySelector<HTMLElement>("[data-current-release-marker]")?.hidden).toBe(false);
     expect(note.hidden).toBe(true);
     expect(note.textContent).toBe("");
+  });
+
+  it("does not recreate the removed Current status", () => {
+    const component = readFileSync(
+      resolve(process.cwd(), "src/components/ReleaseAccordion.astro"),
+      "utf8",
+    );
+    const card = versionCard(populatedGroup("2.3", true));
+
+    expect(`${component}\n${card.outerHTML}`).not.toContain("data-current-release-marker");
+    expect(card.textContent).not.toContain("Current");
   });
 });

@@ -1,5 +1,516 @@
 [
   {
+    "created_at": "2026-08-28T01:06:09.769337+00:00",
+    "significant": false,
+    "build": 93,
+    "added_lines": 114,
+    "removed_lines": 87,
+    "changed_files": 4,
+    "changes": [
+      "Behind-the-scenes improvements to giveaways, giveaway helpers, giveaway presenters and the web dashboard"
+    ],
+    "release": "2.10",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T21:27:51.854128+00:00",
+    "significant": false,
+    "build": 92,
+    "added_lines": 264,
+    "removed_lines": 230,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to the GitHub cards & watcher and github watch presenters"
+    ],
+    "release": "2.9",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T21:14:56.366920+00:00",
+    "significant": false,
+    "build": 91,
+    "added_lines": 186,
+    "removed_lines": 160,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to the setup wizard and setup presenters"
+    ],
+    "release": "2.9",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T21:06:15.457251+00:00",
+    "significant": false,
+    "build": 90,
+    "added_lines": 131,
+    "removed_lines": 45,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/remind`, `/reminders`"
+    ],
+    "release": "2.9",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T21:00:10.333809+00:00",
+    "significant": false,
+    "build": 89,
+    "added_lines": 89,
+    "removed_lines": 46,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/choose`, `/color`, `/timestamp`"
+    ],
+    "release": "2.9",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T20:42:15.745114+00:00",
+    "significant": false,
+    "build": 88,
+    "added_lines": 158,
+    "removed_lines": 118,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/avatar`, `/roleinfo`, `/serverinfo`, `/userinfo`"
+    ],
+    "release": "2.9",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T20:33:00.763404+00:00",
+    "significant": false,
+    "build": 87,
+    "added_lines": 221,
+    "removed_lines": 90,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/doctor`"
+    ],
+    "release": "2.9",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T20:23:32.767583+00:00",
+    "significant": false,
+    "build": 86,
+    "added_lines": 84,
+    "removed_lines": 46,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/status`"
+    ],
+    "release": "2.8",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T20:08:31.076759+00:00",
+    "significant": false,
+    "build": 85,
+    "added_lines": 164,
+    "removed_lines": 100,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/botinfo`, `/ping`, `/uptime`"
+    ],
+    "release": "2.8",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T12:10:42.860801+00:00",
+    "significant": false,
+    "build": 84,
+    "added_lines": 164,
+    "removed_lines": 115,
+    "changed_files": 3,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/balance`, `/inventory`, `/richest`, `/shop`"
+    ],
+    "release": "2.8",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T11:58:31.673477+00:00",
+    "significant": false,
+    "build": 83,
+    "added_lines": 128,
+    "removed_lines": 69,
+    "changed_files": 2,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/slots`"
+    ],
+    "release": "2.8",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T11:49:04.069617+00:00",
+    "significant": false,
+    "build": 82,
+    "added_lines": 261,
+    "removed_lines": 205,
+    "changed_files": 3,
+    "changes": [
+      "Behind-the-scenes improvements to levels & XP, level helpers and level presenters"
+    ],
+    "release": "2.8",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T11:34:49.964164+00:00",
+    "significant": false,
+    "build": 81,
+    "added_lines": 121,
+    "removed_lines": 8,
+    "changed_files": 5,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/backup test`",
+      "Refreshed the privacy and terms pages"
+    ],
+    "release": "2.8",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-27T11:09:55.270096+00:00",
+    "significant": false,
+    "build": 80,
+    "added_lines": 499,
+    "removed_lines": 450,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to the setup wizard and backup presenters"
+    ],
+    "release": "2.7",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T21:52:11.870550+00:00",
+    "significant": false,
+    "build": 79,
+    "added_lines": 158,
+    "removed_lines": 115,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to dashboard insights and the web dashboard"
+    ],
+    "release": "2.7",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T21:37:26.672212+00:00",
+    "significant": false,
+    "build": 78,
+    "added_lines": 179,
+    "removed_lines": 146,
+    "changed_files": 3,
+    "changes": [
+      "Behind-the-scenes improvements to voice session reports, voice presenters and the web dashboard"
+    ],
+    "release": "2.7",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T21:30:53.929075+00:00",
+    "significant": false,
+    "build": 77,
+    "added_lines": 14,
+    "removed_lines": 5,
+    "changed_files": 1,
+    "changes": [
+      "Behind-the-scenes improvements to the web dashboard"
+    ],
+    "release": "2.7",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T21:25:02.064672+00:00",
+    "significant": false,
+    "build": 76,
+    "added_lines": 294,
+    "removed_lines": 266,
+    "changed_files": 3,
+    "changes": [
+      "Behind-the-scenes improvements to voice session reports, voice sessions and the web dashboard"
+    ],
+    "release": "2.7",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T21:15:22.123492+00:00",
+    "significant": false,
+    "build": 75,
+    "added_lines": 286,
+    "removed_lines": 268,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to the GitHub cards & watcher and github presenters"
+    ],
+    "release": "2.7",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T21:04:16.925147+00:00",
+    "significant": false,
+    "build": 74,
+    "added_lines": 135,
+    "removed_lines": 120,
+    "changed_files": 3,
+    "changes": [
+      "Behind-the-scenes improvements to the GitHub cards & watcher, the health & status tools and github insights"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T20:54:21.941581+00:00",
+    "significant": false,
+    "build": 73,
+    "added_lines": 146,
+    "removed_lines": 134,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to the health & status tools and help ui"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T12:49:19.667002+00:00",
+    "significant": false,
+    "build": 72,
+    "added_lines": 328,
+    "removed_lines": 306,
+    "changed_files": 2,
+    "changes": [
+      "Behind-the-scenes improvements to web storage and the web dashboard"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-26T12:33:49.160243+00:00",
+    "significant": false,
+    "build": 71,
+    "added_lines": 352,
+    "removed_lines": 246,
+    "changed_files": 19,
+    "changes": [
+      "Refreshed the setup guides, the website build, the web dashboard and the website layout (+3 more)",
+      "Behind-the-scenes improvements to fun & games, giveaways, the backup system and config check (+2 more)"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-21T11:37:30.971060+00:00",
+    "significant": false,
+    "build": 70,
+    "added_lines": 42,
+    "removed_lines": 19,
+    "changed_files": 7,
+    "changes": [
+      "Refreshed the privacy and terms pages, the public status page and the website",
+      "Behind-the-scenes improvements to status panel and the web dashboard"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-21T10:36:19.872382+00:00",
+    "significant": true,
+    "build": 69,
+    "added_lines": 132,
+    "removed_lines": 18,
+    "changed_files": 8,
+    "changes": [
+      "New commands ready to try: `/say`",
+      "Refreshed the website build, the command catalog on the website, the privacy and terms pages and the website"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-20T12:48:25.139330+00:00",
+    "significant": false,
+    "build": 68,
+    "added_lines": 240,
+    "removed_lines": 27,
+    "changed_files": 5,
+    "changes": [
+      "Behind-the-scenes improvements to the GitHub cards & watcher, giveaways, the utility tools and the GitHub connection (+1 more)"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-20T11:03:16.335191+00:00",
+    "significant": false,
+    "build": 67,
+    "added_lines": 76,
+    "removed_lines": 6,
+    "changed_files": 1,
+    "changes": [
+      "Behind-the-scenes improvements to the setup wizard"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T21:09:02.829757+00:00",
+    "significant": false,
+    "build": 66,
+    "added_lines": 34,
+    "removed_lines": 2,
+    "changed_files": 1,
+    "changes": [
+      "Refreshed the website"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T20:55:29.936212+00:00",
+    "significant": false,
+    "build": 65,
+    "added_lines": 203,
+    "removed_lines": 4,
+    "changed_files": 5,
+    "changes": [
+      "Refreshed the website",
+      "Behind-the-scenes improvements to the GitHub cards & watcher, config check, github commits and update announcements"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T20:29:42.348683+00:00",
+    "significant": false,
+    "build": 64,
+    "added_lines": 12155,
+    "removed_lines": 3,
+    "changed_files": 73,
+    "changes": [
+      "Refreshed docs and examples: `website-3/astro.config.mjs`, `website-3/scripts/dashboard-spa-fallback.mjs`, `website-3/scripts/security-audit-rules.mjs`, `website-3/scripts/security-audit.mjs`, `website-3/scripts/soft-launch.mjs`, `website-3/scripts/sync-updates-archive.mjs`",
+      "Behind-the-scenes improvements to the setup wizard and update announcements"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T20:08:08.654727+00:00",
+    "significant": true,
+    "build": 63,
+    "added_lines": 391,
+    "removed_lines": 18,
+    "changed_files": 7,
+    "changes": [
+      "New commands ready to try: `/infopanel`"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T21:32:43.956327+00:00",
+    "significant": false,
+    "build": 62,
+    "added_lines": 34,
+    "removed_lines": 0,
+    "changed_files": 1,
+    "changes": [
+      "Behind-the-scenes improvements to clientrole"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T21:18:10.972441+00:00",
+    "significant": true,
+    "build": 61,
+    "added_lines": 273,
+    "removed_lines": 14,
+    "changed_files": 5,
+    "changes": [
+      "New commands ready to try: `/clientrole off`, `/clientrole set`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T20:49:18.036654+00:00",
+    "significant": true,
+    "build": 60,
+    "added_lines": 402,
+    "removed_lines": 0,
+    "changed_files": 4,
+    "changes": [
+      "New commands ready to try: `/statuspanel`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T20:15:27.949810+00:00",
+    "significant": false,
+    "build": 59,
+    "added_lines": 218,
+    "removed_lines": 159,
+    "changed_files": 16,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/voice test`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T13:52:40.126613+00:00",
+    "significant": false,
+    "build": 58,
+    "added_lines": 245,
+    "removed_lines": 4493,
+    "changed_files": 25,
+    "changes": [
+      "Retired commands: `/clear`, `/disconnect`, `/filter`, `/loop`, `/nowplaying`, `/play`, `/queue`, `/remove`, `/seek`, `/shuffle`, `/skip`, `/soundcheck`, `/volume`",
+      "Refreshed docs and examples: `SETUP.md`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
     "created_at": "2026-08-17T15:08:22.745640+00:00",
     "significant": false,
     "build": 57,

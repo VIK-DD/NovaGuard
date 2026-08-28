@@ -1,12 +1,4 @@
-import archive from "../data/updates-archive.json";
-import { currentRelease } from "../data/releases";
-
 const OK_GREEN = "#3d8a57";
-
-// The baked release is an offline fallback. A healthy status snapshot replaces
-// it with the canonical release calculated by the bot from its live update
-// history, so 2.0 -> 2.1 propagates without a website rebuild.
-const PUBLIC_RELEASE = currentRelease(archive as Parameters<typeof currentRelease>[0]);
 
 type StatusStats = {
   version: string;
@@ -147,11 +139,6 @@ function init() {
 
   if (!document.querySelector("[data-status-page]")) return;
 
-  // Same format as the live poll's release_label, and the same as the
-  // server-rendered value already in the page, so this init and the poll both
-  // leave the version visually unchanged.
-  set("version", `${PUBLIC_RELEASE.version} ${PUBLIC_RELEASE.phaseLabel}`);
-
   let stopped = false;
   let uptimeBase = 0;
   let fetchedAt = 0;
@@ -188,8 +175,7 @@ function init() {
       );
       setDot("hsl(var(--primary))");
       set("status", "Unverified");
-      // "version" is deliberately absent here: it is a static, build-time
-      // value, not something a failed live poll should blank out.
+      set("version", "Unavailable");
       for (const key of ["uptime", "guilds", "members", "commands", "database", "gateway"]) {
         set(key, "—");
       }

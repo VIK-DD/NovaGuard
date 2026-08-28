@@ -157,15 +157,6 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
     ),
     phaseBadge,
   );
-  if (group.current) {
-    const marker = el(
-      "span",
-      "hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex",
-    );
-    marker.dataset.currentReleaseMarker = "";
-    marker.append(el("span", "live-dot size-1.5 rounded-full bg-good"), "Current");
-    left.append(marker);
-  }
 
   const meta = el("span", "hidden text-right text-xs leading-relaxed text-ink-faint md:block");
   const count = el(
@@ -231,9 +222,6 @@ export function syncCurrentVersion(root: HTMLElement, version: string | undefine
       if (card instanceof HTMLDetailsElement) card.open = false;
       delete card.dataset.open;
     }
-
-    const marker = card.querySelector<HTMLElement>("[data-current-release-marker]");
-    if (marker) marker.hidden = !current;
   }
 
   if (foundCurrent) {

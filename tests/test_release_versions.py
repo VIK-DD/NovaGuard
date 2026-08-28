@@ -229,6 +229,14 @@ class OpenBetaTests(unittest.TestCase):
         )
         self.assertEqual(beta[UPDATES_PER_VERSION]["release"], "2.1")
 
+    def test_minor_versions_continue_from_two_nine_to_two_ten(self):
+        entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [FEATURE])
+            for offset in range(1, UPDATES_PER_VERSION * 10 + 2)
+        ]
+
+        self.assertEqual(self._beta(entries)[-1]["release"], "2.10")
+
     def test_ordinary_work_fills_a_version_just_like_features_do(self):
         # The threshold used to count only feature work, which sounded right
         # and read wrong: a run of fixes parked the number for weeks, and a
