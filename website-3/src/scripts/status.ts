@@ -1,3 +1,5 @@
+import { newestPublicVersion } from "../data/releases";
+
 const OK_GREEN = "#3d8a57";
 
 type StatusStats = {
@@ -81,7 +83,8 @@ const applySnapshot = (snapshot: StatusSnapshot) => {
   );
   setDot(allGood ? OK_GREEN : "hsl(var(--primary))");
   set("status", allGood ? "Operational" : "Degraded");
-  set("version", stats.version);
+  const releaseFloor = el("[data-status-page]")?.dataset.releaseFloor;
+  set("version", newestPublicVersion(releaseFloor, stats.version));
   set("uptime", fmtUptime(uptime));
   set("guilds", fmt(stats.guilds));
   set("members", fmt(stats.members));

@@ -148,6 +148,17 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
       group.version,
     ),
   );
+  if (group.phaseLabel) {
+    const badge = el(
+      "span",
+      "inline-flex rounded-full border border-line-strong bg-bg-subtle px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-ink-faint uppercase",
+    );
+    badge.dataset.releasePhaseBadge = "";
+    const label = el("span", "", group.phaseLabel);
+    label.dataset.releasePhase = "";
+    badge.append(label);
+    left.append(badge);
+  }
 
   const meta = el("span", "hidden text-right text-xs leading-relaxed text-ink-faint md:block");
   const count = el(
@@ -197,11 +208,12 @@ function setStat(selector: string, value: number) {
 }
 
 export function syncCurrentVersion(root: HTMLElement, version: string | undefined) {
-  let foundCurrent = false;
+  const versionNode = document.querySelector<HTMLElement>("[data-current-release-version]");
+  if (versionNode && version) versionNode.textContent = version;
+
   for (const card of root.querySelectorAll<HTMLElement>("[data-release-version]")) {
     const current = Boolean(version) && card.dataset.releaseVersion === version;
     if (current) {
-      foundCurrent = true;
       card.dataset.currentRelease = "";
       if (card instanceof HTMLDetailsElement) card.open = true;
       card.dataset.open = "";
@@ -215,13 +227,6 @@ export function syncCurrentVersion(root: HTMLElement, version: string | undefine
     }
   }
 
-  if (foundCurrent) {
-    const note = document.querySelector<HTMLElement>("[data-release-sync-note]");
-    if (note) {
-      note.hidden = true;
-      note.textContent = "";
-    }
-  }
 }
 
 async function fetchLiveUpdates(): Promise<unknown> {
@@ -303,7 +308,7 @@ async function run() {
   setStat("[data-release-total-versions]", groups.length);
   setStat("[data-release-total-updates]", merged.length);
   const computedCurrent = groups.find((group) => group.current)?.version;
-  syncCurrentVersion(root, document.documentElement.dataset.currentRelease || computedCurrent);
+  syncCurrentVersion(root, computedCurrent);
   (root as HTMLElement & { ngRemeasure?: () => void }).ngRemeasure?.();
 }
 

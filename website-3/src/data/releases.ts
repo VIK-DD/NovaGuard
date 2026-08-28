@@ -18,9 +18,12 @@ export const STABLE_PHASE = "stable";
 
 export const PHASE_LABELS: Record<string, string> = {
   [ALPHA_PHASE]: "Alpha",
-  [BETA_PHASE]: "Open Beta",
+  [BETA_PHASE]: "Beta",
   [STABLE_PHASE]: "",
 };
+
+/** First official release. Public runtime data must never move below it. */
+export const OFFICIAL_RELEASE_FLOOR = "3.0";
 
 const ALPHA_MAJOR = 1;
 const ALPHA_SLOTS = 10;
@@ -80,9 +83,54 @@ export function cleanText(value: string): string {
   return value
     .normalize("NFKC")
     .replace(EMOJI_PATTERN, "")
+    .replace(/same names, smoother behavior/gi, "same commands, smoother behavior")
+    .replace(
+      /Initial tracked release for v\d+\.\d+\.\d+(?:\s+"Nova")?/gi,
+      "Initial tracked NovaGuard release",
+    )
     .replace(/\s+/g, " ")
     .replace(/^[\s\-–—•]+|[\s\-–—•]+$/g, "")
     .trim();
+}
+
+/**
+ * Convert release strings to NovaGuard's one-decimal public scheme.
+ *
+ * Older API processes could emit 2.10 after 2.9. That value means the next
+ * one-decimal slot, 3.0, rather than a SemVer minor release. Normalizing at
+ * the display boundary lets an old process coexist safely with the new site
+ * while it is being restarted.
+ */
+export function canonicalPublicVersion(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d+\.\d+$/.test(value.trim())) return null;
+  const [rawMajor, rawMinor] = value.trim().split(".").map(Number);
+  if (!Number.isSafeInteger(rawMajor) || !Number.isSafeInteger(rawMinor)) return null;
+  const major = rawMajor + Math.floor(rawMinor / MINOR_SLOTS_PER_MAJOR);
+  const minor = rawMinor % MINOR_SLOTS_PER_MAJOR;
+  return `${major}.${minor}`;
+}
+
+function versionParts(value: string): [number, number] {
+  const [major, minor] = value.split(".").map(Number);
+  return [major, minor];
+}
+
+/** Return the newest valid public version, never below the official 3.0 floor. */
+export function newestPublicVersion(...values: unknown[]): string {
+  let newest = OFFICIAL_RELEASE_FLOOR;
+  for (const value of values) {
+    const candidate = canonicalPublicVersion(value);
+    if (!candidate) continue;
+    const [candidateMajor, candidateMinor] = versionParts(candidate);
+    const [newestMajor, newestMinor] = versionParts(newest);
+    if (
+      candidateMajor > newestMajor ||
+      (candidateMajor === newestMajor && candidateMinor > newestMinor)
+    ) {
+      newest = candidate;
+    }
+  }
+  return newest;
 }
 
 function highlightsOf(release: Release): string[] {
@@ -235,7 +283,11 @@ export function releaseGroups(releases: Release[]): ReleaseGroup[] {
 export function currentRelease(releases: Release[]): { version: string; phaseLabel: string } {
   const groups = releaseGroups(releases);
   if (!groups.length || groups[0].phase === ALPHA_PHASE) {
-    return { version: "3.0", phaseLabel: PHASE_LABELS[STABLE_PHASE] };
+    return { version: OFFICIAL_RELEASE_FLOOR, phaseLabel: PHASE_LABELS[STABLE_PHASE] };
   }
-  return { version: groups[0].version, phaseLabel: groups[0].phaseLabel };
+  const version = newestPublicVersion(groups[0].version);
+  return {
+    version,
+    phaseLabel: Number(version.split(".")[0]) >= 3 ? "" : groups[0].phaseLabel,
+  };
 }

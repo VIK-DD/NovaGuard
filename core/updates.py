@@ -457,7 +457,7 @@ def summarize_changes(old_files, new_files, has_history=False):
         summary.append("Retired commands: " + format_command_list(removed_commands))
     if changed_commands:
         summary.append(
-            "Improved commands — same names, smoother behavior: "
+            "Improved commands — same commands, smoother behavior: "
             + format_command_list(changed_commands, limit=12)
         )
 

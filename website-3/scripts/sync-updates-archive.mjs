@@ -35,6 +35,42 @@ export function shouldReplaceArchive(current, fetched) {
   return fetched.length >= currentLength;
 }
 
+function canonicalVersion(value) {
+  if (typeof value !== "string" || !/^\d+\.\d+$/.test(value.trim())) return value;
+  const [rawMajor, rawMinor] = value.trim().split(".").map(Number);
+  return `${rawMajor + Math.floor(rawMinor / 10)}.${rawMinor % 10}`;
+}
+
+function normalizeText(value) {
+  return typeof value === "string"
+    ? value
+        .replace(/same names, smoother behavior/gi, "same commands, smoother behavior")
+        .replace(
+          /Initial tracked release for v\d+\.\d+\.\d+(?:\s+"Nova")?/gi,
+          "Initial tracked NovaGuard release",
+        )
+    : value;
+}
+
+/** Keep the committed/public archive compatible with the canonical release UI. */
+export function normalizePublicEntry(entry) {
+  const release = canonicalVersion(entry.release);
+  const stable = typeof release === "string" && Number(release.split(".")[0]) >= 3;
+  return {
+    ...entry,
+    ...(release !== undefined ? { release } : {}),
+    ...(stable
+      ? { phase: "stable", phase_label: "" }
+      : entry.phase_label === "Open Beta"
+        ? { phase_label: "Beta" }
+        : {}),
+    ...(Array.isArray(entry.highlights)
+      ? { highlights: entry.highlights.map(normalizeText) }
+      : {}),
+    ...(Array.isArray(entry.changes) ? { changes: entry.changes.map(normalizeText) } : {}),
+  };
+}
+
 async function main() {
   // Resolved here, not at module top level: the test runner imports this file
   // for its pure helpers under a non-file: URL where fileURLToPath throws.
@@ -70,7 +106,7 @@ async function main() {
     return;
   }
 
-  await writeFile(archivePath, `${JSON.stringify(fetched, null, 2)}\n`);
+  await writeFile(archivePath, `${JSON.stringify(fetched.map(normalizePublicEntry), null, 2)}\n`);
   console.log(
     `sync-updates-archive: baked archive refreshed ${current.length} -> ${fetched.length} entries`,
   );

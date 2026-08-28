@@ -6,7 +6,7 @@ import Footer from "../../components/Footer.astro";
 import Pager from "../../components/Pager.astro";
 import ReleaseAccordion from "../../components/ReleaseAccordion.astro";
 import archive from "../../data/updates-archive.json";
-import { releaseGroups, type ReleaseGroup } from "../../data/releases";
+import { currentRelease, releaseGroups, type ReleaseGroup } from "../../data/releases";
 import type { Release } from "../../data/updates";
 
 export async function getStaticPaths({ paginate }: { paginate: PaginateFunction }) {
@@ -19,6 +19,7 @@ export async function getStaticPaths({ paginate }: { paginate: PaginateFunction 
 
 const { page } = Astro.props as { page: Page<ReleaseGroup> };
 const totalUpdates = (archive as Release[]).length;
+const release = currentRelease(archive as Release[]);
 ---
 
 <Base
@@ -49,7 +50,7 @@ const totalUpdates = (archive as Release[]).length;
                 aria-live="polite"
                 class="mt-1 min-w-36 font-display text-2xl font-semibold tabular-nums text-ink"
               >
-                <span data-current-release-version>&mdash;</span>
+                <span data-current-release-version>{release.version}</span>
               </dd>
             </div>
             <div>
@@ -71,7 +72,6 @@ const totalUpdates = (archive as Release[]).length;
               </dd>
             </div>
           </dl>
-          <p data-release-sync-note hidden class="mt-4 text-sm text-ink-muted" aria-live="polite"></p>
         )
       }
 
@@ -98,38 +98,6 @@ const totalUpdates = (archive as Release[]).length;
   </main>
   <Footer />
 </Base>
-
-<script is:inline>
-  (() => {
-    const versionNode = document.querySelector("[data-current-release-version]");
-    const note = document.querySelector("[data-release-sync-note]");
-    const getLiveStats = window.__ngGetLiveStats;
-    if (!versionNode || typeof getLiveStats !== "function") return;
-    getLiveStats()
-      .then((stats) => {
-        versionNode.textContent = stats.version;
-        const matchingCard = document.querySelector(
-          `[data-release-version="${CSS.escape(stats.version)}"]`,
-        );
-        document.documentElement.dataset.currentRelease = stats.version;
-        document.querySelectorAll("[data-release-version]").forEach((card) => {
-          if (card === matchingCard) card.setAttribute("data-current-release", "");
-          else card.removeAttribute("data-current-release");
-        });
-        if (!matchingCard && note) {
-          note.hidden = false;
-          note.textContent =
-            `Release ${stats.version} is live. ` +
-            "Its detailed changelog is syncing into the archive.";
-        }
-      })
-      .catch(() => {
-        if (!note) return;
-        note.hidden = false;
-        note.textContent = "Live release data is reconnecting.";
-      });
-  })();
-</script>
 
 <script>
   // Pulls in any release published since this page was built, so a changelog

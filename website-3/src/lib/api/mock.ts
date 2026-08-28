@@ -421,7 +421,7 @@ function dashboardPayload(id: string): Json | null {
       phase: "stable",
       phase_label: "",
       release_label: "3.0",
-      runtime_version: "3.1.0",
+      runtime_version: "3.0.0",
       codename: "Nova",
       uptime_seconds: 142_331,
       commands: 70,
@@ -508,7 +508,7 @@ function dashboardPayload(id: string): Json | null {
     updates: [
       {
         build: 39,
-        version: "3.1.0",
+        version: "3.0.0",
         codename: "Nova",
         created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
         highlights: ["Dashboard overview and backup safety checks"],

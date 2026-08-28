@@ -46,7 +46,7 @@ describe("public legal identity", () => {
     expect(footer).toContain("&copy;");
   });
 
-  it("keeps the publishing name distinct from its creator-name credits", () => {
+  it("keeps the publishing identity and creator credits explicit", () => {
     const root = resolve(process.cwd(), "..");
     const license = readFileSync(resolve(root, "LICENSE"), "utf8");
     const notice = readFileSync(resolve(root, "NOTICE"), "utf8");
@@ -58,8 +58,10 @@ describe("public legal identity", () => {
     }
     expect(notice).toContain("Breabin Victor");
     expect(notice).toContain("same person");
-    expect(readme).toContain("VIK &amp; CloudMedia creator names");
-    expect(footer).toContain("VIK &amp; CloudMedia names");
+    expect(readme).toContain("Developed by <strong>VIK &amp; CloudMedia</strong>");
+    expect(footer).toContain("Developed by VIK &amp; CloudMedia");
+    expect(readme.toLowerCase()).not.toContain("creator names");
+    expect(footer.toLowerCase()).not.toContain("names");
   });
 
   it("keeps privacy and terms wired to the shared legal identity", () => {

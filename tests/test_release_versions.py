@@ -323,7 +323,7 @@ class GroupingTests(unittest.TestCase):
         live = current_release(self.entries)
 
         self.assertEqual(live["version"], release_groups(self.entries)[0]["version"])
-        self.assertEqual(live["phase_label"], "Open Beta")
+        self.assertEqual(live["phase_label"], "Beta")
 
     def test_an_empty_history_still_reports_a_starting_version(self):
         self.assertEqual(release_groups([]), [])
@@ -351,7 +351,7 @@ class GroupingTests(unittest.TestCase):
         live = current_project_release(state, archive=history(HISTORICAL_BUILDS))
 
         self.assertEqual(live["version"], "2.1")
-        self.assertEqual(live["phase_label"], "Open Beta")
+        self.assertEqual(live["phase_label"], "Beta")
 
 
 class PresentationTests(unittest.TestCase):
@@ -369,6 +369,18 @@ class PresentationTests(unittest.TestCase):
 
     def test_stripping_emoji_never_empties_a_real_sentence(self):
         self.assertEqual(clean_text("\U0001F680 Backups now upload"), "Backups now upload")
+
+    def test_public_copy_uses_command_wording(self):
+        self.assertEqual(
+            clean_text("Improved commands — same names, smoother behavior: /status"),
+            "Improved commands — same commands, smoother behavior: /status",
+        )
+
+    def test_historical_runtime_generation_is_not_presented_as_a_product_release(self):
+        self.assertEqual(
+            clean_text('Initial tracked release for v3.1.0 "Nova"'),
+            "Initial tracked NovaGuard release",
+        )
 
     def test_decoration_only_highlights_disappear_instead_of_leaving_blanks(self):
         stamped = assign_releases([entry(1, ["\U0001F680", "", "Real change"])])

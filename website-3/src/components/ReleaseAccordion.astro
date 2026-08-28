@@ -36,6 +36,16 @@ function span(group: ReleaseGroup): string {
             <span class="font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl">
               {group.version}
             </span>
+            {
+              group.phaseLabel && (
+                <span
+                  data-release-phase-badge
+                  class="inline-flex rounded-full border border-line-strong bg-bg-subtle px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-ink-faint uppercase"
+                >
+                  <span data-release-phase>{group.phaseLabel}</span>
+                </span>
+              )
+            }
           </span>
 
           <span class="hidden text-right text-xs leading-relaxed text-ink-faint md:block">

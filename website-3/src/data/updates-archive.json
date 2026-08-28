@@ -9,9 +9,9 @@
     "changes": [
       "Behind-the-scenes improvements to giveaways, giveaway helpers, giveaway presenters and the web dashboard"
     ],
-    "release": "2.10",
-    "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "release": "3.0",
+    "phase": "stable",
+    "phase_label": ""
   },
   {
     "created_at": "2026-08-27T21:27:51.854128+00:00",
@@ -25,7 +25,7 @@
     ],
     "release": "2.9",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T21:14:56.366920+00:00",
@@ -39,7 +39,7 @@
     ],
     "release": "2.9",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T21:06:15.457251+00:00",
@@ -49,11 +49,11 @@
     "removed_lines": 45,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/remind`, `/reminders`"
+      "Improved commands — same commands, smoother behavior: `/remind`, `/reminders`"
     ],
     "release": "2.9",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T21:00:10.333809+00:00",
@@ -63,11 +63,11 @@
     "removed_lines": 46,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/choose`, `/color`, `/timestamp`"
+      "Improved commands — same commands, smoother behavior: `/choose`, `/color`, `/timestamp`"
     ],
     "release": "2.9",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T20:42:15.745114+00:00",
@@ -77,11 +77,11 @@
     "removed_lines": 118,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/avatar`, `/roleinfo`, `/serverinfo`, `/userinfo`"
+      "Improved commands — same commands, smoother behavior: `/avatar`, `/roleinfo`, `/serverinfo`, `/userinfo`"
     ],
     "release": "2.9",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T20:33:00.763404+00:00",
@@ -91,11 +91,11 @@
     "removed_lines": 90,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/doctor`"
+      "Improved commands — same commands, smoother behavior: `/doctor`"
     ],
     "release": "2.9",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T20:23:32.767583+00:00",
@@ -105,11 +105,11 @@
     "removed_lines": 46,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/status`"
+      "Improved commands — same commands, smoother behavior: `/status`"
     ],
     "release": "2.8",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T20:08:31.076759+00:00",
@@ -119,11 +119,11 @@
     "removed_lines": 100,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/botinfo`, `/ping`, `/uptime`"
+      "Improved commands — same commands, smoother behavior: `/botinfo`, `/ping`, `/uptime`"
     ],
     "release": "2.8",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T12:10:42.860801+00:00",
@@ -133,11 +133,11 @@
     "removed_lines": 115,
     "changed_files": 3,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/balance`, `/inventory`, `/richest`, `/shop`"
+      "Improved commands — same commands, smoother behavior: `/balance`, `/inventory`, `/richest`, `/shop`"
     ],
     "release": "2.8",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T11:58:31.673477+00:00",
@@ -147,11 +147,11 @@
     "removed_lines": 69,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/slots`"
+      "Improved commands — same commands, smoother behavior: `/slots`"
     ],
     "release": "2.8",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T11:49:04.069617+00:00",
@@ -165,7 +165,7 @@
     ],
     "release": "2.8",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T11:34:49.964164+00:00",
@@ -175,12 +175,12 @@
     "removed_lines": 8,
     "changed_files": 5,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/backup test`",
+      "Improved commands — same commands, smoother behavior: `/backup test`",
       "Refreshed the privacy and terms pages"
     ],
     "release": "2.8",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-27T11:09:55.270096+00:00",
@@ -194,7 +194,7 @@
     ],
     "release": "2.7",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T21:52:11.870550+00:00",
@@ -208,7 +208,7 @@
     ],
     "release": "2.7",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T21:37:26.672212+00:00",
@@ -222,7 +222,7 @@
     ],
     "release": "2.7",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T21:30:53.929075+00:00",
@@ -236,7 +236,7 @@
     ],
     "release": "2.7",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T21:25:02.064672+00:00",
@@ -250,7 +250,7 @@
     ],
     "release": "2.7",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T21:15:22.123492+00:00",
@@ -264,7 +264,7 @@
     ],
     "release": "2.7",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T21:04:16.925147+00:00",
@@ -278,7 +278,7 @@
     ],
     "release": "2.6",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T20:54:21.941581+00:00",
@@ -292,7 +292,7 @@
     ],
     "release": "2.6",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T12:49:19.667002+00:00",
@@ -306,7 +306,7 @@
     ],
     "release": "2.6",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-26T12:33:49.160243+00:00",
@@ -321,7 +321,7 @@
     ],
     "release": "2.6",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-21T11:37:30.971060+00:00",
@@ -336,7 +336,7 @@
     ],
     "release": "2.6",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-21T10:36:19.872382+00:00",
@@ -351,7 +351,7 @@
     ],
     "release": "2.6",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-20T12:48:25.139330+00:00",
@@ -365,7 +365,7 @@
     ],
     "release": "2.5",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-20T11:03:16.335191+00:00",
@@ -379,7 +379,7 @@
     ],
     "release": "2.5",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-19T21:09:02.829757+00:00",
@@ -393,7 +393,7 @@
     ],
     "release": "2.5",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-19T20:55:29.936212+00:00",
@@ -408,7 +408,7 @@
     ],
     "release": "2.5",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-19T20:29:42.348683+00:00",
@@ -423,7 +423,7 @@
     ],
     "release": "2.5",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-19T20:08:08.654727+00:00",
@@ -437,7 +437,7 @@
     ],
     "release": "2.5",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-18T21:32:43.956327+00:00",
@@ -451,7 +451,7 @@
     ],
     "release": "2.4",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-18T21:18:10.972441+00:00",
@@ -465,7 +465,7 @@
     ],
     "release": "2.4",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-18T20:49:18.036654+00:00",
@@ -479,7 +479,7 @@
     ],
     "release": "2.4",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-18T20:15:27.949810+00:00",
@@ -489,11 +489,11 @@
     "removed_lines": 159,
     "changed_files": 16,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/voice test`"
+      "Improved commands — same commands, smoother behavior: `/voice test`"
     ],
     "release": "2.4",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-18T13:52:40.126613+00:00",
@@ -508,7 +508,7 @@
     ],
     "release": "2.4",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-17T15:08:22.745640+00:00",
@@ -522,7 +522,7 @@
     ],
     "release": "2.4",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-14T14:30:43.466645+00:00",
@@ -537,7 +537,7 @@
     ],
     "release": "2.3",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-14T13:45:50.331423+00:00",
@@ -547,11 +547,11 @@
     "removed_lines": 0,
     "changed_files": 4,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/privacy delete`, `/privacy export`, `/privacy server-delete`, `/privacy server-export`"
+      "Improved commands — same commands, smoother behavior: `/privacy delete`, `/privacy export`, `/privacy server-delete`, `/privacy server-export`"
     ],
     "release": "2.3",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-13T09:28:14.056052+00:00",
@@ -561,11 +561,11 @@
     "removed_lines": 30,
     "changed_files": 5,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/privacy delete`, `/privacy export`, `/privacy server-delete`, `/privacy server-export`"
+      "Improved commands — same commands, smoother behavior: `/privacy delete`, `/privacy export`, `/privacy server-delete`, `/privacy server-export`"
     ],
     "release": "2.3",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-12T21:15:32.759683+00:00",
@@ -575,11 +575,11 @@
     "removed_lines": 6,
     "changed_files": 1,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/privacy policy`"
+      "Improved commands — same commands, smoother behavior: `/privacy policy`"
     ],
     "release": "2.3",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-12T20:36:05.330422+00:00",
@@ -590,12 +590,12 @@
     "changed_files": 17,
     "changes": [
       "New commands ready to try: `/privacy delete`, `/privacy export`, `/privacy policy`, `/privacy server-delete`, `/privacy server-export`",
-      "Improved commands — same names, smoother behavior: `/config export`, `/remind`, `/warn list`",
+      "Improved commands — same commands, smoother behavior: `/config export`, `/remind`, `/warn list`",
       "Refreshed docs and examples: `.env.example`, `SETUP.md`"
     ],
     "release": "2.3",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-11T22:46:48.333815+00:00",
@@ -605,12 +605,12 @@
     "removed_lines": 253,
     "changed_files": 19,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/ask`, `/automod spam`, `/automod status`, `/balance`, `/buy`, `/crate`, `/daily`, `/filter`, `/gamble`, `/giveaway reroll`, `/giveaway start`, `/inventory` +10 more",
+      "Improved commands — same commands, smoother behavior: `/ask`, `/automod spam`, `/automod status`, `/balance`, `/buy`, `/crate`, `/daily`, `/filter`, `/gamble`, `/giveaway reroll`, `/giveaway start`, `/inventory` +10 more",
       "Refreshed docs and examples: `.env.example`, `SETUP.md`"
     ],
     "release": "2.3",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-11T20:20:19.069918+00:00",
@@ -620,11 +620,11 @@
     "removed_lines": 1,
     "changed_files": 1,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/maintenance`"
+      "Improved commands — same commands, smoother behavior: `/maintenance`"
     ],
     "release": "2.2",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-11T20:05:06.660241+00:00",
@@ -638,7 +638,7 @@
     ],
     "release": "2.2",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-11T15:32:00.553264+00:00",
@@ -649,11 +649,11 @@
     "changed_files": 3,
     "changes": [
       "Added global maintenance mode with DND presence and graceful command blocking",
-      "Improved commands — same names, smoother behavior: `/maintenance`"
+      "Improved commands — same commands, smoother behavior: `/maintenance`"
     ],
     "release": "2.2",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-11T06:16:05.993826+00:00",
@@ -663,11 +663,11 @@
     "removed_lines": 1,
     "changed_files": 2,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/maintenance`"
+      "Improved commands — same commands, smoother behavior: `/maintenance`"
     ],
     "release": "2.2",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-10T22:44:35.188983+00:00",
@@ -681,7 +681,7 @@
     ],
     "release": "2.2",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-10T20:57:12.939607+00:00",
@@ -695,7 +695,7 @@
     ],
     "release": "2.2",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-10T20:33:23.661229+00:00",
@@ -709,7 +709,7 @@
     ],
     "release": "2.1",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-10T20:10:18.368363+00:00",
@@ -724,7 +724,7 @@
     ],
     "release": "2.1",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-10T19:32:52.969046+00:00",
@@ -734,11 +734,11 @@
     "removed_lines": 22,
     "changed_files": 3,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/voicetop`"
+      "Improved commands — same commands, smoother behavior: `/voicetop`"
     ],
     "release": "2.1",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-10T02:31:38.328660+00:00",
@@ -749,12 +749,12 @@
     "changed_files": 9,
     "changes": [
       "New commands ready to try: `/crate`, `/inventory`, `/title`, `/voicehours`, `/voicetop`",
-      "Improved commands — same names, smoother behavior: `/balance`, `/buy`, `/daily`, `/rank`, `/shop`, `/work`",
+      "Improved commands — same commands, smoother behavior: `/balance`, `/buy`, `/daily`, `/rank`, `/shop`, `/work`",
       "Refreshed docs and examples: `.env.example`, `SETUP.md`"
     ],
     "release": "2.1",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T15:10:21.171893+00:00",
@@ -769,7 +769,7 @@
     ],
     "release": "2.1",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T14:59:21.138363+00:00",
@@ -779,12 +779,12 @@
     "removed_lines": 28,
     "changed_files": 8,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/botinfo`, `/status`",
+      "Improved commands — same commands, smoother behavior: `/botinfo`, `/status`",
       "Refreshed docs and examples: `SETUP.md`"
     ],
     "release": "2.1",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T13:08:54.494803+00:00",
@@ -798,7 +798,7 @@
     ],
     "release": "2.0",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T02:32:15.227934+00:00",
@@ -812,7 +812,7 @@
     ],
     "release": "2.0",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T02:14:07.562942+00:00",
@@ -823,11 +823,11 @@
     "changed_files": 4,
     "changes": [
       "New commands ready to try: `/grant`",
-      "Improved commands — same names, smoother behavior: `/levels backfill run`"
+      "Improved commands — same commands, smoother behavior: `/levels backfill run`"
     ],
     "release": "2.0",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T02:05:50.270434+00:00",
@@ -841,7 +841,7 @@
     ],
     "release": "2.0",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T01:23:21.042602+00:00",
@@ -851,11 +851,11 @@
     "removed_lines": 2,
     "changed_files": 1,
     "changes": [
-      "Improved commands — same names, smoother behavior: `/resync`"
+      "Improved commands — same commands, smoother behavior: `/resync`"
     ],
     "release": "2.0",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-09T01:17:43.738680+00:00",
@@ -866,12 +866,12 @@
     "changed_files": 8,
     "changes": [
       "New commands ready to try: `/admin audit`, `/admin lock`, `/admin status`, `/admin unlock`, `/guilds`, `/leaveguild`",
-      "Improved commands — same names, smoother behavior: `/backup create`, `/backup inspect`, `/backup list`, `/backup remote`, `/backup restore`, `/backup status`, `/backup test`, `/config backup`, `/maintenance`, `/resync`",
+      "Improved commands — same commands, smoother behavior: `/backup create`, `/backup inspect`, `/backup list`, `/backup remote`, `/backup restore`, `/backup status`, `/backup test`, `/config backup`, `/maintenance`, `/resync`",
       "Refreshed docs and examples: `.env.example`, `SETUP.md`"
     ],
     "release": "2.0",
     "phase": "open-beta",
-    "phase_label": "Open Beta"
+    "phase_label": "Beta"
   },
   {
     "created_at": "2026-08-06T00:26:25.833949+00:00",
@@ -881,7 +881,7 @@
     "removed_lines": 0,
     "changed_files": 45,
     "changes": [
-      "Initial tracked release for v3.1.0 \"Nova\"",
+      "Initial tracked NovaGuard release",
       "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod badword add`, `/automod badword list`, `/automod badword remove`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/backup create`, `/backup inspect`, `/backup list`, `/backup remote`, `/backup restore`, `/backup status`, `/backup test`, `/balance` +90 more",
       "Streaming status rotation is active",
       "GitHub system is connected to `VIK-DD/NovaGuard`"

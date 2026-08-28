@@ -1,6 +1,7 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
+import { canonicalPublicVersion, cleanText, newestPublicVersion } from "../../data/releases";
 import { ApiError, inviteUrl } from "../../lib/api/client";
 import type { Dashboard } from "../../lib/api/schemas";
 import Icon from "../components/Icon";
@@ -28,6 +29,10 @@ function pct(done: number, total: number) {
 
 function plainDisplayName(name: string) {
   return name.normalize("NFKC").replace(/\s+/g, " ").trim() || "Member";
+}
+
+function publicUpdateText(value: string) {
+  return cleanText(value);
 }
 
 function Card(props: {
@@ -138,7 +143,7 @@ function SystemStatusPanel({ data, setupPercent }: { data: Dashboard; setupPerce
           <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2">
             <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Version</p>
             <p className="mt-1 truncate text-sm font-semibold">
-              v{data.status.version}
+              v{newestPublicVersion(data.status.version)}
             </p>
           </div>
 
@@ -478,13 +483,15 @@ export default function GuildOverview() {
                         predates the API returning a release. */}
                     <p className="text-sm font-medium">
                       {update.release
-                        ? `Version ${update.release}`
+                        ? `Version ${canonicalPublicVersion(update.release) ?? update.release}`
                         : update.build
                           ? `Update #${update.build}`
                           : "Update"}
                     </p>
                     <p className="line-clamp-2 text-xs text-ink-muted">
-                      {(update.highlights?.[0] || update.changes?.[0] || "Internal improvements").replace(/\s+/g, " ")}
+                      {publicUpdateText(
+                        update.highlights?.[0] || update.changes?.[0] || "Internal improvements",
+                      )}
                     </p>
                   </li>
                 ))}

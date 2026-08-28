@@ -5,13 +5,16 @@ import {
   ALPHA_CUTOFF_ISO,
   ALPHA_PHASE,
   BETA_PHASE,
+  OFFICIAL_RELEASE_FLOOR,
   STABLE_PHASE,
   UPDATES_PER_VERSION,
   alphaSlotSizes,
   assignReleases,
   cleanText,
+  canonicalPublicVersion,
   currentRelease,
   isSignificant,
+  newestPublicVersion,
   releaseGroups,
 } from "./releases";
 import type { Release } from "./updates";
@@ -203,6 +206,28 @@ describe("public version cycle", () => {
   });
 });
 
+describe("public version normalization", () => {
+  it("converts legacy two-digit minors into the one-decimal release cycle", () => {
+    expect(canonicalPublicVersion("2.9")).toBe("2.9");
+    expect(canonicalPublicVersion("2.10")).toBe("3.0");
+    expect(canonicalPublicVersion("2.11")).toBe("3.1");
+    expect(canonicalPublicVersion("3.10")).toBe("4.0");
+  });
+
+  it("never lets runtime data move the official site below 3.0", () => {
+    expect(OFFICIAL_RELEASE_FLOOR).toBe("3.0");
+    expect(newestPublicVersion("2.9")).toBe("3.0");
+    expect(newestPublicVersion("2.10", "3.0")).toBe("3.0");
+    expect(newestPublicVersion("3.1")).toBe("3.1");
+  });
+
+  it("ignores malformed runtime versions", () => {
+    expect(canonicalPublicVersion("v3.0")).toBeNull();
+    expect(canonicalPublicVersion("3")).toBeNull();
+    expect(newestPublicVersion("latest", null)).toBe("3.0");
+  });
+});
+
 describe("grouping", () => {
   const releases = [
     ...history(31),
@@ -228,9 +253,9 @@ describe("grouping", () => {
     expect(placed).toHaveLength(releases.length);
   });
 
-  it("names the live version", () => {
-    expect(currentRelease(releases).version).toBe(releaseGroups(releases)[0].version);
-    expect(currentRelease(releases).phaseLabel).toBe("Open Beta");
+  it("keeps the official public release at the stable floor", () => {
+    expect(releaseGroups(releases)[0].phaseLabel).toBe("Beta");
+    expect(currentRelease(releases)).toEqual({ version: "3.0", phaseLabel: "" });
   });
 
   it("survives an empty archive", () => {
@@ -268,6 +293,18 @@ describe("presentation", () => {
 
   it("never empties a real sentence", () => {
     expect(cleanText("\u{1F680} Backups now upload")).toBe("Backups now upload");
+  });
+
+  it("uses command wording instead of the removed creator-name wording", () => {
+    expect(cleanText("Improved commands — same names, smoother behavior: /status")).toBe(
+      "Improved commands — same commands, smoother behavior: /status",
+    );
+  });
+
+  it("does not present an old runtime generation as a product release", () => {
+    expect(cleanText('Initial tracked release for v3.1.0 "Nova"')).toBe(
+      "Initial tracked NovaGuard release",
+    );
   });
 });
 

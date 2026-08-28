@@ -417,7 +417,7 @@ Run the bot locally, verify the slash-command flow, and keep changes friendly to
 
 <p align="center">
   <strong>Copyright © 2019–2026 VIK-DD</strong><br />
-  Developed under the VIK &amp; CloudMedia creator names
+  Developed by <strong>VIK &amp; CloudMedia</strong>
 </p>
 
 <p align="center">

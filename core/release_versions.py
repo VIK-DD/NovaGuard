@@ -11,7 +11,7 @@ Three phases:
   evenly across ten versions. Closed and frozen: ``ALPHA_LAST_BUILD`` is a
   constant precisely so that adding new builds can never reshuffle history a
   visitor already read.
-* **Open beta, 2.0 - 2.9.** The public testing cycle.
+* **Beta, 2.0 - 2.9.** The public testing cycle.
 * **Stable, 3.0 onward.** The official release cycle. A version collects
   ``UPDATES_PER_VERSION`` updates, then the next one opens a new version.
 
@@ -37,7 +37,7 @@ STABLE_PHASE = "stable"
 
 PHASE_LABELS = {
     ALPHA_PHASE: "Alpha",
-    BETA_PHASE: "Open Beta",
+    BETA_PHASE: "Beta",
     STABLE_PHASE: "",
 }
 
@@ -98,6 +98,18 @@ def clean_text(value):
     """
     text = unicodedata.normalize("NFKC", str(value or ""))
     text = _EMOJI_PATTERN.sub("", text)
+    text = re.sub(
+        r"same names, smoother behavior",
+        "same commands, smoother behavior",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'Initial tracked release for v\d+\.\d+\.\d+(?:\s+"Nova")?',
+        "Initial tracked NovaGuard release",
+        text,
+        flags=re.IGNORECASE,
+    )
     return " ".join(text.split()).strip(" -–—•")
 
 

@@ -6,14 +6,15 @@ describe("status version hydration", () => {
   const page = readFileSync(resolve(process.cwd(), "src/pages/status.astro"), "utf8");
   const runtime = readFileSync(resolve(process.cwd(), "src/scripts/status.ts"), "utf8");
 
-  it("never claims a stale build-time version while the live snapshot loads", () => {
+  it("starts pending but carries the official floor for runtime normalization", () => {
     expect(page).toContain("Checking…");
-    expect(`${page}\n${runtime}`).not.toContain("updates-archive.json");
+    expect(page).toContain("updates-archive.json");
+    expect(page).toContain("data-release-floor");
     expect(`${page}\n${runtime}`).not.toContain("PUBLIC_RELEASE");
   });
 
   it("replaces the pending state with the canonical version only", () => {
-    expect(runtime).toContain('set("version", stats.version)');
+    expect(runtime).toContain("newestPublicVersion(releaseFloor, stats.version)");
     expect(runtime).not.toContain("Open Beta");
     expect(runtime).toContain('set("version", "Unavailable")');
   });

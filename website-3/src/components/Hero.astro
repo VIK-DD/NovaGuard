@@ -13,7 +13,7 @@ const inviteHref = publicInviteUrl();
   <div class="mx-auto grid max-w-6xl gap-8 px-5 py-14 sm:gap-10 sm:px-6 sm:py-28 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-6">
     <div>
       <p data-hero-item class="font-mono text-xs tracking-[0.14em] text-primary uppercase">
-        NovaGuard — <span data-public-release>v{release.version}</span>
+        NovaGuard — <span data-public-release data-release-floor={release.version}>v{release.version}</span>
       </p>
       <h1
         data-hero-item
@@ -48,15 +48,19 @@ const inviteHref = publicInviteUrl();
   </div>
 </section>
 
-<script is:inline>
-  (() => {
-    const target = document.querySelector("[data-public-release]");
-    const getLiveStats = window.__ngGetLiveStats;
-    if (!target || typeof getLiveStats !== "function") return;
+<script>
+  import { newestPublicVersion } from "../data/releases";
+
+  const target = document.querySelector<HTMLElement>("[data-public-release]");
+  const getLiveStats = (window as Window & {
+    __ngGetLiveStats?: () => Promise<{ version?: unknown }>;
+  }).__ngGetLiveStats;
+  if (target && typeof getLiveStats === "function") {
+    const floor = target.dataset.releaseFloor;
     getLiveStats()
       .then((stats) => {
-        target.textContent = `v${stats.version}`;
+        target.textContent = `v${newestPublicVersion(floor, stats.version)}`;
       })
       .catch(() => {});
-  })();
+  }
 </script>

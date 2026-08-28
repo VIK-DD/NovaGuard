@@ -71,7 +71,7 @@ Use this endpoint for deploy gates and monitors that rely on HTTP status.
 Public. Bot-wide counters.
 ```json
 { "version": "3.0", "phase": "stable", "phase_label": "",
-  "release_label": "3.0", "runtime_version": "3.1.0",
+  "release_label": "3.0", "runtime_version": "3.0.0",
   "codename": "Nova", "guilds": 3, "members": 512,
   "commands": 81, "uptime_seconds": 8123, "ready": true }
 ```
@@ -257,7 +257,7 @@ reports and newest update-feed entries.
 {
   "status": { "ready": true, "version": "3.0", "phase": "stable",
               "phase_label": "", "release_label": "3.0",
-              "runtime_version": "3.1.0", "codename": "Nova",
+              "runtime_version": "3.0.0", "codename": "Nova",
     "uptime_seconds": 1200, "commands": 66, "guilds": 5, "members": 132 },
   "guild": { "id": "…", "name": "…", "icon": "…|null", "member_count": 42 },
   "setup": { "configured_channels": 6, "total_channels": 7,
