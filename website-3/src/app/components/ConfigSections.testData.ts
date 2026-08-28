@@ -96,3 +96,54 @@ export const economyStatus = {
     },
   ],
 } satisfies GuildConfig["economy_status"];
+
+export const tickets = {
+  panel_channel_id: "1",
+  panel_message_id: "100",
+  ready: true,
+  open_count: 1,
+  open: [
+    {
+      thread_id: "101",
+      opener_id: "20",
+      opener_name: "Nova Tester",
+      created_at: "2026-08-28T12:00:00Z",
+    },
+  ],
+} satisfies GuildConfig["tickets"];
+
+export const rolePanels = [
+  {
+    message_id: "200",
+    channel_id: "1",
+    title: "Community roles",
+    description: "Choose what you follow.",
+    role_ids: ["10"],
+    updated_at: "2026-08-28T12:30:00Z",
+  },
+] satisfies GuildConfig["role_panels"];
+
+export const giveaways = [
+  {
+    message_id: "300",
+    channel_id: "1",
+    prize: "Nitro",
+    winners: 1,
+    host_name: "Nova Tester",
+    ends_at: "2026-08-29T12:00:00Z",
+    entrant_count: 4,
+    ended: false,
+    winner_ids: [],
+  },
+  {
+    message_id: "301",
+    channel_id: "2",
+    prize: "Role reward",
+    winners: 1,
+    host_name: "Nova Tester",
+    ends_at: "2026-08-27T12:00:00Z",
+    entrant_count: 3,
+    ended: true,
+    winner_ids: ["21"],
+  },
+] satisfies GuildConfig["giveaways"];

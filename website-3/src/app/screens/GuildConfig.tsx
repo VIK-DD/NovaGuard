@@ -5,10 +5,10 @@ import { ApiError, apiFetch } from "../../lib/api/client";
 import {
   GuildConfigSchema,
   DashboardActionSchema,
+  type GuildConfig as GuildConfigPayload,
   type GuildSettings,
   type SettingsPatch,
 } from "../../lib/api/schemas";
-import ChannelSelect from "../components/ChannelSelect";
 import {
   LevelsSection,
   ModerationSection,
@@ -16,16 +16,14 @@ import {
   VoiceSection,
   WelcomeSection,
 } from "../components/ConfigCoreSections";
-import { ModuleNav, Section } from "../components/ConfigPrimitives";
+import { GiveawaySection } from "../components/ConfigGiveawaySection";
+import { ModuleNav } from "../components/ConfigPrimitives";
+import { RolePanelsSection } from "../components/ConfigRolePanelsSection";
 import { AiSection, EconomySection } from "../components/ConfigServiceSections";
-import IgnoreListEditor from "../components/IgnoreListEditor";
-import RoleSelect from "../components/RoleSelect";
+import { TicketSection } from "../components/ConfigTicketSection";
 import SaveBar from "../components/SaveBar";
 import { diffSettings, isDirty, mapValidationDetails, validateSettings } from "../lib/configForm";
-import {
-  getConfigModule,
-  isModuleActive,
-} from "../moduleCatalog";
+import { getConfigModule } from "../moduleCatalog";
 import { useGuildConfig } from "../queries/guilds";
 import { useUnsavedChanges } from "../unsavedChanges";
 
@@ -358,6 +356,67 @@ export default function GuildConfig() {
     (value: number) => setAi({ max_question_chars: value }),
     [setAi],
   );
+  const publishTicketPanelAction = publishTicketPanel.mutate;
+  const publishRolePanelAction = publishRolePanel.mutate;
+  const startGiveawayAction = startGiveaway.mutate;
+  const resetGiveawayAction = manageGiveaway.reset;
+  const manageGiveawayAction = manageGiveaway.mutate;
+  const onTicketPanelPublish = useCallback(() => {
+    setTicketPanelNotice(null);
+    publishTicketPanelAction();
+  }, [publishTicketPanelAction]);
+  const onRolePanelTitleChange = useCallback((value: string) => {
+    setRolePanelTitle(value);
+    setRolePanelNotice(null);
+  }, []);
+  const onRolePanelDescriptionChange = useCallback((value: string) => {
+    setRolePanelDescription(value);
+    setRolePanelNotice(null);
+  }, []);
+  const onRolePanelRoleIdsChange = useCallback((value: string[]) => {
+    setRolePanelRoleIds(value);
+    setRolePanelNotice(null);
+  }, []);
+  const onRolePanelCancel = useCallback(() => {
+    resetRolePanelDraft();
+    setRolePanelNotice(null);
+  }, [resetRolePanelDraft]);
+  const onRolePanelEdit = useCallback((panel: GuildConfigPayload["role_panels"][number]) => {
+    setEditingRolePanelId(panel.message_id);
+    setRolePanelTitle(panel.title);
+    setRolePanelDescription(panel.description);
+    setRolePanelRoleIds(panel.role_ids);
+    setRolePanelNotice(null);
+  }, []);
+  const onRolePanelPublish = useCallback(() => {
+    setRolePanelNotice(null);
+    publishRolePanelAction();
+  }, [publishRolePanelAction]);
+  const onGiveawayPrizeChange = useCallback((value: string) => {
+    setGiveawayPrize(value);
+    setGiveawayNotice(null);
+  }, []);
+  const onGiveawayDurationChange = useCallback((value: string) => {
+    setGiveawayDuration(value);
+    setGiveawayNotice(null);
+  }, []);
+  const onGiveawayWinnersChange = useCallback((value: number) => {
+    setGiveawayWinners(value);
+    setGiveawayNotice(null);
+  }, []);
+  const onGiveawayStart = useCallback(() => {
+    setGiveawayNotice(null);
+    resetGiveawayAction();
+    startGiveawayAction();
+  }, [resetGiveawayAction, startGiveawayAction]);
+  const onGiveawayEnd = useCallback(
+    (messageId: string) => manageGiveawayAction({ action: "end", messageId }),
+    [manageGiveawayAction],
+  );
+  const onGiveawayReroll = useCallback(
+    (messageId: string) => manageGiveawayAction({ action: "reroll", messageId }),
+    [manageGiveawayAction],
+  );
 
   const dirty = Boolean(config.data && draft && isDirty(config.data.settings, draft));
   const rolePanelDirty = Boolean(
@@ -565,559 +624,76 @@ export default function GuildConfig() {
           )}
 
           {selectedModule?.key === "tickets" && (
-            <Section
-            id="tickets"
-            icon="clipboard-text"
-            kicker="Tickets"
-            description="Choose which role can claim and manage member support tickets."
-            active={isModuleActive(draft, "tickets")}
-          >
-            <div className="grid gap-5 border-t border-line pt-6 sm:grid-cols-2">
-              <ChannelSelect
-                label="Ticket panel channel"
-                value={draft.ticket_panel_channel}
-                channels={channels}
-                error={fieldErrors.ticket_panel_channel}
-                onChange={channelFieldHandlers.ticket_panel_channel}
-              />
-              <RoleSelect
-                label="Ticket staff role"
-                value={draft.ticket_staff_role}
-                roles={roles.filter(
-                  (role) => role.manages_threads || role.id === draft.ticket_staff_role,
-                )}
-                error={fieldErrors.ticket_staff_role}
-                onChange={onTicketRoleChange}
-              />
-            </div>
-            <p className="mt-2 text-xs leading-5 text-ink-muted">
-              Only roles with <strong>Manage Threads</strong> are offered. The selected role also
-              needs <strong>View Channel</strong> in the panel channel.
-            </p>
-            <div className="mt-6 rounded-lg border border-line bg-bg-subtle p-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium">
-                    {config.data.tickets.panel_message_id ? "Panel is live" : "Panel not published"}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-ink-muted">
-                    {dirty
-                      ? "Save these settings before publishing the panel."
-                      : config.data.tickets.ready
-                        ? "Publishing again updates the existing message instead of creating a duplicate."
-                        : "Choose both fields above, save, then publish."}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={
-                    dirty ||
-                    !draft.ticket_panel_channel ||
-                    !draft.ticket_staff_role ||
-                    publishTicketPanel.isPending
-                  }
-                  onClick={() => {
-                    setTicketPanelNotice(null);
-                    publishTicketPanel.mutate();
-                  }}
-                  className="ng-touch-target inline-flex shrink-0 items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {publishTicketPanel.isPending
-                    ? "Publishing…"
-                    : config.data.tickets.panel_message_id
-                      ? "Update panel"
-                      : "Publish panel"}
-                </button>
-              </div>
-              {ticketPanelNotice && (
-                <p
-                  role={publishTicketPanel.isError ? "alert" : "status"}
-                  className={`mt-3 border-t border-line pt-3 text-sm ${
-                    publishTicketPanel.isError ? "text-primary" : "text-good"
-                  }`}
-                >
-                  {ticketPanelNotice}
-                </p>
-              )}
-            </div>
-
-            <div className="mt-6 border-t border-line pt-5">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium">Open tickets</p>
-                <span className="rounded-full border border-line bg-bg-subtle px-2.5 py-1 text-xs text-ink-muted">
-                  {config.data.tickets.open_count}
-                </span>
-              </div>
-              {config.data.tickets.open.length > 0 ? (
-                <ul className="mt-3 divide-y divide-line border-y border-line">
-                  {config.data.tickets.open.map((ticket) => (
-                    <li key={ticket.thread_id} className="flex items-center justify-between gap-3 py-3">
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm text-ink">{ticket.opener_name}</span>
-                        <span className="mt-0.5 block text-xs text-ink-faint">
-                          Opened {new Date(ticket.created_at).toLocaleString("en-US")}
-                        </span>
-                      </span>
-                      <a
-                        href={`https://discord.com/channels/${guildId}/${ticket.thread_id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ng-touch-target inline-flex shrink-0 items-center rounded-md px-2 text-sm text-primary hover:underline"
-                      >
-                        Open in Discord ↗
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-sm text-ink-muted">No tracked tickets are open.</p>
-              )}
-            </div>
-            </Section>
+            <TicketSection
+              guildId={guildId}
+              settings={draft}
+              tickets={config.data.tickets}
+              channels={channels}
+              roles={roles}
+              fieldErrors={fieldErrors}
+              dirty={dirty}
+              publishPending={publishTicketPanel.isPending}
+              publishError={publishTicketPanel.isError}
+              notice={ticketPanelNotice}
+              onChannelChange={channelFieldHandlers.ticket_panel_channel}
+              onRoleChange={onTicketRoleChange}
+              onPublish={onTicketPanelPublish}
+            />
           )}
 
           {selectedModule?.key === "roles" && (
-            <Section
-              id="roles"
-              icon="users-three"
-              kicker="Role panels"
-              description="Let members add and remove safe, self-service roles without staff intervention."
-              active={isModuleActive(draft, "roles")}
-            >
-              <div className="max-w-md border-t border-line pt-6">
-                <ChannelSelect
-                  label="Default panel channel"
-                  value={draft.role_panel_channel}
-                  channels={channels}
-                  error={fieldErrors.role_panel_channel}
-                  onChange={channelFieldHandlers.role_panel_channel}
-                />
-                <p className="mt-2 text-xs leading-5 text-ink-muted">
-                  Save a new default channel before publishing a new panel. Existing panels stay in
-                  their original channel when edited.
-                </p>
-              </div>
-
-              <div className="mt-7 rounded-lg border border-line bg-bg-subtle p-4 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium">
-                      {editingRolePanelId ? "Edit role panel" : "Create role panel"}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-ink-muted">
-                      One panel can offer up to five roles that NovaGuard is allowed to assign.
-                    </p>
-                  </div>
-                  {editingRolePanelId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetRolePanelDraft();
-                        setRolePanelNotice(null);
-                      }}
-                      className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-ink-muted hover:text-ink"
-                    >
-                      Cancel editing
-                    </button>
-                  )}
-                </div>
-
-                <div className="mt-5 grid gap-5">
-                  <label className="block">
-                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-                      Panel title
-                    </span>
-                    <input
-                      value={rolePanelTitle}
-                      maxLength={80}
-                      onChange={(event) => {
-                        setRolePanelTitle(event.target.value);
-                        setRolePanelNotice(null);
-                      }}
-                      placeholder="Community roles"
-                      className="mt-1.5 w-full rounded-md border border-line bg-card px-3 py-2 text-sm outline-none focus:border-ink"
-                    />
-                    <span className="mt-1 block text-right text-xs text-ink-faint">
-                      {rolePanelTitle.length}/80
-                    </span>
-                  </label>
-
-                  <label className="block">
-                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-                      Description
-                    </span>
-                    <textarea
-                      value={rolePanelDescription}
-                      maxLength={1000}
-                      rows={4}
-                      onChange={(event) => {
-                        setRolePanelDescription(event.target.value);
-                        setRolePanelNotice(null);
-                      }}
-                      placeholder="Choose the roles that match what you want to follow."
-                      className="mt-1.5 w-full resize-y rounded-md border border-line bg-card px-3 py-2 text-sm leading-6 outline-none focus:border-ink"
-                    />
-                    <span className="mt-1 block text-right text-xs text-ink-faint">
-                      {rolePanelDescription.length}/1000
-                    </span>
-                  </label>
-
-                  <IgnoreListEditor
-                    label="Self-assignable roles"
-                    prefix="@"
-                    value={rolePanelRoleIds}
-                    options={roles.filter(
-                      (role) => role.assignable || rolePanelRoleIds.includes(role.id),
-                    )}
-                    maxItems={5}
-                    onChange={(value) => {
-                      setRolePanelRoleIds(value);
-                      setRolePanelNotice(null);
-                    }}
-                  />
-                </div>
-
-                <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs leading-5 text-ink-muted">
-                    {dirty
-                      ? "Save the channel change before publishing."
-                      : editingRolePanelId
-                        ? "The tracked Discord message will be updated in place."
-                        : "Publishing creates one persistent Discord message."}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={
-                      dirty ||
-                      (!editingRolePanelId && !draft.role_panel_channel) ||
-                      !rolePanelTitle.trim() ||
-                      !rolePanelDescription.trim() ||
-                      rolePanelRoleIds.length === 0 ||
-                      publishRolePanel.isPending
-                    }
-                    onClick={() => {
-                      setRolePanelNotice(null);
-                      publishRolePanel.mutate();
-                    }}
-                    className="ng-touch-target inline-flex shrink-0 items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {publishRolePanel.isPending
-                      ? "Publishing…"
-                      : editingRolePanelId
-                        ? "Update panel"
-                        : "Publish panel"}
-                  </button>
-                </div>
-
-                {rolePanelNotice && (
-                  <p
-                    role={publishRolePanel.isError ? "alert" : "status"}
-                    className={`mt-3 border-t border-line pt-3 text-sm ${
-                      publishRolePanel.isError ? "text-primary" : "text-good"
-                    }`}
-                  >
-                    {rolePanelNotice}
-                  </p>
-                )}
-              </div>
-
-              <div className="mt-7 border-t border-line pt-5">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium">Tracked panels</p>
-                  <span className="rounded-full border border-line bg-bg-subtle px-2.5 py-1 text-xs text-ink-muted">
-                    {config.data.role_panels.length}
-                  </span>
-                </div>
-                {config.data.role_panels.length > 0 ? (
-                  <ul className="mt-3 divide-y divide-line border-y border-line">
-                    {config.data.role_panels.map((panel) => {
-                      const channel = channels.find((item) => item.id === panel.channel_id);
-                      return (
-                        <li
-                          key={panel.message_id}
-                          className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm text-ink">{panel.title}</span>
-                            <span className="mt-0.5 block text-xs text-ink-faint">
-                              #{channel?.name ?? "deleted-channel"} · {panel.role_ids.length} roles ·
-                              updated {new Date(panel.updated_at).toLocaleString("en-US")}
-                            </span>
-                          </span>
-                          <span className="flex shrink-0 items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingRolePanelId(panel.message_id);
-                                setRolePanelTitle(panel.title);
-                                setRolePanelDescription(panel.description);
-                                setRolePanelRoleIds(panel.role_ids);
-                                setRolePanelNotice(null);
-                              }}
-                              className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-ink-muted hover:text-ink"
-                            >
-                              Edit
-                            </button>
-                            <a
-                              href={`https://discord.com/channels/${guildId}/${panel.channel_id}/${panel.message_id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-primary hover:underline"
-                            >
-                              Open ↗
-                            </a>
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-ink-muted">No role panels are tracked yet.</p>
-                )}
-              </div>
-            </Section>
+            <RolePanelsSection
+              guildId={guildId}
+              settings={draft}
+              panels={config.data.role_panels}
+              channels={channels}
+              roles={roles}
+              fieldErrors={fieldErrors}
+              dirty={dirty}
+              title={rolePanelTitle}
+              description={rolePanelDescription}
+              roleIds={rolePanelRoleIds}
+              editingId={editingRolePanelId}
+              notice={rolePanelNotice}
+              publishPending={publishRolePanel.isPending}
+              publishError={publishRolePanel.isError}
+              onChannelChange={channelFieldHandlers.role_panel_channel}
+              onTitleChange={onRolePanelTitleChange}
+              onDescriptionChange={onRolePanelDescriptionChange}
+              onRoleIdsChange={onRolePanelRoleIdsChange}
+              onCancelEdit={onRolePanelCancel}
+              onEdit={onRolePanelEdit}
+              onPublish={onRolePanelPublish}
+            />
           )}
 
           {selectedModule?.key === "giveaways" && (
-            <Section
-              id="giveaways"
-              icon="trophy"
-              kicker="Giveaways"
-              description="Create timed draws, watch entry counts and manage results from one place."
-              active={isModuleActive(draft, "giveaways")}
-            >
-              <div className="max-w-md border-t border-line pt-6">
-                <ChannelSelect
-                  label="Giveaway channel"
-                  value={draft.giveaway_channel}
-                  channels={channels}
-                  error={fieldErrors.giveaway_channel}
-                  onChange={channelFieldHandlers.giveaway_channel}
-                />
-              </div>
-
-              <div className="mt-7 rounded-lg border border-line bg-bg-subtle p-4 sm:p-5">
-                <p className="text-sm font-medium">Start a giveaway</p>
-                <p className="mt-1 text-xs leading-5 text-ink-muted">
-                  Durations accept combinations such as 30m, 1h 30m or 2d, from one minute to 30
-                  days.
-                </p>
-                <div className="mt-5 grid gap-5 sm:grid-cols-[minmax(0,1fr)_9rem_8rem]">
-                  <label className="block">
-                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-                      Prize
-                    </span>
-                    <input
-                      value={giveawayPrize}
-                      maxLength={200}
-                      onChange={(event) => {
-                        setGiveawayPrize(event.target.value);
-                        setGiveawayNotice(null);
-                      }}
-                      placeholder="One month of Nitro"
-                      className="mt-1.5 w-full rounded-md border border-line bg-card px-3 py-2 text-sm outline-none focus:border-ink"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-                      Duration
-                    </span>
-                    <input
-                      value={giveawayDuration}
-                      maxLength={40}
-                      onChange={(event) => {
-                        setGiveawayDuration(event.target.value);
-                        setGiveawayNotice(null);
-                      }}
-                      placeholder="1d"
-                      className="mt-1.5 w-full rounded-md border border-line bg-card px-3 py-2 text-sm outline-none focus:border-ink"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs tracking-[0.15em] text-ink-muted uppercase">
-                      Winners
-                    </span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={10}
-                      step={1}
-                      value={giveawayWinners}
-                      onChange={(event) => {
-                        setGiveawayWinners(Number(event.target.value));
-                        setGiveawayNotice(null);
-                      }}
-                      className="mt-1.5 w-full rounded-md border border-line bg-card px-3 py-2 text-sm outline-none focus:border-ink"
-                    />
-                  </label>
-                </div>
-                <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs leading-5 text-ink-muted">
-                    {dirty
-                      ? "Save the channel change before starting."
-                      : "The draw closes automatically and announces winners in this channel."}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={
-                      dirty ||
-                      !draft.giveaway_channel ||
-                      !giveawayPrize.trim() ||
-                      !giveawayDuration.trim() ||
-                      !Number.isInteger(giveawayWinners) ||
-                      giveawayWinners < 1 ||
-                      giveawayWinners > 10 ||
-                      startGiveaway.isPending
-                    }
-                    onClick={() => {
-                      setGiveawayNotice(null);
-                      manageGiveaway.reset();
-                      startGiveaway.mutate();
-                    }}
-                    className="ng-touch-target inline-flex shrink-0 items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {startGiveaway.isPending ? "Starting…" : "Start giveaway"}
-                  </button>
-                </div>
-                {giveawayNotice && (
-                  <p
-                    role={startGiveaway.isError || manageGiveaway.isError ? "alert" : "status"}
-                    className={`mt-3 border-t border-line pt-3 text-sm ${
-                      startGiveaway.isError || manageGiveaway.isError
-                        ? "text-primary"
-                        : "text-good"
-                    }`}
-                  >
-                    {giveawayNotice}
-                  </p>
-                )}
-              </div>
-
-              <div className="mt-7 border-t border-line pt-5">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium">Active giveaways</p>
-                  <span className="rounded-full border border-line bg-bg-subtle px-2.5 py-1 text-xs text-ink-muted">
-                    {config.data.giveaways.filter((giveaway) => !giveaway.ended).length}
-                  </span>
-                </div>
-                {config.data.giveaways.some((giveaway) => !giveaway.ended) ? (
-                  <ul className="mt-3 divide-y divide-line border-y border-line">
-                    {config.data.giveaways
-                      .filter((giveaway) => !giveaway.ended)
-                      .map((giveaway) => {
-                        const channel = channels.find((item) => item.id === giveaway.channel_id);
-                        const isPending =
-                          manageGiveaway.isPending &&
-                          manageGiveaway.variables?.messageId === giveaway.message_id;
-                        const isConfirming = confirmGiveawayEndId === giveaway.message_id;
-                        return (
-                          <li
-                            key={giveaway.message_id}
-                            className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm text-ink">{giveaway.prize}</span>
-                              <span className="mt-0.5 block text-xs text-ink-faint">
-                                #{channel?.name ?? "deleted-channel"} · {giveaway.entrant_count} entries ·
-                                ends {new Date(giveaway.ends_at).toLocaleString("en-US")}
-                              </span>
-                            </span>
-                            <span className="flex shrink-0 flex-wrap items-center gap-2">
-                              <a
-                                href={`https://discord.com/channels/${guildId}/${giveaway.channel_id}/${giveaway.message_id}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-primary hover:underline"
-                              >
-                                Open ↗
-                              </a>
-                              {isConfirming ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    disabled={isPending}
-                                    onClick={() => setConfirmGiveawayEndId(null)}
-                                    className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-ink-muted hover:text-ink"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={isPending}
-                                    onClick={() =>
-                                      manageGiveaway.mutate({
-                                        action: "end",
-                                        messageId: giveaway.message_id,
-                                      })
-                                    }
-                                    className="ng-touch-target inline-flex items-center rounded-full border border-primary px-4 py-2 text-sm text-primary disabled:opacity-45"
-                                  >
-                                    {isPending ? "Ending…" : "Confirm end"}
-                                  </button>
-                                </>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmGiveawayEndId(giveaway.message_id)}
-                                  className="ng-touch-target inline-flex items-center rounded-md px-2 text-sm text-ink-muted hover:text-primary"
-                                >
-                                  End early
-                                </button>
-                              )}
-                            </span>
-                          </li>
-                        );
-                      })}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-ink-muted">No giveaways are active.</p>
-                )}
-              </div>
-
-              <div className="mt-7 border-t border-line pt-5">
-                <p className="text-sm font-medium">Recent results</p>
-                {config.data.giveaways.some((giveaway) => giveaway.ended) ? (
-                  <ul className="mt-3 divide-y divide-line border-y border-line">
-                    {config.data.giveaways
-                      .filter((giveaway) => giveaway.ended)
-                      .map((giveaway) => {
-                        const isPending =
-                          manageGiveaway.isPending &&
-                          manageGiveaway.variables?.messageId === giveaway.message_id;
-                        return (
-                          <li
-                            key={giveaway.message_id}
-                            className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm text-ink">{giveaway.prize}</span>
-                              <span className="mt-0.5 block text-xs text-ink-faint">
-                                {giveaway.entrant_count} entries · {giveaway.winner_ids.length} recorded
-                                winner{giveaway.winner_ids.length === 1 ? "" : "s"}
-                              </span>
-                            </span>
-                            <button
-                              type="button"
-                              disabled={giveaway.entrant_count === 0 || isPending}
-                              onClick={() =>
-                                manageGiveaway.mutate({
-                                  action: "reroll",
-                                  messageId: giveaway.message_id,
-                                })
-                              }
-                              className="ng-touch-target inline-flex shrink-0 items-center rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              {isPending ? "Rerolling…" : "Reroll"}
-                            </button>
-                          </li>
-                        );
-                      })}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-ink-muted">No completed giveaways yet.</p>
-                )}
-              </div>
-            </Section>
+            <GiveawaySection
+              guildId={guildId}
+              settings={draft}
+              giveaways={config.data.giveaways}
+              channels={channels}
+              fieldErrors={fieldErrors}
+              dirty={dirty}
+              prize={giveawayPrize}
+              duration={giveawayDuration}
+              winners={giveawayWinners}
+              notice={giveawayNotice}
+              confirmEndId={confirmGiveawayEndId}
+              startPending={startGiveaway.isPending}
+              startError={startGiveaway.isError}
+              managePending={manageGiveaway.isPending}
+              manageError={manageGiveaway.isError}
+              managingMessageId={manageGiveaway.variables?.messageId ?? null}
+              onChannelChange={channelFieldHandlers.giveaway_channel}
+              onPrizeChange={onGiveawayPrizeChange}
+              onDurationChange={onGiveawayDurationChange}
+              onWinnersChange={onGiveawayWinnersChange}
+              onStart={onGiveawayStart}
+              onConfirmEndChange={setConfirmGiveawayEndId}
+              onEnd={onGiveawayEnd}
+              onReroll={onGiveawayReroll}
+            />
           )}
 
           {selectedModule?.key === "ai" && (
