@@ -66,6 +66,7 @@ from .dashboard_insights import (
     dashboard_voice_summary,
 )
 from .economy_settings import resolve_economy, validate_economy
+from .giveaway_helpers import validate_giveaway_input
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
 from .levels_settings import resolve_levels, validate_levels
 from .maintenance import (
@@ -1496,8 +1497,6 @@ class WebServer:
 
     async def _handle_giveaway_start_action(self, request, guild, entry):
         import discord
-
-        from cogs.giveaways import validate_giveaway_input
 
         body = await self._giveaway_action_body(request)
         duration, prize, winners, errors = validate_giveaway_input(

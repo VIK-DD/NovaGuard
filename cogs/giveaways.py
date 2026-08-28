@@ -2,19 +2,23 @@
 
 import logging
 import asyncio
-import re
-import secrets
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.giveaway_helpers import draw_winners, validate_giveaway_input
+from core.giveaway_presenters import (
+    build_giveaway_embed,
+    build_giveaway_reroll_announcement_embed,
+    build_giveaway_result_embed,
+)
 from core.loop_guard import keep_running
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed
-from core.utils import defer_interaction, parse_duration, respond
+from core.utils import defer_interaction, respond
 
 log = logging.getLogger(__name__)
 
@@ -40,70 +44,6 @@ async def save_giveaways_async(entries):
 # concurrent button clicks (or a click racing the watcher) both read the same
 # list and the second save silently drops the first one's change.
 _STORE_LOCK = asyncio.Lock()
-
-
-def draw_winners(entrants, count, *, exclude=()):
-    """Draw unique winners with the operating system's secure random source.
-
-    Rerolls prefer people who did not win the previous draw. Previous winners
-    remain a fallback only when there are not enough other entrants to fill all
-    advertised winner slots.
-    """
-    unique = list(dict.fromkeys(entrants))
-    excluded = set(exclude)
-    fresh = [entrant for entrant in unique if entrant not in excluded]
-    fallback = [entrant for entrant in unique if entrant in excluded]
-    wanted = min(max(int(count), 0), len(unique))
-    selected = secrets.SystemRandom().sample(fresh, min(wanted, len(fresh)))
-    if len(selected) < wanted:
-        selected.extend(
-            secrets.SystemRandom().sample(fallback, wanted - len(selected))
-        )
-    return selected
-
-
-def validate_giveaway_input(duration, prize, winners):
-    """Normalize dashboard/slash input before a Discord message is created."""
-    errors = []
-    duration_text = str(duration or "").strip().lower()
-    if not re.fullmatch(r"(?:\d+\s*[smhdw]\s*)+", duration_text):
-        delta = None
-    else:
-        delta = parse_duration(duration_text)
-    if not delta or delta < timedelta(minutes=1) or delta > timedelta(days=30):
-        errors.append("duration must be between 1 minute and 30 days, for example 30m, 1h or 2d")
-
-    clean_prize = " ".join(str(prize or "").split())
-    if not clean_prize or len(clean_prize) > 200:
-        errors.append("prize must contain 1–200 characters")
-
-    if isinstance(winners, bool) or not isinstance(winners, int) or not 1 <= winners <= 10:
-        errors.append("winners must be a whole number between 1 and 10")
-    return delta, clean_prize, winners, errors
-
-
-def build_giveaway_embed(entry, ended=False, winner_ids=None):
-    ends_at = datetime.fromisoformat(entry["ends_at"])
-    entrants = entry.get("entrants", [])
-
-    if ended:
-        if winner_ids:
-            winners_text = ", ".join(f"<@{uid}>" for uid in winner_ids)
-            description = f"# {entry['prize']}\n\n🏆 **Winner{'s' if len(winner_ids) > 1 else ''}:** {winners_text}"
-        else:
-            description = f"# {entry['prize']}\n\n😢 No valid entries — nobody wins this time."
-        embed = make_embed("🏁 GIVEAWAY ENDED", description, color=Palette.DARK)
-    else:
-        description = (
-            f"# {entry['prize']}\n\n"
-            f"Ends {discord.utils.format_dt(ends_at, 'R')} ({discord.utils.format_dt(ends_at, 'f')})\n"
-            f"Winners: `{entry['winners']}` • Entries: `{len(entrants)}`\n\n"
-            f"**Click 🎉 below to enter!**"
-        )
-        embed = make_embed("🎁 GIVEAWAY", description, color=Palette.FUN)
-
-    brand_footer(embed, f"Hosted by {entry.get('host_name', 'staff')}")
-    return embed
 
 
 class GiveawayButton(
@@ -279,16 +219,7 @@ class Giveaways(commands.Cog):
             pass
 
         try:
-            if winner_ids:
-                mentions = ", ".join(f"<@{uid}>" for uid in winner_ids)
-                embed = make_embed(
-                    "🎊 We have a winner!",
-                    f"Congratulations {mentions} — you won **{entry['prize']}**!",
-                    color=Palette.GOLD,
-                )
-            else:
-                embed = make_embed("😢 No winner", f"Nobody entered the giveaway for **{entry['prize']}**.", color=Palette.DARK)
-            brand_footer(embed, "Giveaway result")
+            embed = build_giveaway_result_embed(entry, winner_ids)
             await channel.send(embed=embed)
         except discord.HTTPException:
             pass
@@ -315,13 +246,7 @@ class Giveaways(commands.Cog):
         channel = await self._fetch_entry_channel(entry)
         announced = False
         if channel is not None:
-            mentions = ", ".join(f"<@{uid}>" for uid in winner_ids)
-            embed = make_embed(
-                "🎲 Giveaway rerolled",
-                f"New winner{'s' if len(winner_ids) > 1 else ''} for **{entry['prize']}**: {mentions} 🎊",
-                color=Palette.GOLD,
-            )
-            brand_footer(embed, "Giveaway reroll")
+            embed = build_giveaway_reroll_announcement_embed(entry, winner_ids)
             try:
                 await channel.send(embed=embed)
                 announced = True
