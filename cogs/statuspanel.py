@@ -2,8 +2,8 @@
 
 Separate from /status and /doctor on purpose. Those are operator diagnostics —
 ephemeral, detailed, permission-gated. This is the card a community reads: a
-handful of rows, posted into a channel twice a day and refreshed by replacing
-the one before it, so the channel holds exactly one card at a time.
+handful of rows, edited twice a day at fixed hours. A restart publishes a fresh
+card; a process that stays online rolls the message over after fourteen days.
 
 Every reading is taken live. The API row is an actual HTTP request to the
 bot's own API, not a guess from whether the object exists, because a status
@@ -26,6 +26,7 @@ from core.status_panel import (
     build_snapshot,
     build_status_embed,
     due_slot,
+    status_message_is_stale,
     status_schedule_label,
 )
 from core.storage import get_guild_settings, update_guild_settings
@@ -46,7 +47,7 @@ class StatusPanel(commands.Cog):
 
     EMOJI = "📡"
     COLOR = Palette.INFO
-    DESCRIPTION = "A public service status card, refreshed twice a day."
+    DESCRIPTION = "A public service status card, edited twice a day."
 
     def __init__(self, bot):
         self.bot = bot
@@ -122,15 +123,56 @@ class StatusPanel(commands.Cog):
         message = await channel.send(embed=embed)
         update_guild_settings(channel.guild.id, **{STATUS_MESSAGE_KEY: str(message.id)})
 
-        if previous_id:
+        if previous_id and str(previous_id) != str(message.id):
             try:
-                old = await channel.fetch_message(int(previous_id))
+                old = channel.get_partial_message(int(previous_id))
                 await old.delete()
             except (discord.NotFound, discord.Forbidden, ValueError):
                 pass
             except discord.HTTPException:
                 log.warning("Could not remove the previous status card in #%s", channel.id)
         return message
+
+    async def refresh(self, channel, embed, *, now=None):
+        """Edit the current card, replacing it only when it reaches 14 days.
+
+        A partial message is enough to edit a bot-authored card and avoids
+        requiring Read Message History merely to keep the status current.
+        """
+        settings = get_guild_settings(channel.guild.id)
+        previous_id = settings.get(STATUS_MESSAGE_KEY)
+        try:
+            message_id = int(previous_id)
+            created_at = discord.utils.snowflake_time(message_id)
+        except (TypeError, ValueError, OverflowError, OSError):
+            return await self.publish(channel, embed)
+
+        if status_message_is_stale(created_at, now=now):
+            return await self.publish(channel, embed)
+
+        try:
+            message = channel.get_partial_message(message_id)
+            return await message.edit(embed=embed)
+        except discord.NotFound:
+            # Someone deleted the card manually. Restore it instead of leaving
+            # the configured status channel empty until the next restart.
+            return await self.publish(channel, embed)
+
+    async def _deliver_to_configured_channels(self, *, publish_new=False):
+        channels = await resolve_configured_channels(self.bot, STATUS_CHANNEL_KEY, None)
+        if not channels:
+            return
+
+        snapshot = await self.collect_snapshot()
+        embed = build_status_embed(snapshot)
+        action = self.publish if publish_new else self.refresh
+        for channel in channels:
+            try:
+                await action(channel, embed)
+            except discord.Forbidden:
+                log.warning("Status card permission denied in #%s", channel.id)
+            except discord.HTTPException:
+                log.warning("Status card could not be updated in #%s", channel.id, exc_info=True)
 
     # ── the schedule ──────────────────────────────────────────────────
 
@@ -142,21 +184,15 @@ class StatusPanel(commands.Cog):
             return
         self.last_slot = slot
 
-        channels = await resolve_configured_channels(self.bot, STATUS_CHANNEL_KEY, None)
-        if not channels:
-            return
-
-        snapshot = await self.collect_snapshot()
-        embed = build_status_embed(snapshot)
-        for channel in channels:
-            try:
-                await self.publish(channel, embed)
-            except discord.HTTPException:
-                log.warning("Status card could not be posted in #%s", channel.id, exc_info=True)
+        await self._deliver_to_configured_channels()
 
     @status_loop.before_loop
     async def before_status_loop(self):
         await self.bot.wait_until_ready()
+        # This hook runs once for the lifetime of the task, not on gateway
+        # reconnects. A real process restart therefore posts one fresh card,
+        # while an ordinary Discord resume does not create duplicates.
+        await self._deliver_to_configured_channels(publish_new=True)
 
     # ── the command ───────────────────────────────────────────────────
 
@@ -177,7 +213,8 @@ class StatusPanel(commands.Cog):
             embed = make_embed(
                 "📡 No status channel yet",
                 "Pick one in `/setup` — choose **Service Status**, then the channel."
-                f"\n\nOnce set, the card posts itself at {status_schedule_label()}.",
+                "\n\nOnce set, a fresh card appears at the next restart and its status"
+                f" is edited at {status_schedule_label()}.",
                 color=Palette.WARNING,
             )
             brand_footer(embed, "Service status")
@@ -197,7 +234,8 @@ class StatusPanel(commands.Cog):
 
         confirm = make_embed(
             "📡 Status card posted",
-            f"Published in {channel.mention}.\nIt refreshes on its own at {status_schedule_label()}.",
+            f"Published in {channel.mention}.\nIt is edited at {status_schedule_label()}"
+            " and replaced after a restart or 14 days online.",
             color=Palette.SUCCESS,
         )
         confirm.add_field(name="Message", value=message.jump_url, inline=False)

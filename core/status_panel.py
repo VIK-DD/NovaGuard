@@ -19,6 +19,7 @@ from core.utils import format_timedelta
 
 DEFAULT_STATUS_SCHEDULE = "07:00,19:00"
 DEFAULT_STATUS_TIMEZONE = "Europe/Chisinau"
+STATUS_MESSAGE_LIFETIME = timedelta(days=14)
 
 OPERATIONAL = "operational"
 DEGRADED = "degraded"
@@ -71,6 +72,24 @@ def due_slot(now=None):
     if (local_now.hour, local_now.minute) not in status_schedule():
         return None
     return local_now.strftime("%Y-%m-%d %H:%M")
+
+
+def status_message_is_stale(created_at, *, now=None):
+    """Whether the public card is old enough to be replaced.
+
+    Scheduled refreshes edit the existing Discord message.  A fresh message is
+    posted only once the current one has lived for fourteen days, which keeps
+    the channel quiet without leaving one card buried forever.
+    """
+    if not isinstance(created_at, datetime):
+        return True
+
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    return current.astimezone(UTC) >= created_at.astimezone(UTC) + STATUS_MESSAGE_LIFETIME
 
 
 def status_clock_label(now=None):

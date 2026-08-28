@@ -11,7 +11,7 @@ so most of these tests are about the unhappy cases.
 import os
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 from zoneinfo import ZoneInfo
 
@@ -22,6 +22,7 @@ from core.status_panel import (  # noqa: E402
     build_status_embed,
     due_slot,
     overall_state,
+    status_message_is_stale,
     status_schedule,
     status_schedule_label,
 )
@@ -90,6 +91,24 @@ class DueSlotTests(unittest.TestCase):
     def test_two_posts_in_one_day_carry_different_slots(self):
         # The loop skips a slot it has already served, so the two must differ.
         self.assertNotEqual(due_slot(self.at(7, 0)), due_slot(self.at(19, 0)))
+
+
+class MessageLifetimeTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
+
+    def test_a_card_younger_than_fourteen_days_is_edited(self):
+        created_at = self.now - timedelta(days=13, hours=23, minutes=59)
+
+        self.assertFalse(status_message_is_stale(created_at, now=self.now))
+
+    def test_a_card_is_replaced_once_it_reaches_fourteen_days(self):
+        created_at = self.now - timedelta(days=14)
+
+        self.assertTrue(status_message_is_stale(created_at, now=self.now))
+
+    def test_an_unknown_creation_time_is_treated_as_stale(self):
+        self.assertTrue(status_message_is_stale(None, now=self.now))
 
 
 class OverallStateTests(unittest.TestCase):

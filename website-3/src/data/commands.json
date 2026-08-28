@@ -30,7 +30,7 @@
   {
     "emoji": "📡",
     "name": "Service status",
-    "blurb": "A public status card for the bot, its API and its database, refreshed twice a day.",
+    "blurb": "A public status card for the bot, its API and its database, edited twice a day.",
     "audience": "server-admin",
     "commands": [
       "/statuspanel"

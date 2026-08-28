@@ -14,7 +14,7 @@ CHANNEL_KEYS = {
         "🎙️ Voice Reports",
         "Completed voice session attendance and duration reports",
     ),
-    "status_channel": ("📡 Service Status", "Public status card, refreshed twice a day"),
+    "status_channel": ("📡 Service Status", "Public status card, edited twice a day"),
     "welcome_channel": ("👋 Welcome", "New member welcome cards"),
     "goodbye_channel": ("📤 Goodbye", "Leave messages"),
 }
