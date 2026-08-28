@@ -8,6 +8,7 @@ __pycache__/
 /venv/
 node_modules/
 /package-lock.json
+/deploy/lavalink/Lavalink.jar
 .claude/
 data/
 !website-3/src/data/
