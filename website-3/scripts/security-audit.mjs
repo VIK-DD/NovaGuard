@@ -7,13 +7,16 @@
 // Or against a local `wrangler dev`:
 //   npm run security:audit -- --base http://127.0.0.1:8787
 //
-// It signs in through the soft-launch gate on its own, so the site never has
-// to be opened to the public for a scan. Exit status is non-zero when a real
-// finding is attributable to us, which makes it usable in CI.
+// Before public launch it signs in through the soft-launch gate on its own.
+// After launch it detects that no routes are gated and scans them directly.
+// Exit status is non-zero when a real finding is attributable to us, which
+// makes it usable in CI on both sides of the automatic transition.
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { hasPublicLaunchPassed } from "../launch-config.js";
 
 import {
   auditBuildArtifacts,
@@ -193,6 +196,8 @@ async function main() {
   console.log("NovaGuard security audit");
   console.log(`  site : ${args.base}`);
   console.log(`  api  : ${args.api}`);
+  const publiclyLaunched = hasPublicLaunchPassed();
+  console.log(`  mode : ${publiclyLaunched ? "public release" : "pre-launch"}`);
 
   const routes = await discoverRoutes();
   const targets = [
@@ -219,16 +224,25 @@ async function main() {
   console.log(`  gated: ${gated.size} of ${targets.length} paths require signing in`);
 
   // Sign in so the audit sees the real pages instead of the login gate.
-  let gateRefused = false;
-  if (args.password) {
+  let gateFailure = "";
+  if (publiclyLaunched && gated.size > 0) {
+    gateFailure = `${gated.size} route(s) are still behind the retired launch gate`;
+    console.log(`  gate : NOT retired — ${gateFailure}`);
+  } else if (!publiclyLaunched && gated.size === 0) {
+    gateFailure = "the pre-launch gate exposed no protected routes";
+    console.log(`  gate : NOT protecting the pre-launch site — ${gateFailure}`);
+  } else if (gated.size === 0) {
+    console.log("  gate : retired; scanning the public release directly");
+  } else if (args.password) {
     const result = await signIn(args.base, args.password, jar);
     console.log(`  gate : ${result.ok ? "signed in" : `NOT signed in — ${result.reason}`}`);
     // A password was supplied and rejected. That says the audit is
     // misconfigured, not that the site is clean, and finishing green would
     // report a pass for every page the gate then turned away.
-    gateRefused = !result.ok;
+    if (!result.ok) gateFailure = result.reason;
   } else {
     console.log("  gate : no password given (set NG_AUDIT_PASSWORD to audit pages behind it)");
+    gateFailure = "NG_AUDIT_PASSWORD is missing";
   }
 
   for (const target of targets) {
@@ -324,11 +338,11 @@ async function main() {
   const actionable = findings.filter((f) => SEVERITY_RANK[f.severity] >= threshold);
 
   console.log("\n" + "-".repeat(60));
-  if (gateRefused) {
-    console.log("FAIL — the gate password was refused, so most pages went unread.");
-    console.log("       Check NG_AUDIT_PASSWORD matches the live gate, with no stray");
-    console.log("       whitespace or newline. This is a configuration fault, not a");
-    console.log("       finding about the site.");
+  if (gateFailure) {
+    console.log(`FAIL — the launch gate could not be opened: ${gateFailure}.`);
+    console.log("       Before launch, set NG_AUDIT_PASSWORD to the current password");
+    console.log("       with no stray whitespace. After launch, all former gate routes");
+    console.log("       must be public and no password is needed.");
     process.exit(1);
   }
   if (actionable.length === 0) {

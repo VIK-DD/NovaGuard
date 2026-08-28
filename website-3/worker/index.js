@@ -1,3 +1,8 @@
+import {
+  PUBLIC_LAUNCH_PATH,
+  hasPublicLaunchPassed,
+} from "../launch-config.js";
+
 // Deliberately NOT "ng_session": that name belongs to the bot API's login
 // cookie on api.novaguard.fun. They live on different hosts today, but a
 // future `Domain=.novaguard.fun` on either would make them clobber each other.
@@ -237,7 +242,7 @@ function isLegalPath(pathname) {
   );
 }
 
-function isPublicPath(pathname) {
+function isPrelaunchPublicPath(pathname) {
   return (
     pathname === "/" ||
     pathname === "/index.html" ||
@@ -258,6 +263,55 @@ function isPublicPath(pathname) {
     pathname === "/favicon.png" ||
     pathname === "/favicon.ico" ||
     pathname === "/overrides.css"
+  );
+}
+
+function isRetiredLaunchPath(pathname) {
+  return (
+    pathname === "/" ||
+    pathname === "/index.html" ||
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    ((pathname === "/coming-soon" || pathname.startsWith("/coming-soon/")) &&
+      !pathname.startsWith("/coming-soon/assets/"))
+  );
+}
+
+function retiredGateRedirect(request) {
+  const status = request.method === "GET" || request.method === "HEAD" ? 302 : 303;
+  const headers = new Headers({
+    Location: new URL(PUBLIC_LAUNCH_PATH, request.url).toString(),
+    "Cache-Control": "no-store",
+  });
+  headers.append(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+  );
+  headers.append(
+    "Set-Cookie",
+    `${CSRF_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Lax`,
+  );
+  return new Response(null, { status, headers });
+}
+
+function publicRobotsResponse() {
+  return new Response(
+    [
+      "User-agent: *",
+      "Allow: /",
+      "Disallow: /dashboard/",
+      "Disallow: /login/",
+      "Disallow: /preview/",
+      "Disallow: /maintenance/",
+      "Disallow: /api/",
+      "",
+    ].join("\n"),
+    {
+      headers: {
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    },
   );
 }
 
@@ -284,9 +338,8 @@ function isMaintenanceEnabled(env) {
 }
 
 function assetCacheControl(pathname) {
-  // These pages now sit behind the password. A `public` header on an
-  // authenticated response could be stored by a shared cache and handed to a
-  // visitor with no session, so they are never publicly cacheable.
+  // Form and private application pages must never be retained by a browser or
+  // intermediary, regardless of whether the public launch has happened.
   if (
     pathname === "/login" ||
     pathname === "/login/" ||
@@ -324,6 +377,9 @@ function assetCacheControl(pathname) {
     pathname === "/setup" ||
     pathname.startsWith("/setup/")
   ) {
+    if (hasPublicLaunchPassed()) {
+      return "public, max-age=300, stale-while-revalidate=3600";
+    }
     // `private` keeps these out of any shared cache, which is what the password
     // gate requires. Letting the visitor's own browser hold them for a minute is
     // what makes paging through /updates and going back feel instant.
@@ -912,11 +968,16 @@ async function serveMaintenancePage(request, env, state) {
 
 async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
+  const publiclyLaunched = hasPublicLaunchPassed();
 
   if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
   if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
-  if (url.pathname === "/api/auth/login") return handleLogin(request, env);
-  if (url.pathname === "/api/auth/logout") return handleLogout(request);
+  if (url.pathname === "/api/auth/login") {
+    return publiclyLaunched ? retiredGateRedirect(request) : handleLogin(request, env);
+  }
+  if (url.pathname === "/api/auth/logout") {
+    return publiclyLaunched ? retiredGateRedirect(request) : handleLogout(request);
+  }
   if (url.pathname === "/api/preview") return handlePreview(request, env);
   // Assets answer first: the maintenance page is built from them, so gating
   // them would leave it unable to render itself.
@@ -939,8 +1000,29 @@ async function handleRequest(request, env, ctx) {
     return serveMaintenancePage(request, env, { message: "" });
   }
 
+  if (publiclyLaunched) {
+    if (url.pathname === "/robots.txt") return publicRobotsResponse();
+    if (isRetiredLaunchPath(url.pathname)) return retiredGateRedirect(request);
+
+    if (url.pathname === "/maintenance") {
+      return Response.redirect(new URL("/maintenance/", request.url), 308);
+    }
+    if (url.pathname.startsWith("/dashboard/")) {
+      // During a real API outage the public marketing site still works, but
+      // the dashboard cannot. Keep the same fail-closed behavior used before
+      // launch without bringing the retired password gate back.
+      if (maintenance.enabled && !previewHolder) {
+        return serveMaintenancePage(request, env, maintenance);
+      }
+      if (url.pathname !== "/dashboard/") {
+        return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
+      }
+    }
+    return serveAsset(request, env);
+  }
+
   if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
-  if (isPublicPath(url.pathname)) return serveAsset(request, env);
+  if (isPrelaunchPublicPath(url.pathname)) return serveAsset(request, env);
 
   // A preview code stands in for the soft-launch password. The alternative
   // pushes the operator to hand out that password to show someone an update,

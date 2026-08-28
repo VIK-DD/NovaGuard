@@ -1,6 +1,10 @@
 // @vitest-environment node
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  PUBLIC_LAUNCH_AT_MS,
+  hasPublicLaunchPassed,
+} from "../launch-config.js";
 import worker from "./index.js";
 
 const env = {
@@ -47,6 +51,10 @@ function loginRequest(overrides = {}) {
 // the suite would be measuring the network, not the worker. Tests that need a
 // different answer override this with their own vi.stubGlobal.
 beforeEach(() => {
+  // The production launch is time-driven. Keep the legacy/gate tests anchored
+  // before it so the suite remains deterministic when run years from now.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-08-01T09:00:00Z"));
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubGlobal(
@@ -434,7 +442,6 @@ describe("password session", () => {
   });
 
   it("expires access after two hours", async () => {
-    vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-19T12:00:00Z"));
 
     const login = await worker.fetch(loginRequest(), env);
@@ -726,17 +733,13 @@ describe("maintenance sync", () => {
   // Advanced, never reset: afterEach restores the real clock, so a jump
   // measured from `Date.now()` would land at roughly the same instant every
   // time and leave the previous test's answer inside the 30 s freshness window.
-  let clock = Date.now();
+  let clock = Date.parse("2026-08-05T00:00:00Z");
 
   beforeEach(() => {
     // Must exceed the largest jump any single test makes (currently one hour),
     // or a test that travelled forward leaves cached state dated *after* the
     // next test's clock, and the worker reads it as fresh.
     clock += 6 * 60 * 60 * 1000;
-    // Only Date is faked. Faking the timers too would break
-    // AbortSignal.timeout inside readMaintenance, aborting every upstream call
-    // and making the fail-closed path look like the answer.
-    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(clock);
   });
 
@@ -1024,5 +1027,115 @@ describe("maintenance sync", () => {
     const body = await (await dashboardRequest(pageEnv)).text();
 
     expect(body).toContain('<p class="message"></p>');
+  });
+});
+
+describe("automatic public launch", () => {
+  let clock = PUBLIC_LAUNCH_AT_MS;
+
+  beforeEach(() => {
+    clock += 6 * 60 * 60 * 1000;
+    vi.setSystemTime(clock);
+  });
+
+  it("changes state at the exact configured instant", () => {
+    expect(hasPublicLaunchPassed(PUBLIC_LAUNCH_AT_MS - 1)).toBe(false);
+    expect(hasPublicLaunchPassed(PUBLIC_LAUNCH_AT_MS)).toBe(true);
+  });
+
+  it("retires root, login and countdown pages in favour of the official site", async () => {
+    for (const path of ["/", "/index.html", "/login/", "/coming-soon/"]) {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), env);
+      expect(response.status, path).toBe(302);
+      expect(response.headers.get("Location"), path).toBe("https://novaguard.fun/home/");
+      expect(response.headers.get("Cache-Control"), path).toBe("no-store");
+      expect(response.headers.get("Set-Cookie"), path).toContain("ng_gate=;");
+      expect(response.headers.get("Set-Cookie"), path).toContain("__Host-ng_csrf=;");
+    }
+  });
+
+  it("keeps countdown assets available for tabs opened just before launch", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/coming-soon/assets/countdown.js"),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  it("opens public pages without the retired password and makes them safely cacheable", async () => {
+    const withoutPassword = { ...env, AUTH_PASSWORD: "" };
+
+    for (const path of ["/home/", "/commands/", "/updates/"]) {
+      const response = await worker.fetch(
+        new Request(`https://novaguard.fun${path}`),
+        withoutPassword,
+      );
+      expect(response.status, path).toBe(200);
+      expect(response.headers.get("Location"), path).toBeNull();
+      expect(response.headers.get("Cache-Control"), path).toBe(
+        "public, max-age=300, stale-while-revalidate=3600",
+      );
+    }
+  });
+
+  it("keeps Discord dashboard routing available without the pre-launch gate", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/dashboard/g/1001/settings"),
+      { ...env, AUTH_PASSWORD: "" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    await expect(response.text()).resolves.toBe("/dashboard/");
+  });
+
+  it("retires the password API without checking a password or rate limit", async () => {
+    const limit = vi.fn(async () => ({ success: true }));
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/api/auth/login", { method: "POST" }),
+      { ...env, AUTH_PASSWORD: "", LOGIN_RATE_LIMITER: { limit } },
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("https://novaguard.fun/home/");
+    expect(response.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it("publishes a crawler policy for the official site", async () => {
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/robots.txt"),
+      env,
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/plain");
+    expect(body).toContain("Allow: /");
+    expect(body).toContain("Disallow: /dashboard/");
+    expect(body).toContain("Disallow: /api/");
+  });
+
+  it("keeps maintenance ahead of the automatic launch", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          maintenance: { enabled: true, message: "Release maintenance" },
+        }),
+      ),
+    );
+
+    const response = await worker.fetch(new Request("https://novaguard.fun/"), {
+      ...env,
+      STATUS_API_BASE: "https://api.example.test/api/v1",
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Location")).toBeNull();
+    await expect(response.text()).resolves.toBe("/maintenance/");
   });
 });

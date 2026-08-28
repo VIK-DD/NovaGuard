@@ -1,14 +1,17 @@
-// Soft-launch: after `astro build`, physically overwrite dist/index.html
-// (and its assets) with the legacy Coming Soon page. This avoids relying on
-// _redirects rewrite (200) rules, which some static hosts (e.g. Cloudflare
-// Workers static assets, unlike classic Pages) don't honor — only real
-// redirects (3xx) are guaranteed to work everywhere.
-//
-// Public launch: delete the `node scripts/soft-launch.mjs` step from the
-// "build" script in package.json and redeploy. See README.md.
+// Before the public launch instant, physically overwrite dist/index.html (and
+// its assets) with the preserved Coming Soon page. At and after that instant,
+// the Astro-built root redirect remains in place automatically.
 import { cp, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  PUBLIC_LAUNCH_AT,
+  hasPublicLaunchPassed,
+} from "../launch-config.js";
+import {
+  countdownBundleUsesLaunchDate,
+  injectCountdownRedirect,
+} from "./public-launch.mjs";
 
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const comingSoon = fileURLToPath(new URL("../dist/coming-soon/", import.meta.url));
@@ -24,6 +27,13 @@ const manropeLicense = fileURLToPath(
 const dmMonoLicense = fileURLToPath(
   new URL("../node_modules/@fontsource/dm-mono/LICENSE", import.meta.url),
 );
+
+if (hasPublicLaunchPassed()) {
+  console.log(
+    `soft-launch: public launch passed (${PUBLIC_LAUNCH_AT}); kept the official root page`,
+  );
+  process.exit(0);
+}
 
 if (!existsSync(comingSoon)) {
   console.error("soft-launch: dist/coming-soon not found - run `astro build` first");
@@ -67,6 +77,20 @@ for (const asset of await readdir(comingSoonAssets)) {
   }
   await writeFile(path, localCss, "utf8");
 }
+
+const scriptAssets = (await readdir(comingSoonAssets)).filter((asset) => asset.endsWith(".js"));
+const countdownScripts = await Promise.all(
+  scriptAssets.map((asset) => readFile(`${comingSoonAssets}${asset}`, "utf8")),
+);
+if (!countdownScripts.some(countdownBundleUsesLaunchDate)) {
+  throw new Error(
+    `soft-launch: countdown bundle does not use the configured launch date ${PUBLIC_LAUNCH_AT}`,
+  );
+}
+
+const comingSoonIndex = `${comingSoon}index.html`;
+const comingSoonHtml = await readFile(comingSoonIndex, "utf8");
+await writeFile(comingSoonIndex, injectCountdownRedirect(comingSoonHtml), "utf8");
 
 const entries = await readdir(comingSoon, { withFileTypes: true });
 for (const entry of entries) {

@@ -21,6 +21,13 @@ describe("privacy inventory", () => {
     ]);
   });
 
+  it("marks the temporary site gate as automatically retired at public launch", () => {
+    const gate = ESSENTIAL_COOKIES.find(({ name }) => name === "ng_gate");
+
+    expect(gate?.purpose).toContain("automatically cleared");
+    expect(gate?.when).toContain("retired at the public launch");
+  });
+
   it("covers message processing, the audit trail and optional AI transfer", () => {
     const inventory = JSON.stringify({ DATA_CATEGORIES, RETENTION_ROWS, THIRD_PARTIES });
     expect(inventory).toContain("Message content");

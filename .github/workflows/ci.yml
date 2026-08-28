@@ -97,7 +97,7 @@ jobs:
       - name: Test suite
         run: npx vitest run
 
-      # build:launch runs the archive sync first; it fails soft when the bot
-      # API is unreachable from CI, so the committed archive is what gets baked.
+      # build:launch verifies the permanent public-root artifact independently
+      # from the date-aware Coming Soon overlay used by production deploys.
       - name: Type-check and build
         run: npm run build:launch

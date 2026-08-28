@@ -2,7 +2,8 @@
 
 Editorial landing page and administration dashboard built with Astro 7 and a
 React 19 dashboard island. The site exports to static files and is served by a
-Cloudflare Worker that protects private routes with a shared password.
+Cloudflare Worker that handles the automatic public launch, maintenance state,
+security headers and static routing.
 
 ## Develop
 
@@ -25,11 +26,13 @@ npm test                  # API client and configuration-form tests
 npm run build             # static Astro export into dist/
 ```
 
-`npm run build` runs the soft-launch step after the Astro export. It copies
-the preserved Coming Soon page onto `dist/index.html`, while the full landing
-remains available at `/home/`.
+`npm run build` reads the single launch instant in `launch-config.js`. Before
+that instant it copies the preserved Coming Soon page onto `dist/index.html`;
+afterwards it keeps the permanent root redirect to `/home/`. The Coming Soon
+artifact also redirects an already-open browser tab as soon as the countdown
+reaches zero.
 
-To export the full landing at `/` without the Coming Soon override:
+To verify the permanent public-root artifact without the pre-launch overlay:
 
 ```bash
 npm run build:launch
@@ -37,13 +40,15 @@ npm run build:launch
 
 ## Deploy to Cloudflare
 
-The Worker serves `dist/`, validates the signed password cookie, and sends
-unauthenticated visitors to `/login/`. The root Coming Soon page, legal notices,
-and their assets remain public. Password submissions are capped by the
-`LOGIN_RATE_LIMITER` binding configured in `wrangler.jsonc`; login fails closed
-if that binding is unavailable.
+The Worker serves `dist/` and uses the same timestamp as the build. Before the
+launch it validates the temporary signed password cookie. At the launch instant
+it redirects `/`, `/login/` and `/coming-soon/` to `/home/`, retires the password
+API, clears old gate cookies and opens the marketing pages. The dashboard still
+uses its separate Discord OAuth session, and maintenance mode stays available.
+Pre-launch password submissions are capped by the `LOGIN_RATE_LIMITER` binding.
 
-Set the password once, then deploy:
+Keep `AUTH_PASSWORD` configured as an internal signing secret for maintenance
+preview cookies (and for the temporary gate until launch), then deploy:
 
 ```bash
 npx wrangler secret put AUTH_PASSWORD
@@ -59,8 +64,8 @@ Inspect them from Cloudflare Workers → NovaGuard → Observability, or locally
 npx wrangler tail novaguard --status error
 ```
 
-Protected routes can be temporarily replaced with the update page by setting the
-Worker variable `MAINTENANCE_MODE`.
+Site routes can be temporarily replaced with the maintenance page by setting
+the Worker variable `MAINTENANCE_MODE`.
 
 ```bash
 npx wrangler secret put MAINTENANCE_MODE
@@ -75,12 +80,12 @@ npx wrangler secret put MAINTENANCE_MODE
 ```
 
 Accepted enabled values are `1`, `true`, `on`, `enabled`, `protected` and
-`private`. When enabled, private routes serve `/maintenance/` before the
-password gate. The privacy policy, terms and server-admin notice remain
-available.
+`private`. When enabled, site routes serve `/maintenance/` before the launch
+redirect or former password gate. The privacy policy, terms and server-admin
+notice remain available.
 
-Cloudflare Access applications must be disabled for this hostname because the
-custom Worker performs the access check.
+Cloudflare Access applications must remain disabled for the public hostname or
+they would reintroduce a site-wide sign-in after the automatic launch.
 
 Bot-side requirements:
 
@@ -96,6 +101,7 @@ src/components/         Astro landing components and React visual islands
 src/app/                existing dashboard application and TanStack Router
 src/lib/api/            typed API client and Zod schemas
 public/coming-soon/     preserved legacy page; do not edit
-worker/                 Cloudflare password gate and static asset handler
-scripts/soft-launch.mjs root Coming Soon copy step
+launch-config.js        one public-launch timestamp and destination
+worker/                 Cloudflare launch, maintenance and static asset handler
+scripts/soft-launch.mjs date-aware Coming Soon overlay
 ```

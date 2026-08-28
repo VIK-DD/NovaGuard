@@ -57,8 +57,8 @@ export const ESSENTIAL_COOKIES = [
   {
     name: "ng_gate",
     lifetime: "2 hours",
-    purpose: "Opens the private pre-launch website after the correct access password is entered.",
-    when: "Private launch gate only",
+    purpose: "Opened the temporary pre-launch website after the correct access password was entered. It is automatically cleared when the public launch begins.",
+    when: "Pre-launch only; retired at the public launch",
   },
   {
     name: "ng_preview",

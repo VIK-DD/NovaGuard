@@ -50,12 +50,9 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
-      # Must be the same build the maintainer runs locally. `build:launch`
-      # skips scripts/soft-launch.mjs, and there is no src/pages/index.astro -
-      # the site's root page exists *only* because soft-launch copies the
-      # Coming Soon page onto dist/index.html. Deploying without it publishes
-      # a site whose front door is a 404, silently replacing a good local
-      # deploy on the next push to main.
+      # This one build command chooses the correct root artifact from the
+      # shared launch timestamp: Coming Soon before it, the official redirect
+      # afterwards. The Worker performs the exact same transition at runtime.
       - name: Build
         run: npm run build
 
@@ -72,21 +69,12 @@ jobs:
       # route discovery find all sixteen pages instead of the five it can name
       # without one, and network reach to the site it has just published.
       #
-      # The audit signs in through the soft-launch gate itself, so scanning
-      # never requires opening the site to the public.
+      # Before launch the audit signs in through the temporary gate. After
+      # launch it detects the public routes and scans them without a password.
       - name: Wait for the edge to serve the new version
         run: sleep 20
 
       - name: Security audit
         env:
           NG_AUDIT_PASSWORD: ${{ secrets.NG_AUDIT_PASSWORD }}
-        run: |
-          # Without the password every gated page comes back unaudited and the
-          # run would finish green having read almost nothing. A missing secret
-          # is a broken check, not a clean site.
-          if [ -z "$NG_AUDIT_PASSWORD" ]; then
-            echo "::error::NG_AUDIT_PASSWORD is not set, so the gated pages cannot be audited."
-            echo "Add it under Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
-          npm run security:audit
+        run: npm run security:audit
