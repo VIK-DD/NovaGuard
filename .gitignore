@@ -5,7 +5,9 @@
 __pycache__/
 .venv/
 .venv-mac/
+/venv/
 node_modules/
+/package-lock.json
 .claude/
 data/
 !website-3/src/data/
