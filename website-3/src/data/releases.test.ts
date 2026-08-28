@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import archive from "./updates-archive.json";
 import {
   ALPHA_CUTOFF_ISO,
+  ALPHA_PHASE,
   BETA_PHASE,
+  STABLE_PHASE,
   UPDATES_PER_VERSION,
   alphaSlotSizes,
   assignReleases,
@@ -127,12 +129,12 @@ describe("phase boundary", () => {
   });
 });
 
-describe("open beta", () => {
-  const beta = (releases: Release[]) =>
-    assignReleases(releases).filter((item) => item.phase === BETA_PHASE);
+describe("public version cycle", () => {
+  const postAlpha = (releases: Release[]) =>
+    assignReleases(releases).filter((item) => item.phase !== ALPHA_PHASE);
 
   it("starts at 2.0", () => {
-    expect(beta([...history(31), betaEntry(1, [FEATURE])])[0].release).toBe("2.0");
+    expect(postAlpha([...history(31), betaEntry(1, [FEATURE])])[0].release).toBe("2.0");
   });
 
   it("advances after the agreed number of significant updates", () => {
@@ -140,7 +142,7 @@ describe("open beta", () => {
       ...history(31),
       ...Array.from({ length: UPDATES_PER_VERSION + 1 }, (_, i) => betaEntry(i + 1, [FEATURE])),
     ];
-    const stamped = beta(releases);
+    const stamped = postAlpha(releases);
 
     expect(stamped.slice(0, UPDATES_PER_VERSION).map((i) => i.release)).toEqual(
       Array(UPDATES_PER_VERSION).fill("2.0"),
@@ -148,7 +150,7 @@ describe("open beta", () => {
     expect(stamped[UPDATES_PER_VERSION].release).toBe("2.1");
   });
 
-  it("continues from 2.9 to 2.10 until a deliberate major release", () => {
+  it("rolls from 2.9 to the official 3.0 release", () => {
     const releases = [
       ...history(31),
       ...Array.from({ length: UPDATES_PER_VERSION * 10 + 1 }, (_, i) =>
@@ -156,7 +158,24 @@ describe("open beta", () => {
       ),
     ];
 
-    expect(beta(releases).at(-1)?.release).toBe("2.10");
+    const stamped = postAlpha(releases);
+    expect(stamped.at(-2)?.release).toBe("2.9");
+    expect(stamped.at(-1)?.release).toBe("3.0");
+    expect(stamped.at(-1)?.phase).toBe(STABLE_PHASE);
+  });
+
+  it("rolls from 3.9 to 4.0", () => {
+    const releases = [
+      ...history(31),
+      ...Array.from({ length: UPDATES_PER_VERSION * 20 + 1 }, (_, i) =>
+        betaEntry(i + 1, [FEATURE]),
+      ),
+    ];
+    const stamped = postAlpha(releases);
+
+    expect(stamped.at(-2)?.release).toBe("3.9");
+    expect(stamped.at(-1)?.release).toBe("4.0");
+    expect(stamped.at(-1)?.phase).toBe(STABLE_PHASE);
   });
 
   it("lets ordinary work fill a version too", () => {
@@ -168,7 +187,7 @@ describe("open beta", () => {
       ...Array.from({ length: 20 }, (_, index) => betaEntry(index + 1, [CHORE])),
     ];
 
-    expect([...new Set(beta(releases).map((item) => item.release))].sort()).toEqual([
+    expect([...new Set(postAlpha(releases).map((item) => item.release))].sort()).toEqual([
       "2.0",
       "2.1",
       "2.2",
@@ -177,7 +196,7 @@ describe("open beta", () => {
   });
 
   it("still publishes small changes", () => {
-    const stamped = beta([...history(31), betaEntry(1, [CHORE])]);
+    const stamped = postAlpha([...history(31), betaEntry(1, [CHORE])]);
 
     expect(stamped).toHaveLength(1);
     expect(stamped[0].significant).toBe(false);
@@ -216,14 +235,14 @@ describe("grouping", () => {
 
   it("survives an empty archive", () => {
     expect(releaseGroups([])).toEqual([]);
-    expect(currentRelease([]).version).toBe("2.0");
+    expect(currentRelease([]).version).toBe("3.0");
   });
 
   it("never reports closed alpha as the current release", () => {
     const alphaOnly = history(31);
 
     expect(releaseGroups(alphaOnly).every((group) => !group.current)).toBe(true);
-    expect(currentRelease(alphaOnly)).toEqual({ version: "2.0", phaseLabel: "Open Beta" });
+    expect(currentRelease(alphaOnly)).toEqual({ version: "3.0", phaseLabel: "" });
   });
 });
 
@@ -275,11 +294,20 @@ describe("the real archive", () => {
     expect(placed).toHaveLength(releases.length);
   });
 
-  it("never puts a pre-cutoff update in open beta or a post-cutoff update in alpha", () => {
+  it("keeps alpha before the cutoff and assigns later phases by public version", () => {
     for (const item of assignReleases(releases)) {
-      const expectedPhase = item.created_at < ALPHA_CUTOFF_ISO ? "alpha" : BETA_PHASE;
+      const expectedPhase =
+        item.created_at < ALPHA_CUTOFF_ISO
+          ? ALPHA_PHASE
+          : Number(item.release.split(".")[0]) < 3
+            ? BETA_PHASE
+            : STABLE_PHASE;
       expect(item.phase).toBe(expectedPhase);
     }
+  });
+
+  it("has reached the official 3.0 release without a public phase label", () => {
+    expect(currentRelease(releases)).toEqual({ version: "3.0", phaseLabel: "" });
   });
 
   it("finds real significant updates in it", () => {

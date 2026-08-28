@@ -50,13 +50,6 @@ const totalUpdates = (archive as Release[]).length;
                 class="mt-1 min-w-36 font-display text-2xl font-semibold tabular-nums text-ink"
               >
                 <span data-current-release-version>&mdash;</span>
-                <span
-                  data-current-release-phase
-                  hidden
-                  class="ml-2 align-middle text-xs font-medium tracking-wider text-primary uppercase"
-                >
-                  Open Beta
-                </span>
               </dd>
             </div>
             <div>
@@ -109,15 +102,12 @@ const totalUpdates = (archive as Release[]).length;
 <script is:inline>
   (() => {
     const versionNode = document.querySelector("[data-current-release-version]");
-    const phaseNode = document.querySelector("[data-current-release-phase]");
     const note = document.querySelector("[data-release-sync-note]");
     const getLiveStats = window.__ngGetLiveStats;
-    if (!versionNode || !phaseNode || typeof getLiveStats !== "function") return;
+    if (!versionNode || typeof getLiveStats !== "function") return;
     getLiveStats()
       .then((stats) => {
         versionNode.textContent = stats.version;
-        phaseNode.textContent = stats.phase_label || "Open Beta";
-        phaseNode.hidden = false;
         const matchingCard = document.querySelector(
           `[data-release-version="${CSS.escape(stats.version)}"]`,
         );
@@ -129,7 +119,7 @@ const totalUpdates = (archive as Release[]).length;
         if (!matchingCard && note) {
           note.hidden = false;
           note.textContent =
-            `Release ${stats.version} ${stats.phase_label || "Open Beta"} is live. ` +
+            `Release ${stats.version} is live. ` +
             "Its detailed changelog is syncing into the archive.";
         }
       })

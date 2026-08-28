@@ -83,7 +83,7 @@ class SystemCardTests(unittest.TestCase):
         embed = system_presenters.build_botinfo_embed(
             bot_name="NovaGuard",
             avatar_url="https://example.com/bot.png",
-            release={"version": "2.8", "phase_label": "Open Beta"},
+            release={"version": "3.0", "phase_label": ""},
             build_count=42,
             server_count=6,
             total_members=12_345,
@@ -97,7 +97,8 @@ class SystemCardTests(unittest.TestCase):
         fields = {field.name: field.value for field in embed.fields}
 
         self.assertEqual(embed.title, "🤖 NovaGuard")
-        self.assertIn("2.8", embed.description)
+        self.assertIn("3.0", embed.description)
+        self.assertNotIn("Open Beta", embed.description)
         self.assertIn("12,345", fields["🌍 Reach"])
         self.assertIn("81", fields["🧩 Commands"])
         self.assertIn("Python `3.14.0`", fields["🐍 Runtime"])
@@ -137,7 +138,7 @@ class SystemCardTests(unittest.TestCase):
             uptime=timedelta(hours=4),
             lag={"label": "Healthy", "details": "latest 3ms • avg 2ms • peak 8ms"},
             maintenance_active=False,
-            release={"version": "2.8", "phase_label": "Open Beta"},
+            release={"version": "3.0", "phase_label": ""},
             command_count=81,
             project_label="VIK-DD/NovaGuard",
         )
@@ -147,6 +148,7 @@ class SystemCardTests(unittest.TestCase):
         self.assertEqual(embed.color.value, Palette.SUCCESS)
         self.assertIn("Healthy", fields["Event Loop"])
         self.assertIn("81", fields["Build"])
+        self.assertNotIn("Open Beta", fields["Build"])
         self.assertIn("VIK-DD/NovaGuard", fields["Project"])
         self.assertIn("Streaming", fields["Project"])
 

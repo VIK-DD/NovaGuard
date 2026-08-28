@@ -68,14 +68,14 @@ class HelpEmbedTests(unittest.TestCase):
 
         with mock.patch(
             "core.help_ui.current_project_release",
-            return_value={"version": "2.6", "phase_label": "Open Beta"},
+            return_value={"version": "3.0", "phase_label": ""},
         ):
             embed = build_help_home_embed(bot)
 
         self.assertIn("🧪 **Testing** `2`", embed.description)
         self.assertEqual(
             embed.fields[0].value,
-            "Categories: `1` • Commands: `2` • Version: `v2.6 Open Beta`",
+            "Categories: `1` • Commands: `2` • Version: `v3.0`",
         )
 
 

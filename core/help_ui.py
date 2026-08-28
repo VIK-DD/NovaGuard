@@ -3,7 +3,7 @@
 import discord
 from discord import app_commands
 
-from .release_versions import current_project_release
+from .release_versions import current_project_release, public_release_label
 from .theme import Palette, brand_footer, make_embed
 from .utils import truncate
 
@@ -61,7 +61,7 @@ def build_help_home_embed(bot):
         name="Quick Stats",
         value=(
             f"Categories: `{len(bot.cogs)}` • Commands: `{total}` • "
-            f"Version: `v{release['version']} {release['phase_label']}`"
+            f"Version: `{public_release_label(release, prefix='v')}`"
         ),
         inline=False,
     )

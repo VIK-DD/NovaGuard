@@ -13,7 +13,7 @@ const inviteHref = publicInviteUrl();
   <div class="mx-auto grid max-w-6xl gap-8 px-5 py-14 sm:gap-10 sm:px-6 sm:py-28 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-6">
     <div>
       <p data-hero-item class="font-mono text-xs tracking-[0.14em] text-primary uppercase">
-        NovaGuard — <span data-public-release>v{release.version} {release.phaseLabel}</span>
+        NovaGuard — <span data-public-release>v{release.version}</span>
       </p>
       <h1
         data-hero-item
@@ -55,8 +55,7 @@ const inviteHref = publicInviteUrl();
     if (!target || typeof getLiveStats !== "function") return;
     getLiveStats()
       .then((stats) => {
-        const release = stats.release_label ?? `${stats.version} ${stats.phase_label ?? "Open Beta"}`;
-        target.textContent = `v${release}`;
+        target.textContent = `v${stats.version}`;
       })
       .catch(() => {});
   })();

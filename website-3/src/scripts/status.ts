@@ -2,8 +2,6 @@ const OK_GREEN = "#3d8a57";
 
 type StatusStats = {
   version: string;
-  phase_label?: string;
-  release_label?: string;
   codename: string;
   guilds: number;
   members: number;
@@ -83,7 +81,7 @@ const applySnapshot = (snapshot: StatusSnapshot) => {
   );
   setDot(allGood ? OK_GREEN : "hsl(var(--primary))");
   set("status", allGood ? "Operational" : "Degraded");
-  set("version", stats.release_label ?? `${stats.version} · ${stats.phase_label ?? "Open Beta"}`);
+  set("version", stats.version);
   set("uptime", fmtUptime(uptime));
   set("guilds", fmt(stats.guilds));
   set("members", fmt(stats.members));

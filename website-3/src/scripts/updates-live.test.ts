@@ -22,8 +22,8 @@ describe("style scope on cards built at runtime", () => {
   function group(version: string) {
     return {
       version,
-      phase: "open-beta",
-      phaseLabel: "Open Beta",
+      phase: "stable",
+      phaseLabel: "",
       updates: [],
       updateCount: 0,
       significantCount: 0,
@@ -97,8 +97,8 @@ describe("the live feed request", () => {
 function group(version: string, current: boolean): ReleaseGroup {
   return {
     version,
-    phase: "open-beta",
-    phaseLabel: "Open Beta",
+    phase: "stable",
+    phaseLabel: "",
     updates: [],
     updateCount: 0,
     significantCount: 0,
@@ -117,7 +117,7 @@ function populatedGroup(version: string, current: boolean): ReleaseGroup {
         created_at: "2026-08-12T00:35:00+00:00",
         highlights: ["Native release card"],
         release: version,
-        phase: "open-beta",
+        phase: "stable",
         significant: true,
       },
     ],
@@ -134,14 +134,14 @@ describe("live release cards", () => {
     delete document.documentElement.dataset.currentRelease;
   });
 
-  it("styles phase badges through current state, not unconditionally", () => {
+  it("does not render lifecycle badges on release cards", () => {
     const historic = versionCard(group("2.1", false));
     const current = versionCard(group("2.2", true));
 
     expect(historic.hasAttribute("data-current-release")).toBe(false);
     expect(current.hasAttribute("data-current-release")).toBe(true);
-    expect(historic.querySelector("[data-release-phase-badge]")).not.toBeNull();
-    expect(current.querySelector("[data-release-phase-badge]")).not.toBeNull();
+    expect(historic.querySelector("[data-release-phase-badge]")).toBeNull();
+    expect(current.querySelector("[data-release-phase-badge]")).toBeNull();
   });
 
   it("builds a complete expandable card for a version added live", () => {

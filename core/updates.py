@@ -16,7 +16,7 @@ import aiohttp
 import discord
 
 from .config import BASE_DIR, UPDATE_STATE_FILE, github_config
-from .release_versions import current_project_release
+from .release_versions import current_project_release, public_release_label
 from .guild_config import resolve_configured_channels
 from .storage import load_json_file, save_json_file
 from .theme import Palette
@@ -425,7 +425,7 @@ def summarize_changes(old_files, new_files, has_history=False):
         else:
             command_names = sorted(extract_all_commands(new_files))
             release = current_project_release()
-            summary = [f"Initial tracked release for v{release['version']} {release['phase_label']}"]
+            summary = [f"Initial tracked release for {public_release_label(release, prefix='v')}"]
             if command_names:
                 summary.append("Available slash commands: " + format_command_list(command_names))
             if extract_all_stream_texts(new_files):
@@ -627,7 +627,7 @@ def public_release_text(update_history=None, latest=None):
                 "latest": latest,
             }
         )
-    return f"v{release['version']} {release['phase_label']}"
+    return public_release_label(release, prefix="v")
 
 
 def clamp(text, limit=1024):

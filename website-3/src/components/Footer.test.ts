@@ -46,6 +46,7 @@ describe("Footer", () => {
     expect(footer).toContain('href="https://discord.gg/CbDy3GyhWm"');
     expect(footer).toContain('href="https://github.com/VIK-DD/NovaGuard"');
     expect(footer).toContain("Powerful Discord moderation and utilities");
+    expect(footer).not.toContain("Open Beta");
   });
 
   it("does not advertise social accounts that do not exist yet", () => {

@@ -74,7 +74,7 @@ from .maintenance import (
     load_maintenance_state,
     verify_preview_code,
 )
-from .release_versions import current_project_release
+from .release_versions import current_project_release, public_release_label
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
@@ -864,7 +864,7 @@ class WebServer:
                 "version": release["version"],
                 "phase": release["phase"],
                 "phase_label": release["phase_label"],
-                "release_label": f'{release["version"]} {release["phase_label"]}',
+                "release_label": public_release_label(release),
                 "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "guilds": len(guilds),
@@ -1160,7 +1160,7 @@ class WebServer:
                 "version": release["version"],
                 "phase": release["phase"],
                 "phase_label": release["phase_label"],
-                "release_label": f'{release["version"]} {release["phase_label"]}',
+                "release_label": public_release_label(release),
                 "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "uptime_seconds": uptime,

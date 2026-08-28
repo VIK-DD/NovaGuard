@@ -21,7 +21,7 @@ from core.error_digest import send_error_digest
 from core.config_check import report_config
 from core.github_api import github_api
 from core.maintenance import load_maintenance_state, user_can_bypass_maintenance
-from core.release_versions import current_project_release
+from core.release_versions import current_project_release, public_release_label
 from core.theme import Palette, brand_footer, make_embed
 
 log = logging.getLogger(__name__)
@@ -161,7 +161,7 @@ class DevBot(commands.Bot):
         self.command_sync_task = asyncio.create_task(self.sync_commands_later())
         release = current_project_release()
         log.info(
-            f"v{release['version']} {release['phase_label']} • "
+            f"{public_release_label(release, prefix='v')} • "
             f"loaded {len(COGS)} cogs • command sync scheduled"
         )
 
@@ -185,7 +185,7 @@ class DevBot(commands.Bot):
 
         release = current_project_release()
         log.info(
-            f"v{release['version']} {release['phase_label']} • "
+            f"{public_release_label(release, prefix='v')} • "
             f"synced {len(synced)} slash commands • {scope}"
         )
 

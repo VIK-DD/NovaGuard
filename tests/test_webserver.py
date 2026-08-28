@@ -365,8 +365,10 @@ async def main():
             await check(
                 "stats expose canonical public release",
                 r.status == 200
-                and data.get("version") == "2.0"
-                and data.get("phase_label") == "Open Beta"
+                and data.get("version") == "3.0"
+                and data.get("phase") == "stable"
+                and data.get("phase_label") == ""
+                and data.get("release_label") == "3.0"
                 and {"release_label", "runtime_version", "guilds", "commands"} <= set(data),
             )
 

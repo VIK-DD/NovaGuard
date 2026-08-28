@@ -161,8 +161,8 @@ def merged_update_feed(limit=DEFAULT_LIMIT, archive=None, history=None, latest=N
     feed = [dict(entry, build=total - index) for index, entry in enumerate(feed)]
 
     # Stamp the public release each entry belongs to. A build number is an
-    # internal counter; "2.0 Open Beta" is what the site, the status page and
-    # the dashboard all show - and every one of them was free to invent its
+    # internal counter; the public version is what the site, status page and
+    # dashboard all show - and every one of them was free to invent its
     # own answer while this was computed separately in each place.
     #
     # Done before the limit for the same reason as the renumbering above:

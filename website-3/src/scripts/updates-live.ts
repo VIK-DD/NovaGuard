@@ -11,8 +11,8 @@
 // this only appends what is missing.
 //
 // Re-grouping the merged set is safe because the phase boundary is a frozen
-// date: new entries always land in open beta, never shuffling the alpha
-// numbering a visitor may have bookmarked, and beta versions fill in
+// date: new entries enter the current post-alpha cycle without shuffling the
+// alpha numbering a visitor may have bookmarked, and public versions fill in
 // chronological order so existing assignments cannot move either.
 import { releaseGroups, type ReleaseGroup, type StampedRelease } from "../data/releases";
 import archive from "../data/updates-archive.json";
@@ -141,21 +141,12 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
     "flex cursor-pointer list-none items-center gap-4 px-5 py-4 outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:px-6";
 
   const left = el("span", "flex min-w-0 flex-1 items-center gap-3");
-  const phaseBadge = el(
-    "span",
-    "shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase",
-  );
-  phaseBadge.dataset.releasePhaseBadge = "";
-  const phase = el("span", "", group.phaseLabel);
-  phase.dataset.releasePhase = "";
-  phaseBadge.append(phase);
   left.append(
     el(
       "span",
       "font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl",
       group.version,
     ),
-    phaseBadge,
   );
 
   const meta = el("span", "hidden text-right text-xs leading-relaxed text-ink-faint md:block");

@@ -417,10 +417,10 @@ function dashboardPayload(id: string): Json | null {
   return {
     status: {
       ready: true,
-      version: "2.0",
-      phase: "open-beta",
-      phase_label: "Open Beta",
-      release_label: "2.0 Open Beta",
+      version: "3.0",
+      phase: "stable",
+      phase_label: "",
+      release_label: "3.0",
       runtime_version: "3.1.0",
       codename: "Nova",
       uptime_seconds: 142_331,

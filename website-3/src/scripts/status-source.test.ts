@@ -12,8 +12,9 @@ describe("status version hydration", () => {
     expect(`${page}\n${runtime}`).not.toContain("PUBLIC_RELEASE");
   });
 
-  it("replaces the pending state with the canonical live release label", () => {
-    expect(runtime).toContain("stats.release_label");
+  it("replaces the pending state with the canonical version only", () => {
+    expect(runtime).toContain('set("version", stats.version)');
+    expect(runtime).not.toContain("Open Beta");
     expect(runtime).toContain('set("version", "Unavailable")');
   });
 });

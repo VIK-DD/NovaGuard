@@ -138,7 +138,7 @@ function SystemStatusPanel({ data, setupPercent }: { data: Dashboard; setupPerce
           <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2">
             <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Version</p>
             <p className="mt-1 truncate text-sm font-semibold">
-              v{data.status.version}{data.status.phase_label ? ` · ${data.status.phase_label}` : ""}
+              v{data.status.version}
             </p>
           </div>
 
@@ -478,7 +478,7 @@ export default function GuildOverview() {
                         predates the API returning a release. */}
                     <p className="text-sm font-medium">
                       {update.release
-                        ? `Version ${update.release}${update.phase_label ? ` · ${update.phase_label}` : ""}`
+                        ? `Version ${update.release}`
                         : update.build
                           ? `Update #${update.build}`
                           : "Update"}

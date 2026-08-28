@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from .health_report import clamp_field, fail_line, info_line, ok_line, warn_line
+from .release_versions import public_release_label
 from .theme import Palette, brand_footer, make_embed
 from .utils import format_timedelta
 
@@ -102,7 +103,7 @@ def build_botinfo_embed(
 ):
     embed = make_embed(
         f"🤖 {bot_name}",
-        f"v`{release['version']}` **{release['phase_label']}** — the slash-command era.",
+        f"`{public_release_label(release, prefix='v')}` — the slash-command era.",
         color=Palette.PRIMARY,
     )
     if avatar_url:
@@ -190,7 +191,7 @@ def build_public_status_embed(
     embed.add_field(
         name="Build",
         value=(
-            f"v`{release['version']}` **{release['phase_label']}**\n"
+            f"`{public_release_label(release, prefix='v')}`\n"
             f"Slash commands: `{command_count}`"
         ),
         inline=True,
