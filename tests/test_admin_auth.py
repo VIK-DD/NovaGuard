@@ -1,9 +1,12 @@
-"""Tests for the admin key, unlock sessions and guess throttling."""
+"""Tests for the admin key, unlock sessions, guess throttling and owner ids."""
 
+import asyncio
 import os
 import sys
 import unittest
 from unittest import mock
+
+import discord
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,6 +21,7 @@ from core.admin_auth import (  # noqa: E402
     looks_like_key,
     verify_key,
 )
+from core.maintenance import user_can_bypass_maintenance  # noqa: E402
 
 
 class FakeClock:
@@ -212,6 +216,47 @@ class OwnerIdTests(unittest.TestCase):
     def test_junk_entries_add_nobody(self):
         with mock.patch.dict(os.environ, {"BOT_OWNER_IDS": "abc, , 444, <@555>"}):
             self.assertEqual(env_owner_ids(), {"444"})
+
+
+class OwnerIdsAreActuallyConsultedTests(unittest.TestCase):
+    """BOT_OWNER_IDS was parsed, documented and tested - and never read.
+
+    env_owner_ids() existed with these tests above it while no authorization
+    decision anywhere called it, so an operator who set BOT_OWNER_IDS for a
+    co-owner or a break-glass account got a control that silently did nothing.
+    These tests are about the wiring, not the parsing.
+    """
+
+    class FakeUser:
+        def __init__(self, ident):
+            self.id = ident
+
+    class UnreachableBot:
+        """application_info() failing is exactly when break-glass matters."""
+
+        async def application_info(self):
+            raise discord.HTTPException(mock.Mock(status=503), "unavailable")
+
+    def test_a_listed_id_is_an_owner_even_when_discord_is_unreachable(self):
+        with mock.patch.dict(os.environ, {"BOT_OWNER_IDS": "777"}):
+            allowed = asyncio.run(
+                user_can_bypass_maintenance(self.UnreachableBot(), self.FakeUser(777))
+            )
+        self.assertTrue(allowed)
+
+    def test_an_unlisted_id_is_still_refused(self):
+        with mock.patch.dict(os.environ, {"BOT_OWNER_IDS": "777"}):
+            allowed = asyncio.run(
+                user_can_bypass_maintenance(self.UnreachableBot(), self.FakeUser(778))
+            )
+        self.assertFalse(allowed)
+
+    def test_an_empty_list_grants_nobody(self):
+        with mock.patch.dict(os.environ, {"BOT_OWNER_IDS": ""}):
+            allowed = asyncio.run(
+                user_can_bypass_maintenance(self.UnreachableBot(), self.FakeUser(777))
+            )
+        self.assertFalse(allowed)
 
 
 if __name__ == "__main__":

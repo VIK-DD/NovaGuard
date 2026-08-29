@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 import discord
 
-from .admin_auth import hash_key, verify_key
+from .admin_auth import env_owner_ids, hash_key, verify_key
 from .config import BASE_DIR
 
 MAINTENANCE_STATE_FILE = BASE_DIR / "data" / "maintenance.json"
@@ -101,7 +101,23 @@ def verify_preview_code(code):
 
 
 async def user_can_bypass_maintenance(bot, user):
-    """Allow only the application owner or team members to bypass maintenance."""
+    """Whether this user counts as the bot's owner.
+
+    The Discord application owner (or a member of its team) is the primary
+    answer. BOT_OWNER_IDS is consulted first because it is the break-glass
+    path: it has to work when application_info() cannot be reached, which is
+    exactly the moment someone needs it.
+
+    That env list was dead for a long time - documented in .env.example, given
+    its own tests, and then never consulted by any authorization decision, so
+    an operator who set it for a co-owner got a control that silently did
+    nothing. It grants no more than the Discord owner already has, and the
+    admin key still applies on top of it for every privileged command; anyone
+    who can read .env holds the bot token anyway.
+    """
+    if str(getattr(user, "id", "")) in env_owner_ids():
+        return True
+
     app_info = getattr(bot, "_maintenance_app_info", None)
     if app_info is None:
         try:
