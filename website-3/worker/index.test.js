@@ -275,7 +275,7 @@ describe("password session", () => {
     const login = await worker.fetch(loginRequest(), env);
     const cookie = login.headers.get("set-cookie").split(";")[0];
 
-    for (const path of ["/commands/", "/setup/", "/vote/"]) {
+    for (const path of ["/commands/", "/setup/", "/vote/", "/faq/"]) {
       const response = await worker.fetch(
         new Request(`https://novaguard.fun${path}`, { headers: { cookie } }),
         env,
@@ -1067,7 +1067,7 @@ describe("automatic public launch", () => {
   it("opens public pages without the retired password and makes them safely cacheable", async () => {
     const withoutPassword = { ...env, AUTH_PASSWORD: "" };
 
-    for (const path of ["/home/", "/commands/", "/updates/", "/vote/"]) {
+    for (const path of ["/home/", "/commands/", "/updates/", "/vote/", "/faq/"]) {
       const response = await worker.fetch(
         new Request(`https://novaguard.fun${path}`),
         withoutPassword,

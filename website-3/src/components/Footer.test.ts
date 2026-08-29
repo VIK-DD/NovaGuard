@@ -45,6 +45,7 @@ describe("Footer", () => {
     expect(footer).toContain('aria-label="Community"');
     expect(footer).toContain('href="https://discord.gg/CbDy3GyhWm"');
     expect(footer).toContain('href="/vote"');
+    expect(footer).toContain('href="/faq"');
     expect(footer).toContain("Vote on Top.gg");
     expect(footer).toContain("Powerful Discord moderation and utilities");
     expect(footer).not.toContain("Open Beta");

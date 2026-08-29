@@ -1,0 +1,190 @@
+---
+import Base from "../layouts/Base.astro";
+import Footer from "../components/Footer.astro";
+import Nav from "../components/Nav.astro";
+import { FAQ_ITEM_COUNT, FAQ_SECTIONS } from "../data/faq";
+---
+
+<Base
+  title="Frequently asked questions — NovaGuard"
+  description="Straight answers about NovaGuard setup, features, permissions, privacy, backups and support."
+>
+  <Nav />
+  <main class="mx-auto max-w-6xl px-5 py-12 sm:px-6 sm:py-20">
+    <header class="max-w-3xl">
+      <p class="font-mono text-xs tracking-[0.14em] text-primary uppercase">FAQ</p>
+      <h1 class="font-display mt-4 text-4xl leading-[1.05] font-semibold tracking-tight text-ink sm:text-6xl">
+        Answers before you need them.
+      </h1>
+      <p class="mt-5 max-w-2xl text-base leading-relaxed text-ink-muted sm:text-lg">
+        Clear, practical answers about adding NovaGuard, choosing features, managing permissions
+        and understanding what happens to your community's data.
+      </p>
+    </header>
+
+    <dl
+      aria-label="NovaGuard at a glance"
+      class="mt-10 grid border-y border-line sm:grid-cols-3 sm:divide-x sm:divide-line"
+    >
+      <div class="py-5 sm:px-6 sm:first:pl-0">
+        <dt class="text-xs tracking-[0.16em] text-ink-faint uppercase">Current access</dt>
+        <dd class="font-display mt-1.5 text-lg font-semibold text-ink">Free to use</dd>
+      </div>
+      <div class="border-t border-line py-5 sm:border-t-0 sm:px-6">
+        <dt class="text-xs tracking-[0.16em] text-ink-faint uppercase">Setup approach</dt>
+        <dd class="font-display mt-1.5 text-lg font-semibold text-ink">Every module is optional</dd>
+      </div>
+      <div class="border-t border-line py-5 sm:border-t-0 sm:px-6 sm:last:pr-0">
+        <dt class="text-xs tracking-[0.16em] text-ink-faint uppercase">Answers collected</dt>
+        <dd class="font-display mt-1.5 text-lg font-semibold text-ink">{FAQ_ITEM_COUNT} practical topics</dd>
+      </div>
+    </dl>
+
+    <div class="mt-14 grid gap-12 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-20">
+      <aside class="lg:sticky lg:top-28 lg:self-start">
+        <p class="text-xs tracking-[0.18em] text-ink-faint uppercase">Browse by topic</p>
+        <nav aria-label="FAQ topics" class="mt-4 flex flex-wrap gap-2 lg:grid lg:gap-1">
+          {
+            FAQ_SECTIONS.map((section) => (
+              <a
+                href={`#${section.id}`}
+                class="faq-topic inline-flex min-h-10 items-center rounded-[6px] border border-line px-3 text-sm text-ink-muted lg:border-transparent lg:px-2.5"
+              >
+                {section.label}
+              </a>
+            ))
+          }
+        </nav>
+
+        <div class="mt-8 border-l-2 border-primary pl-4">
+          <p class="text-sm font-medium text-ink">Still need a human?</p>
+          <p class="mt-1.5 text-xs leading-relaxed text-ink-muted">
+            Ask in the community server. Never share tokens, keys or private exports.
+          </p>
+          <a
+            href="https://discord.gg/CbDy3GyhWm"
+            target="_blank"
+            rel="noreferrer"
+            class="mt-3 inline-flex text-sm font-medium text-primary underline decoration-primary/40 underline-offset-4 hover:decoration-primary"
+          >
+            Open Discord
+          </a>
+        </div>
+      </aside>
+
+      <div class="min-w-0 space-y-16">
+        {
+          FAQ_SECTIONS.map((section, sectionIndex) => (
+            <section id={section.id} class="faq-section scroll-mt-28" aria-labelledby={`${section.id}-title`}>
+              <p class="font-mono text-xs tracking-[0.14em] text-primary uppercase">
+                {String(sectionIndex + 1).padStart(2, "0")}
+              </p>
+              <h2 id={`${section.id}-title`} class="font-display mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+                {section.label}
+              </h2>
+              <p class="mt-2 text-sm leading-relaxed text-ink-muted">{section.intro}</p>
+
+              <div class="mt-6 border-y border-line">
+                {section.items.map((item) => (
+                  <details class="faq-item group border-b border-line last:border-b-0">
+                    <summary class="faq-summary flex min-h-16 cursor-pointer list-none items-center justify-between gap-6 py-4 text-left marker:content-none">
+                      <span class="font-display text-base font-medium leading-snug text-ink sm:text-lg">
+                        {item.question}
+                      </span>
+                      <span
+                        class="faq-mark relative grid size-7 shrink-0 place-items-center rounded-full border border-line text-ink-muted"
+                        aria-hidden="true"
+                      >
+                        <span class="absolute h-px w-2.5 bg-current" />
+                        <span class="faq-mark-vertical absolute h-2.5 w-px bg-current" />
+                      </span>
+                    </summary>
+                    <div class="max-w-2xl pb-6 pr-10 text-sm leading-relaxed text-ink-muted sm:text-[15px]">
+                      <p>{item.answer}</p>
+                      {item.links && (
+                        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+                          {item.links.map((link) => {
+                            const external = link.href.startsWith("https://");
+                            return (
+                              <a
+                                href={link.href}
+                                target={external ? "_blank" : undefined}
+                                rel={external ? "noreferrer" : undefined}
+                                class="font-medium text-primary underline decoration-primary/40 underline-offset-4 hover:decoration-primary"
+                              >
+                                {link.label}
+                                {external ? " ↗" : " →"}
+                              </a>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          ))
+        }
+      </div>
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .faq-topic {
+    transition:
+      color 150ms ease,
+      border-color 150ms ease,
+      background-color 150ms ease;
+  }
+
+  .faq-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-summary:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 4px;
+  }
+
+  .faq-mark,
+  .faq-mark-vertical {
+    transition:
+      color 160ms ease,
+      border-color 160ms ease,
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .faq-item[open] .faq-mark {
+    border-color: hsl(var(--primary) / 0.55);
+    color: hsl(var(--primary));
+  }
+
+  .faq-item[open] .faq-mark-vertical {
+    transform: rotate(90deg);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .faq-topic:hover {
+      border-color: hsl(var(--border-strong));
+      background: hsl(var(--card));
+      color: hsl(var(--foreground));
+    }
+
+    .faq-summary:hover .faq-mark {
+      border-color: hsl(var(--border-strong));
+      color: hsl(var(--foreground));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .faq-topic,
+    .faq-mark,
+    .faq-mark-vertical {
+      transition: none;
+    }
+  }
+</style>

@@ -377,7 +377,9 @@ function assetCacheControl(pathname) {
     pathname === "/setup" ||
     pathname.startsWith("/setup/") ||
     pathname === "/vote" ||
-    pathname.startsWith("/vote/")
+    pathname.startsWith("/vote/") ||
+    pathname === "/faq" ||
+    pathname.startsWith("/faq/")
   ) {
     if (hasPublicLaunchPassed()) {
       return "public, max-age=300, stale-while-revalidate=3600";
