@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { ZodError } from "zod";
 import { ApiError } from "../lib/api/client";
+import { ZodError } from "../lib/api/zod";
 import { router } from "./router";
 import { UnsavedChangesProvider } from "./unsavedChanges";
 

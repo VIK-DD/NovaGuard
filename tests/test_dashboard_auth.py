@@ -80,6 +80,30 @@ class AuthTestCase(unittest.IsolatedAsyncioTestCase):
         self.server.rate_buckets.clear()
 
 
+class ClientAddressTests(AuthTestCase):
+    def test_direct_bind_ignores_spoofed_cloudflare_headers(self):
+        request = FakeRequest()
+        request.headers["CF-Connecting-IP"] = "198.51.100.99"
+
+        with mock.patch.object(web, "TRUST_PROXY", False):
+            self.assertEqual(self.server._client_ip(request), "203.0.113.7")
+
+    def test_trusted_loopback_proxy_uses_a_valid_cloudflare_address(self):
+        request = FakeRequest()
+        request.headers["CF-Connecting-IP"] = "2001:0db8::1"
+
+        with mock.patch.object(web, "TRUST_PROXY", True):
+            self.assertEqual(self.server._client_ip(request), "2001:db8::1")
+
+    def test_malformed_forwarded_addresses_are_never_bucket_keys(self):
+        request = FakeRequest()
+        request.headers["CF-Connecting-IP"] = "attacker-controlled-value"
+        request.headers["X-Forwarded-For"] = "also-invalid, 203.0.113.8"
+
+        with mock.patch.object(web, "TRUST_PROXY", True):
+            self.assertEqual(self.server._client_ip(request), "203.0.113.7")
+
+
 class StateGateTests(AuthTestCase):
     """Every one of these is a door that has to stay shut."""
 

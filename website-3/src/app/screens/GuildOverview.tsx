@@ -1,19 +1,12 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
+import { canonicalPublicVersion, cleanText, newestPublicVersion } from "../../data/releases";
 import { ApiError, inviteUrl } from "../../lib/api/client";
 import type { Dashboard } from "../../lib/api/schemas";
 import Icon from "../components/Icon";
 import { dashboardModuleKey } from "../moduleCatalog";
 import { runGuildAction, useGuildDashboard } from "../queries/guilds";
-
-const timeFmt = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: true,
-});
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -36,6 +29,10 @@ function pct(done: number, total: number) {
 
 function plainDisplayName(name: string) {
   return name.normalize("NFKC").replace(/\s+/g, " ").trim() || "Member";
+}
+
+function publicUpdateText(value: string) {
+  return cleanText(value);
 }
 
 function Card(props: {
@@ -146,7 +143,7 @@ function SystemStatusPanel({ data, setupPercent }: { data: Dashboard; setupPerce
           <div className="rounded-[calc(var(--radius-card)-2px)] border border-line bg-bg-subtle px-3 py-2">
             <p className="text-[11px] tracking-[0.16em] text-ink-faint uppercase">Version</p>
             <p className="mt-1 truncate text-sm font-semibold">
-              v{data.status.version}{data.status.phase_label ? ` · ${data.status.phase_label}` : ""}
+              v{newestPublicVersion(data.status.version)}
             </p>
           </div>
 
@@ -337,19 +334,6 @@ export default function GuildOverview() {
   }
 
   const data = dashboard.data;
-  const backupTone = data.backup.ok ? "good" : data.backup.available ? "warn" : "muted";
-  const offsite = data.backup.offsite;
-  const offsiteHealthy =
-    offsite.configured && offsite.matches_backup && offsite.latest_ok && offsite.check_ok !== false;
-  const offsiteLabel = !offsite.configured
-    ? "Not configured"
-    : offsiteHealthy
-      ? offsite.check_ok
-        ? "Verified off-site"
-        : "Uploaded off-site"
-      : offsite.latest_ok
-        ? "Out of sync"
-        : "Upload needed";
   const runningAction = action.variables;
   const actionBusy = action.isPending;
   const runAction = (name: string) => action.mutate(name);
@@ -369,7 +353,7 @@ export default function GuildOverview() {
               Actions are audited and use the same server permissions as the rest of the dashboard.
             </p>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <ActionButton
               label="Test voice report"
               description={data.voice.configured ? "Post a preview in the voice report channel." : "Configure a voice channel first."}
@@ -377,14 +361,6 @@ export default function GuildOverview() {
               disabled={!data.voice.configured || actionBusy}
               busy={actionBusy && runningAction === "voice_test"}
               onClick={() => runAction("voice_test")}
-            />
-            <ActionButton
-              label="Run backup check"
-              description={data.backup.available ? "Verify the newest archive safely." : "No backup archive yet."}
-              icon="shield-check"
-              disabled={!data.backup.available || actionBusy}
-              busy={actionBusy && runningAction === "backup_check"}
-              onClick={() => runAction("backup_check")}
             />
             <ActionButton
               label="Send latest update"
@@ -413,7 +389,7 @@ export default function GuildOverview() {
           </div>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div>
           <Card
             title="Modules"
             action={
@@ -436,44 +412,6 @@ export default function GuildOverview() {
             </div>
           </Card>
 
-          <Card
-            title="Backup health"
-            action={<Pill tone={backupTone}>{data.backup.ok ? "Verified" : data.backup.available ? "Check" : "Empty"}</Pill>}
-          >
-            {data.backup.available ? (
-              <div>
-                <p className="break-all text-sm font-medium">{data.backup.latest_name}</p>
-                <p className="mt-1 text-sm text-ink-muted">
-                  {data.backup.latest_size_text} - {data.backup.latest_at ? timeFmt.format(new Date(data.backup.latest_at)) : "unknown"}
-                </p>
-                {(data.backup.errors.length > 0 || data.backup.warnings.length > 0) && (
-                  <p className="mt-3 text-sm text-primary">
-                    {[...data.backup.errors, ...data.backup.warnings][0]}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-ink-muted">No backup archive has been created yet.</p>
-            )}
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
-              <div>
-                <p className="text-xs font-medium text-ink">Off-site copy</p>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {offsite.checked_at
-                    ? `Checked ${timeFmt.format(new Date(offsite.checked_at))}`
-                    : offsite.uploaded_at
-                      ? `Uploaded ${timeFmt.format(new Date(offsite.uploaded_at))}`
-                      : "Google Drive or another rclone destination"}
-                </p>
-              </div>
-              <Pill tone={offsiteHealthy ? "good" : offsite.configured ? "warn" : "muted"}>
-                {offsiteLabel}
-              </Pill>
-            </div>
-            <p className="mt-3 text-xs text-ink-muted">
-              Run the quick check above or use `/backup test` in Discord.
-            </p>
-          </Card>
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -545,13 +483,15 @@ export default function GuildOverview() {
                         predates the API returning a release. */}
                     <p className="text-sm font-medium">
                       {update.release
-                        ? `Version ${update.release}${update.phase_label ? ` · ${update.phase_label}` : ""}`
+                        ? `Version ${canonicalPublicVersion(update.release) ?? update.release}`
                         : update.build
                           ? `Update #${update.build}`
                           : "Update"}
                     </p>
                     <p className="line-clamp-2 text-xs text-ink-muted">
-                      {(update.highlights?.[0] || update.changes?.[0] || "Internal improvements").replace(/\s+/g, " ")}
+                      {publicUpdateText(
+                        update.highlights?.[0] || update.changes?.[0] || "Internal improvements",
+                      )}
                     </p>
                   </li>
                 ))}

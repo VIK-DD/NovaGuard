@@ -114,8 +114,11 @@ Developer Policy before implementation:
    verify control of the relevant Discord account or authority over the guild.
    Collect no more proof than necessary.
 4. Record received time, scope, verification, searches performed, decision,
-   delivery time and any refusal reason in a restricted case log. Target 30
-   calendar days; escalate immediately if the applicable law is stricter.
+   delivery time and any refusal reason in a restricted case log. Under
+   Moldova's Law no. 195/2024, respond without undue delay and within one month.
+   Complexity or request volume can justify up to two additional months, but
+   the requester must be told about the extension and its reasons within the
+   first month. Escalate immediately if another applicable law is stricter.
 5. Deliver exports privately. Never place them in support channels, public issue
    trackers or ordinary logs.
 6. Live erasure writes a signed pseudonymous deletion token. Restore and host
@@ -152,13 +155,14 @@ message archive.
 
 ## Cookies and browser storage
 
-The current website uses only first-party storage necessary for a requested
+The application sets only first-party storage necessary for a requested
 security/sign-in flow (`ng_state`, `ng_session`, `ng_gate`, `ng_preview`) and
-explicit theme preferences (`ng-theme`, `ng-maintenance-theme`). It has no
-advertising or analytics tracker. A consent banner would create a false choice
-and is not required for strictly necessary storage; the policy must still
-explain it. Add a real prior-consent control before any non-essential analytics,
-marketing, fingerprinting or cross-site storage is introduced.
+explicit theme preferences (`ng-theme`, `ng-maintenance-theme`). Cloudflare may
+add strictly necessary security cookies such as `__cf_bm`. Cloudflare Web
+Analytics/RUM was disabled in the dashboard on 28 August 2026, so its client-side
+beacon is not injected. Verify that state during each vendor review. Add a real
+prior-consent control before any advertising, marketing, fingerprinting,
+cross-site tracking or other non-essential client storage is introduced.
 
 The strictly-necessary exception is in Article 5(3) of the ePrivacy Directive:
 <https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32002L0058>.
@@ -199,13 +203,20 @@ The operator must complete and retain evidence for every item:
       post it in a visible rules, onboarding or privacy channel.
 - [ ] Identify the competent supervisory authority and complaint route.
 - [ ] Confirm the Oracle region and every rclone backup destination/country.
+- [ ] Retain a current Oracle/provider console screenshot or configuration
+      export proving encryption at rest for production disks, boot volumes and
+      snapshots; only then set `HOST_STORAGE_ENCRYPTION_CONFIRMED=true`.
+- [ ] Retain the current Cloudflare WAF/rate-limit rule or equivalent edge
+      configuration covering the public dashboard API; test a safe burst gets
+      `429`, then set `API_EDGE_RATE_LIMIT_CONFIRMED=true`.
 - [ ] Record the lawful basis and legitimate-interest assessment for every
       enabled purpose.
 - [ ] Execute/review applicable provider DPAs and transfer safeguards.
 - [ ] Decide whether organisational server customers need a NovaGuard data
       processing addendum; do not represent one as signed when it is not.
-- [ ] Test `/privacy export`, `/privacy delete`, server export/delete and a
-      restore that reapplies the deletion ledger.
+- [ ] Test `/privacy export`, `/privacy delete`, server export/delete and run
+      `/backup test`; retain the result showing that the authenticated deletion
+      ledger was enforced and post-restore SQLite checks passed.
 - [ ] Generate an encrypted backup, verify the off-site copy and pass
       `venv/bin/python tools/production_check.py --strict`.
 - [ ] Assign a person who monitors the privacy inbox and incident alerts.
@@ -218,6 +229,8 @@ Keep a restricted release record with the date, person performing the check and
 result for: the public Privacy Policy and Terms URLs; a screenshot or permalink
 to the adapted server notice; the selected module configuration; a private
 privacy export/deletion test; encrypted backup and off-site verification; and
+provider evidence for production storage encryption at rest; the tested API
+edge rate-limit configuration; plus
 the output of the following command from the production host:
 
 ```bash
@@ -228,8 +241,10 @@ The command demonstrates the host configuration and backup/ledger state. It
 does not replace provider contract review, a legal assessment or the human
 server-administration checks above.
 
-If the operator is established in Moldova, obtain local advice before the
-September launch: Law no. 195/2024 enters into force on 23 August 2026 and
-introduces GDPR-style accountability, transparency, rights, records, DPIAs and
-breach duties. Official CNPDCP summary:
+If the operator is established in Moldova, obtain local advice before public
+launch: Law no. 195/2024 has applied since 23 August 2026 and introduces
+GDPR-style accountability, transparency, rights, records, DPIAs and breach
+duties. It does not restore the former general notification/register system;
+the operator must instead retain evidence of its own risk-based compliance.
+Official CNPDCP summary:
 <https://datepersonale.md/legea-nr-195-2024-privind-protectia-datelor-cu-caracter-personal-principalele-prevederi-si-noutati-legislative/>.

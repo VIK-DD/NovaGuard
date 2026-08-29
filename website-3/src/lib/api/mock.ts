@@ -417,11 +417,11 @@ function dashboardPayload(id: string): Json | null {
   return {
     status: {
       ready: true,
-      version: "2.0",
-      phase: "open-beta",
-      phase_label: "Open Beta",
-      release_label: "2.0 Open Beta",
-      runtime_version: "3.1.0",
+      version: "3.0",
+      phase: "stable",
+      phase_label: "",
+      release_label: "3.0",
+      runtime_version: "3.0.0",
       codename: "Nova",
       uptime_seconds: 142_331,
       commands: 70,
@@ -505,28 +505,10 @@ function dashboardPayload(id: string): Json | null {
         },
       ],
     },
-    backup: {
-      available: true,
-      latest_name: "novaguard-backup-20260731-010000-auto.zip",
-      latest_size: 812_440,
-      latest_size_text: "793.4 KB",
-      latest_at: new Date(Date.now() - 1000 * 60 * 34).toISOString(),
-      ok: true,
-      warnings: [],
-      errors: [],
-      offsite: {
-        configured: true,
-        matches_backup: true,
-        latest_ok: true,
-        uploaded_at: new Date(Date.now() - 1000 * 60 * 33).toISOString(),
-        check_ok: true,
-        checked_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      },
-    },
     updates: [
       {
         build: 39,
-        version: "3.1.0",
+        version: "3.0.0",
         codename: "Nova",
         created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
         highlights: ["Dashboard overview and backup safety checks"],
@@ -658,7 +640,6 @@ function route(pathname: string, method: string, body: Json | null): { status: n
       };
     }
     const messages: Record<string, string> = {
-      backup_check: "Latest backup passed the restore check.",
       voice_test: "Voice report preview sent to #voice-reports.",
       update_preview: "Latest update was sent to the configured update channel.",
       ticket_panel_publish: "Ticket panel updated in #mod-alerts.",

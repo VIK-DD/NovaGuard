@@ -5,14 +5,18 @@ from the update history. Deriving it rather than storing it means those
 surfaces cannot drift apart: there is one source of truth, the build history,
 and the version is a view over it.
 
-Two phases:
+Three phases:
 
 * **Alpha, 1.0 - 1.9.** Everything built before the public launch, spread
   evenly across ten versions. Closed and frozen: ``ALPHA_LAST_BUILD`` is a
   constant precisely so that adding new builds can never reshuffle history a
   visitor already read.
-* **Open beta, 2.0 onward.** Live development. A version collects
+* **Beta, 2.0 - 2.9.** The public testing cycle.
+* **Stable, 3.0 onward.** The official release cycle. A version collects
   ``UPDATES_PER_VERSION`` updates, then the next one opens a new version.
+
+Public versions use one decimal digit. The slot after 2.9 is 3.0, after 3.9
+is 4.0, and so on; values such as 2.10 are never emitted.
 
 Every published update counts towards that, not only feature work. The
 threshold was once limited to "significant" updates, which sounded right and
@@ -29,10 +33,12 @@ import unicodedata
 
 ALPHA_PHASE = "alpha"
 BETA_PHASE = "open-beta"
+STABLE_PHASE = "stable"
 
 PHASE_LABELS = {
     ALPHA_PHASE: "Alpha",
-    BETA_PHASE: "Open Beta",
+    BETA_PHASE: "Beta",
+    STABLE_PHASE: "",
 }
 
 # The alpha phase spans exactly these ten versions.
@@ -40,7 +46,8 @@ ALPHA_MAJOR = 1
 ALPHA_SLOTS = 10
 
 # Frozen boundary between the two phases: everything created before this
-# instant is alpha history, everything from it on is open beta.
+# instant is alpha history, everything from it on follows the public release
+# cycle (open beta through 2.9, stable from 3.0).
 #
 # A date, not a build number, for two reasons. Build numbers repeat - the
 # changelog engine's state has been reset before, so the same number can
@@ -53,7 +60,10 @@ ALPHA_SLOTS = 10
 ALPHA_CUTOFF_ISO = "2026-08-09T00:00:00+00:00"
 
 BETA_MAJOR = 2
-# How many published updates fill one open-beta version.
+# Ten minor slots keep public versions on one decimal digit. Once 2.9 fills,
+# the next slot is 3.0; after 3.9 comes 4.0.
+MINOR_SLOTS_PER_MAJOR = 10
+# How many published updates fill one public version.
 UPDATES_PER_VERSION = 6
 
 # The changelog engine prefixes feature-level highlights with these. They are
@@ -88,11 +98,40 @@ def clean_text(value):
     """
     text = unicodedata.normalize("NFKC", str(value or ""))
     text = _EMOJI_PATTERN.sub("", text)
+    text = re.sub(
+        r"same names, smoother behavior",
+        "same commands, smoother behavior",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'Initial tracked release for v\d+\.\d+\.\d+(?:\s+"Nova")?',
+        "Initial tracked NovaGuard release",
+        text,
+        flags=re.IGNORECASE,
+    )
     return " ".join(text.split()).strip(" -–—•")
 
 
 def format_version(major, minor):
     return f"{major}.{minor}"
+
+
+def public_version_for_slot(slot):
+    """Return the one-decimal public version for a post-alpha slot."""
+    major_offset, minor = divmod(max(0, int(slot)), MINOR_SLOTS_PER_MAJOR)
+    return format_version(BETA_MAJOR + major_offset, minor)
+
+
+def public_phase_for_slot(slot):
+    """Open beta covers 2.x; 3.0 and every later version are stable."""
+    major = BETA_MAJOR + max(0, int(slot)) // MINOR_SLOTS_PER_MAJOR
+    return BETA_PHASE if major < 3 else STABLE_PHASE
+
+
+def public_release_label(release, prefix=""):
+    """Version text for people; lifecycle phase remains machine-readable."""
+    return f"{prefix}{(release or {}).get('version', '')}".strip()
 
 
 def _as_lines(value):
@@ -191,7 +230,7 @@ def assign_releases(entries):
 
     stamped = []
     alpha_seen = 0
-    beta_minor = 0
+    public_slot = 0
     updates_in_version = 0
 
     for entry in ordered:
@@ -205,11 +244,11 @@ def assign_releases(entries):
             # A version opens, collects updates, and closes once it is full -
             # so the update that fills it is the last of its version, not the
             # first of the next.
-            entry["release"] = format_version(BETA_MAJOR, beta_minor)
-            entry["phase"] = BETA_PHASE
+            entry["release"] = public_version_for_slot(public_slot)
+            entry["phase"] = public_phase_for_slot(public_slot)
             updates_in_version += 1
             if updates_in_version >= UPDATES_PER_VERSION:
-                beta_minor += 1
+                public_slot += 1
                 updates_in_version = 0
 
         entry["significant"] = significant
@@ -275,22 +314,20 @@ def release_groups(entries):
     ordered = [groups[version] for version in order]
     ordered.reverse()
     for index, group in enumerate(ordered):
-        # Once alpha closed, 1.9 became history even if the local archive has
-        # not recorded its first open-beta update yet. In that state the
-        # project is 2.0, but no historical group should be falsely marked as
-        # current.
-        group["current"] = index == 0 and group["phase"] == BETA_PHASE
+        # Alpha is closed, so no 1.x group can ever be marked current. The
+        # newest post-alpha group is current whether it is beta or stable.
+        group["current"] = index == 0 and group["phase"] != ALPHA_PHASE
     return ordered
 
 
 def current_release(entries):
     """The version the project is on right now."""
     groups = release_groups(entries)
-    if not groups or groups[0]["phase"] != BETA_PHASE:
+    if not groups or groups[0]["phase"] == ALPHA_PHASE:
         return {
-            "version": format_version(BETA_MAJOR, 0),
-            "phase": BETA_PHASE,
-            "phase_label": PHASE_LABELS[BETA_PHASE],
+            "version": format_version(3, 0),
+            "phase": STABLE_PHASE,
+            "phase_label": PHASE_LABELS[STABLE_PHASE],
         }
     newest = groups[0]
     return {

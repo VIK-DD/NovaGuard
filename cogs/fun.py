@@ -71,7 +71,10 @@ VIBE_TIERS = [
 
 
 def stable_percent(seed_text):
-    digest = hashlib.md5(seed_text.encode("utf-8")).hexdigest()
+    # This is a deterministic party-game score, never a password, signature or
+    # integrity check. Marking the intent prevents security scanners from
+    # treating this non-security use as a cryptographic decision.
+    digest = hashlib.md5(seed_text.encode("utf-8"), usedforsecurity=False).hexdigest()
     return int(digest, 16) % 101
 
 

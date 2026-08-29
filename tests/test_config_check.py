@@ -143,6 +143,17 @@ class WebServerTests(unittest.TestCase):
                 )
                 self.assertIn("WEB_CORS_ORIGIN", names(found, CRITICAL))
 
+    def test_proxy_headers_are_critical_on_a_public_bind(self):
+        found = findings_for(
+            {
+                "WEB_ENABLED": "true",
+                "WEB_TRUST_PROXY": "true",
+                "WEB_HOST": "0.0.0.0",
+            }
+        )
+
+        self.assertIn("WEB_TRUST_PROXY", names(found, CRITICAL))
+
 
 class GitHubTests(unittest.TestCase):
     """A feed that stays empty is indistinguishable from a quiet repository.

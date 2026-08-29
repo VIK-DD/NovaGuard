@@ -19,8 +19,14 @@ const NO_FALLBACK_DIRECTIVES = ["base-uri", "form-action", "frame-ancestors"];
 const PRIVATE_IP =
   /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|127\.0\.0\.1)\b/;
 
-// Ten-digit epoch seconds in the 2022-2033 range.
-const UNIX_TIMESTAMP = /\b1[6-9]\d{8}\b/;
+// Ten-digit epoch seconds in the 2022-2033 range, but only where surrounding
+// syntax identifies the number as a time. Bare ten-digit values are common in
+// third-party edge scripts, generated IDs and phone-like content.
+const UNIX_TIMESTAMP_CONTEXTS = [
+  /[?&](?:t|ts|time|timestamp|expires?|exp)=(1[6-9]\d{8})\b/i,
+  /["']?(?:timestamp|unix_(?:time|timestamp)|created_at|updated_at|expires?|exp|iat)["']?\s*[:=]\s*["']?(1[6-9]\d{8})\b/i,
+  /data-(?:timestamp|unix-time)\s*=\s*["'](1[6-9]\d{8})\b/i,
+];
 
 // A leading space keeps `element.onclick = fn` in bundled JS from matching:
 // only an HTML attribute has whitespace in front of it.
@@ -60,6 +66,14 @@ export function isOurHost(url) {
   } catch {
     return false;
   }
+}
+
+/** Detect an interstitial Cloudflare response that replaced the requested page. */
+export function isCloudflareChallenge(response) {
+  const headers = lowerKeys(response?.headers);
+  if ((headers["cf-mitigated"] || "").toLowerCase() === "challenge") return true;
+  const body = response?.body || "";
+  return /window\._cf_chl_opt\b|<title>\s*just a moment/i.test(body);
 }
 
 /** The highest severity present, or null when there is nothing to report. */
@@ -236,9 +250,11 @@ export function auditResponse(response) {
   if (privateIp) {
     add("private-ip", "medium", `Body exposes an internal address: ${privateIp[0]}.`);
   }
-  const timestamp = `${url} ${body}`.match(UNIX_TIMESTAMP);
+  const timestamp = UNIX_TIMESTAMP_CONTEXTS.map((pattern) => `${url} ${body}`.match(pattern)).find(
+    Boolean,
+  );
   if (timestamp) {
-    add("unix-timestamp", "low", `A unix timestamp is published: ${timestamp[0]}.`);
+    add("unix-timestamp", "low", `A unix timestamp is published: ${timestamp[1]}.`);
   }
   if (INLINE_EVENT_HANDLER.test(body)) {
     add("inline-event-handler", "medium", "An inline event handler attribute is present.");

@@ -28,7 +28,6 @@ function span(group: ReleaseGroup): string {
     groups.map((group, index) => (
       <details
         data-release-version={group.version}
-        data-current-release={group.current ? "" : undefined}
         class="group release-item rounded-[var(--radius)] border border-line bg-card transition-colors duration-300 hover:border-line-strong"
         open={index === 0}
       >
@@ -37,18 +36,16 @@ function span(group: ReleaseGroup): string {
             <span class="font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl">
               {group.version}
             </span>
-            <span
-              data-release-phase-badge
-              class="shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase"
-            >
-              <span data-release-phase>{group.phaseLabel}</span>
-            </span>
-            {group.current && (
-              <span data-current-release-marker class="hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex">
-                <span class="live-dot size-1.5 rounded-full bg-good" />
-                Current
-              </span>
-            )}
+            {
+              group.phaseLabel && (
+                <span
+                  data-release-phase-badge
+                  class="inline-flex rounded-full border border-line-strong bg-bg-subtle px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-ink-faint uppercase"
+                >
+                  <span data-release-phase>{group.phaseLabel}</span>
+                </span>
+              )
+            }
           </span>
 
           <span class="hidden text-right text-xs leading-relaxed text-ink-faint md:block">
@@ -120,15 +117,6 @@ function span(group: ReleaseGroup): string {
     overflow: hidden;
   }
 
-  /* The phase belongs to every version, but the amber treatment means
-     "currently running". Keeping that state on the card lets both the
-     server-rendered archive and live-inserted releases share one rule. */
-  :global(.release-item[data-current-release] [data-release-phase-badge]) {
-    border-color: transparent;
-    background: hsl(var(--primary-soft));
-    color: hsl(var(--primary));
-  }
-
   /* The thread joins the dots; it must not hang below the last one. */
   .release-update:last-child .thread {
     display: none;
@@ -182,30 +170,13 @@ function span(group: ReleaseGroup): string {
     }
   }
 
-  .live-dot {
-    animation: live-pulse 2.4s ease-in-out infinite;
-  }
-
-  @keyframes live-pulse {
-    0%,
-    100% {
-      opacity: 1;
-      box-shadow: 0 0 0 0 hsl(var(--good) / 0.45);
-    }
-    50% {
-      opacity: 0.75;
-      box-shadow: 0 0 0 4px hsl(var(--good) / 0);
-    }
-  }
-
   /* Motion is decoration here: the content reads identically without it. */
   @media (prefers-reduced-motion: reduce) {
     .release-accordion[data-enhanced] .release-panel,
     .chevron {
       transition: none;
     }
-    .release-accordion[data-enhanced] details[data-open] .release-update,
-    .live-dot {
+    .release-accordion[data-enhanced] details[data-open] .release-update {
       animation: none;
     }
   }

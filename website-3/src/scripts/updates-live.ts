@@ -11,8 +11,8 @@
 // this only appends what is missing.
 //
 // Re-grouping the merged set is safe because the phase boundary is a frozen
-// date: new entries always land in open beta, never shuffling the alpha
-// numbering a visitor may have bookmarked, and beta versions fill in
+// date: new entries enter the current post-alpha cycle without shuffling the
+// alpha numbering a visitor may have bookmarked, and public versions fill in
 // chronological order so existing assignments cannot move either.
 import { releaseGroups, type ReleaseGroup, type StampedRelease } from "../data/releases";
 import archive from "../data/updates-archive.json";
@@ -141,30 +141,23 @@ export function versionCard(group: ReleaseGroup): HTMLDetailsElement {
     "flex cursor-pointer list-none items-center gap-4 px-5 py-4 outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:px-6";
 
   const left = el("span", "flex min-w-0 flex-1 items-center gap-3");
-  const phaseBadge = el(
-    "span",
-    "shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase",
-  );
-  phaseBadge.dataset.releasePhaseBadge = "";
-  const phase = el("span", "", group.phaseLabel);
-  phase.dataset.releasePhase = "";
-  phaseBadge.append(phase);
   left.append(
     el(
       "span",
       "font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl",
       group.version,
     ),
-    phaseBadge,
   );
-  if (group.current) {
-    const marker = el(
+  if (group.phaseLabel) {
+    const badge = el(
       "span",
-      "hidden shrink-0 items-center gap-1.5 text-xs text-ink-muted sm:flex",
+      "inline-flex rounded-full border border-line-strong bg-bg-subtle px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-ink-faint uppercase",
     );
-    marker.dataset.currentReleaseMarker = "";
-    marker.append(el("span", "live-dot size-1.5 rounded-full bg-good"), "Current");
-    left.append(marker);
+    badge.dataset.releasePhaseBadge = "";
+    const label = el("span", "", group.phaseLabel);
+    label.dataset.releasePhase = "";
+    badge.append(label);
+    left.append(badge);
   }
 
   const meta = el("span", "hidden text-right text-xs leading-relaxed text-ink-faint md:block");
@@ -215,11 +208,12 @@ function setStat(selector: string, value: number) {
 }
 
 export function syncCurrentVersion(root: HTMLElement, version: string | undefined) {
-  let foundCurrent = false;
+  const versionNode = document.querySelector<HTMLElement>("[data-current-release-version]");
+  if (versionNode && version) versionNode.textContent = version;
+
   for (const card of root.querySelectorAll<HTMLElement>("[data-release-version]")) {
     const current = Boolean(version) && card.dataset.releaseVersion === version;
     if (current) {
-      foundCurrent = true;
       card.dataset.currentRelease = "";
       if (card instanceof HTMLDetailsElement) card.open = true;
       card.dataset.open = "";
@@ -231,18 +225,8 @@ export function syncCurrentVersion(root: HTMLElement, version: string | undefine
       if (card instanceof HTMLDetailsElement) card.open = false;
       delete card.dataset.open;
     }
-
-    const marker = card.querySelector<HTMLElement>("[data-current-release-marker]");
-    if (marker) marker.hidden = !current;
   }
 
-  if (foundCurrent) {
-    const note = document.querySelector<HTMLElement>("[data-release-sync-note]");
-    if (note) {
-      note.hidden = true;
-      note.textContent = "";
-    }
-  }
 }
 
 async function fetchLiveUpdates(): Promise<unknown> {
@@ -324,7 +308,7 @@ async function run() {
   setStat("[data-release-total-versions]", groups.length);
   setStat("[data-release-total-updates]", merged.length);
   const computedCurrent = groups.find((group) => group.current)?.version;
-  syncCurrentVersion(root, document.documentElement.dataset.currentRelease || computedCurrent);
+  syncCurrentVersion(root, computedCurrent);
   (root as HTMLElement & { ngRemeasure?: () => void }).ngRemeasure?.();
 }
 

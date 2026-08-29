@@ -10,14 +10,22 @@ from types import SimpleNamespace
 # Keep this standalone test runnable with `python tests/test_voice.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cogs.voice import (
-    VoiceReports,
-    MIN_SESSION_SECONDS,
-    active_member_ids,
+import cogs.voice as voice_cog
+from cogs.voice import VoiceReports
+from core.voice_presenters import (
     active_session_status_lines,
     build_report_embed,
+    pending_report_lines,
+    report_to_file,
+    split_lines,
+)
+from core.voice_sessions import (
+    MIN_SESSION_SECONDS,
+    active_member_ids,
+    csv_escape,
     human_duration,
     new_session,
+    parse_time,
     participant_lines,
     record_member_join,
     record_member_leave,
@@ -25,7 +33,6 @@ from cogs.voice import (
     session_activity,
     session_duration,
     session_highlights,
-    split_lines,
 )
 
 
@@ -132,6 +139,81 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertIn("13h 0m 0s", lines[0])
         self.assertIn("`1` active", lines[0])
         self.assertIn("peak `1`", lines[0])
+
+    def test_duplicate_join_does_not_reset_or_increment_the_member(self):
+        self.assertTrue(record_member_join(self.session, 1, "Victor", self.started_at))
+        self.assertFalse(record_member_join(self.session, 1, "Changed", self.started_at + timedelta(minutes=5)))
+
+        member = self.session["members"]["1"]
+        self.assertEqual(member["joins"], 1)
+        self.assertEqual(parse_time(member["joined_at"]), self.started_at)
+        self.assertEqual(member["display_name"], "Changed")
+
+    def test_unknown_or_inactive_member_leave_is_a_noop(self):
+        self.assertEqual(record_member_leave(self.session, 999, self.started_at), 0)
+        record_member_join(self.session, 1, "Victor", self.started_at)
+        record_member_leave(self.session, 1, self.started_at + timedelta(minutes=5))
+
+        self.assertEqual(record_member_leave(self.session, 1, self.started_at + timedelta(minutes=10)), 0)
+        self.assertEqual(self.session["members"]["1"]["total_seconds"], 300)
+
+    def test_time_parser_rejects_invalid_values_and_marks_naive_values_utc(self):
+        self.assertIsNone(parse_time(None))
+        self.assertIsNone(parse_time("not-a-date"))
+        self.assertEqual(parse_time("2026-08-27T10:00:00").tzinfo, UTC)
+
+    def test_csv_export_escapes_quotes(self):
+        self.assertEqual(csv_escape('Victor "VIK"'), '"Victor ""VIK"""')
+
+    def test_pending_reports_are_newest_first_and_long_errors_are_truncated(self):
+        reports = {
+            "old": {
+                "ended_at": self.started_at.isoformat(),
+                "channel_name": "Old room",
+                "channel_id": "1",
+                "attempts": 1,
+            },
+            "new": {
+                "ended_at": (self.started_at + timedelta(hours=1)).isoformat(),
+                "channel_name": "New room",
+                "channel_id": "2",
+                "attempts": 3,
+                "last_error": "x" * 140,
+            },
+        }
+
+        lines = pending_report_lines(reports)
+
+        self.assertIn("`new`", lines[0])
+        self.assertIn("attempts `3`", lines[0])
+        self.assertIn("...`", lines[0])
+        self.assertIn("`old`", lines[1])
+
+    def test_csv_report_file_has_a_stable_name_and_payload(self):
+        record_member_join(self.session, 1, "Victor", self.started_at)
+        ended_at = self.started_at + timedelta(hours=2)
+        record_member_leave(self.session, 1, ended_at)
+        report = {
+            "channel_id": "123",
+            "channel_name": "Late-night",
+            "ended_at": ended_at.isoformat(),
+            "session": self.session,
+        }
+
+        exported = report_to_file(report, csv=True)
+        try:
+            exported.fp.seek(0)
+            payload = exported.fp.read().decode("utf-8")
+            self.assertEqual(exported.filename, "voice-session-123-20260724-1400.csv")
+            self.assertIn("member_id,display_name,total_seconds", payload)
+            self.assertIn('"1","Victor",7200.0', payload)
+        finally:
+            exported.close()
+
+    def test_old_cog_imports_still_point_to_the_extracted_helpers(self):
+        self.assertIs(voice_cog.build_report_embed, build_report_embed)
+        self.assertIs(voice_cog.pending_report_lines, pending_report_lines)
+        self.assertIs(voice_cog.report_to_file, report_to_file)
 
     def test_parallel_pending_sends_do_not_duplicate_the_report(self):
         async def run_check():

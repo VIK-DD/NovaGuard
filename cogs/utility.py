@@ -5,7 +5,6 @@ import asyncio
 import random
 import re
 import uuid
-from collections import Counter
 from datetime import UTC, datetime
 
 import discord
@@ -14,40 +13,36 @@ from discord.ext import commands, tasks
 
 from core.loop_guard import keep_running
 from core.storage import load_data, save_data
-from core.theme import Palette, brand_footer, make_embed, progress_bar
-from core.utils import format_timedelta, parse_duration, respond, truncate
+from core.theme import Palette, brand_footer, make_embed
+from core.utility_presenters import (
+    BADGE_LABELS,
+    TIMESTAMP_STYLES,
+    build_avatar_embed,
+    build_choice_embed,
+    build_color_embed,
+    build_invalid_reminder_duration_embed,
+    build_no_reminders_embed,
+    build_poll_embed,
+    build_reminder_cancelled_embed,
+    build_reminder_delivery_embed,
+    build_reminder_select_options,
+    build_reminder_set_embed,
+    build_reminder_too_far_embed,
+    build_reminders_embed,
+    build_roleinfo_embed,
+    build_serverinfo_embed,
+    build_timestamp_embed,
+    build_userinfo_embed,
+)
+from core.utils import parse_duration, respond, truncate
 
 log = logging.getLogger(__name__)
 
 
 HEX_COLOR_PATTERN = re.compile(r"^#?([0-9a-fA-F]{6})$")
-TIMESTAMP_STYLES = [
-    ("t", "Short time"),
-    ("T", "Long time"),
-    ("d", "Short date"),
-    ("D", "Long date"),
-    ("f", "Short date/time"),
-    ("F", "Long date/time"),
-    ("R", "Relative"),
-]
 # Serialises load -> mutate -> save on the reminders file so concurrent
 # /remind calls (or a cancel racing the delivery loop) cannot drop entries.
 _REMINDERS_LOCK = asyncio.Lock()
-
-BADGE_LABELS = {
-    "staff": "Discord Staff",
-    "partner": "Partner",
-    "hypesquad": "HypeSquad Events",
-    "bug_hunter": "Bug Hunter",
-    "bug_hunter_level_2": "Bug Hunter Gold",
-    "hypesquad_bravery": "Bravery",
-    "hypesquad_brilliance": "Brilliance",
-    "hypesquad_balance": "Balance",
-    "early_supporter": "Early Supporter",
-    "verified_bot_developer": "Early Verified Bot Dev",
-    "active_developer": "Active Developer",
-}
-
 
 class PollVoteButton(discord.ui.Button):
     def __init__(self, index, label):
@@ -93,20 +88,13 @@ class PollView(discord.ui.View):
         self.add_item(PollEndButton())
 
     def build_embed(self, closed=False):
-        total = len(self.votes)
-        counts = Counter(self.votes.values())
-        lines = []
-        for index, option in enumerate(self.options):
-            count = counts.get(index, 0)
-            percent = round(count / total * 100) if total else 0
-            bar = progress_bar(count, total or 1, slots=12)
-            lines.append(f"**{option}**\n{bar} `{count} vote(s) • {percent}%`")
-
-        title = ("🏁 " if closed else "📊 ") + self.question
-        embed = make_embed(title, "\n\n".join(lines), color=Palette.SUCCESS if closed else Palette.INFO)
-        status = "Final results" if closed else "Vote by clicking a button below"
-        brand_footer(embed, f"Poll by {self.author_name} • {total} vote(s) • {status} • temporary 24h")
-        return embed
+        return build_poll_embed(
+            self.question,
+            self.options,
+            self.votes,
+            self.author_name,
+            closed,
+        )
 
     async def on_timeout(self):
         for child in self.children:
@@ -120,18 +108,10 @@ class PollView(discord.ui.View):
 
 class ReminderCancelSelect(discord.ui.Select):
     def __init__(self, user_id, items):
-        options = []
-        for item in items[:25]:
-            due = datetime.fromisoformat(item["due_at"])
-            options.append(
-                discord.SelectOption(
-                    label=truncate(item["message"], 90),
-                    value=item["id"],
-                    description=f"in {format_timedelta(due - datetime.now(UTC))}",
-                    emoji="⏰",
-                )
-            )
-        super().__init__(placeholder="Cancel a reminder…", options=options)
+        super().__init__(
+            placeholder="Cancel a reminder…",
+            options=build_reminder_select_options(items),
+        )
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction):
@@ -143,9 +123,10 @@ class ReminderCancelSelect(discord.ui.Select):
             reminders = [item for item in reminders if item.get("id") != self.values[0]]
             await asyncio.to_thread(save_data, "reminders", reminders)
 
-        embed = make_embed("🗑️ Reminder cancelled", "That reminder will not fire anymore.", color=Palette.SUCCESS)
-        brand_footer(embed)
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(
+            embed=build_reminder_cancelled_embed(),
+            view=None,
+        )
 
 
 class Utility(commands.Cog):
@@ -207,10 +188,11 @@ class Utility(commands.Cog):
                         item.get("channel_id"),
                     )
                     continue
-            embed = make_embed("⏰ Reminder", item["message"], color=Palette.WARNING)
-            brand_footer(embed, "You asked me to remind you")
             try:
-                await channel.send(content=f"<@{item['user_id']}>", embed=embed)
+                await channel.send(
+                    content=f"<@{item['user_id']}>",
+                    embed=build_reminder_delivery_embed(item["message"]),
+                )
             except discord.HTTPException:
                 log.warning(
                     "Reminder %s dropped: could not post in channel %s",
@@ -253,18 +235,18 @@ class Utility(commands.Cog):
     async def remind(self, interaction: discord.Interaction, duration: str, message: str):
         delta = parse_duration(duration)
         if not delta:
-            embed = make_embed(
-                "🤔 I did not get that",
-                "Use formats like `10m`, `1h30m`, `2d`, `1w`.",
-                color=Palette.WARNING,
+            return await respond(
+                interaction,
+                build_invalid_reminder_duration_embed(),
+                ephemeral=True,
             )
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
 
         if delta.days > 90:
-            embed = make_embed("📅 Too far away", "Reminders max out at 90 days.", color=Palette.WARNING)
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
+            return await respond(
+                interaction,
+                build_reminder_too_far_embed(),
+                ephemeral=True,
+            )
 
         due_at = datetime.now(UTC) + delta
         async with _REMINDERS_LOCK:
@@ -281,13 +263,11 @@ class Utility(commands.Cog):
             )
             await asyncio.to_thread(save_data, "reminders", reminders)
 
-        embed = make_embed(
-            "⏰ Reminder set!",
-            f"I'll ping you {discord.utils.format_dt(due_at, 'R')} about:\n> {message}",
-            color=Palette.SUCCESS,
+        await respond(
+            interaction,
+            build_reminder_set_embed(due_at, message),
+            ephemeral=True,
         )
-        brand_footer(embed, "Reminder saved")
-        await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="reminders", description="See and cancel your pending reminders")
     async def reminders(self, interaction: discord.Interaction):
@@ -297,146 +277,48 @@ class Utility(commands.Cog):
             key=lambda item: item["due_at"],
         )
         if not mine:
-            embed = make_embed("💤 Nothing pending", "You have no reminders. Set one with `/remind`!", color=Palette.INFO)
-            brand_footer(embed)
-            return await respond(interaction, embed, ephemeral=True)
+            return await respond(
+                interaction,
+                build_no_reminders_embed(),
+                ephemeral=True,
+            )
 
-        lines = []
-        for item in mine[:15]:
-            due = datetime.fromisoformat(item["due_at"])
-            lines.append(f"⏰ {discord.utils.format_dt(due, 'R')} — {truncate(item['message'], 80)}")
-
-        embed = make_embed("🗓️ Your reminders", "\n".join(lines), color=Palette.INFO)
-        brand_footer(embed, f"{len(mine)} pending")
         view = discord.ui.View(timeout=180)
         view.add_item(ReminderCancelSelect(interaction.user.id, mine))
-        await respond(interaction, embed, view=view, ephemeral=True)
+        await respond(
+            interaction,
+            build_reminders_embed(mine),
+            view=view,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="userinfo", description="Detailed profile card for a member")
     @app_commands.describe(member="Whose profile? (defaults to you)")
     @app_commands.guild_only()
     async def userinfo(self, interaction: discord.Interaction, member: discord.Member | None = None):
         target = member or interaction.user
-        badges = [BADGE_LABELS[name] for name, value in target.public_flags if value and name in BADGE_LABELS]
-        roles = [role.mention for role in reversed(target.roles[1:])][:5]
-
-        color = target.color.value if target.color.value else Palette.PRIMARY
-        embed = make_embed(f"👤 {target.display_name}", f"{target.mention} • `{target.id}`", color=color)
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(
-            name="📅 Dates",
-            value=(
-                f"Created: {discord.utils.format_dt(target.created_at, 'R')}\n"
-                f"Joined: {discord.utils.format_dt(target.joined_at, 'R') if target.joined_at else 'Unknown'}"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="🎭 Identity",
-            value=(
-                f"Bot: `{('Yes 🤖' if target.bot else 'No')}`\n"
-                f"Top role: {target.top_role.mention if target.top_role else '`None`'}"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name=f"🏷️ Roles ({max(len(target.roles) - 1, 0)})",
-            value=" ".join(roles) if roles else "`No roles`",
-            inline=False,
-        )
-        if badges:
-            embed.add_field(name="✨ Badges", value=" • ".join(badges), inline=False)
-        brand_footer(embed, "User info")
-        await respond(interaction, embed)
+        await respond(interaction, build_userinfo_embed(target))
 
     @app_commands.command(name="serverinfo", description="Everything about this server in one card")
     @app_commands.guild_only()
     async def serverinfo(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        text_channels = len(guild.text_channels)
-        voice_channels = len(guild.voice_channels)
-
-        embed = make_embed(f"🏰 {guild.name}", guild.description or "A great place to be.", color=Palette.PURPLE)
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(
-            name="👥 People",
-            value=(
-                f"Members: `{guild.member_count:,}`\n"
-                f"Owner: {guild.owner.mention if guild.owner else 'Unknown'}"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="💬 Channels",
-            value=f"Text: `{text_channels}`\nVoice: `{voice_channels}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🎨 Flair",
-            value=f"Roles: `{len(guild.roles)}`\nEmojis: `{len(guild.emojis)}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🚀 Boosts",
-            value=f"Level: `{guild.premium_tier}`\nBoosts: `{guild.premium_subscription_count or 0}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="📅 Created",
-            value=discord.utils.format_dt(guild.created_at, "D"),
-            inline=True,
-        )
-        if guild.banner:
-            embed.set_image(url=guild.banner.url)
-        brand_footer(embed, f"Server ID: {guild.id}")
-        await respond(interaction, embed)
+        await respond(interaction, build_serverinfo_embed(interaction.guild))
 
     @app_commands.command(name="avatar", description="Full-size avatar of a member")
     @app_commands.describe(user="Whose avatar? (defaults to you)")
     async def avatar(self, interaction: discord.Interaction, user: discord.User | None = None):
         target = user or interaction.user
-        asset = target.display_avatar.with_size(1024)
-
-        embed = make_embed(f"🖼️ {target.display_name}'s avatar", color=Palette.FUN)
-        embed.set_image(url=asset.url)
-        brand_footer(embed, "Avatar viewer")
+        embed, asset_url = build_avatar_embed(target)
 
         view = discord.ui.View(timeout=None)
-        view.add_item(discord.ui.Button(label="Open original", url=asset.url))
+        view.add_item(discord.ui.Button(label="Open original", url=asset_url))
         await respond(interaction, embed, view=view)
 
     @app_commands.command(name="roleinfo", description="Details about a role")
     @app_commands.describe(role="Which role?")
     @app_commands.guild_only()
     async def roleinfo(self, interaction: discord.Interaction, role: discord.Role):
-        color = role.color.value if role.color.value else Palette.PRIMARY
-        embed = make_embed(f"🏷️ {role.name}", f"{role.mention} • `{role.id}`", color=color)
-        embed.add_field(
-            name="Details",
-            value=(
-                f"Members: `{len(role.members)}`\n"
-                f"Position: `{role.position}`\n"
-                f"Color: `#{role.color.value:06X}`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="Flags",
-            value=(
-                f"Hoisted: `{('Yes' if role.hoist else 'No')}`\n"
-                f"Mentionable: `{('Yes' if role.mentionable else 'No')}`\n"
-                f"Managed: `{('Yes' if role.managed else 'No')}`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="📅 Created",
-            value=discord.utils.format_dt(role.created_at, "R"),
-            inline=False,
-        )
-        brand_footer(embed, "Role info")
-        await respond(interaction, embed)
+        await respond(interaction, build_roleinfo_embed(role))
 
     @app_commands.command(name="timestamp", description="Generate Discord timestamp codes")
     @app_commands.describe(date="Optional: YYYY-MM-DD HH:MM (UTC). Defaults to now.")
@@ -455,11 +337,7 @@ class Utility(commands.Cog):
         else:
             moment = datetime.now(UTC)
 
-        unix = int(moment.timestamp())
-        lines = [f"`<t:{unix}:{code}>` → <t:{unix}:{code}> — {label}" for code, label in TIMESTAMP_STYLES]
-        embed = make_embed("🕐 Timestamp generator", "\n".join(lines), color=Palette.TEAL)
-        brand_footer(embed, "Copy the code, paste anywhere")
-        await respond(interaction, embed, ephemeral=True)
+        await respond(interaction, build_timestamp_embed(moment), ephemeral=True)
 
     @app_commands.command(name="choose", description="Can't decide? Let fate pick for you")
     @app_commands.describe(options="Options separated by commas, e.g. pizza, sushi, tacos")
@@ -471,13 +349,7 @@ class Utility(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         winner = random.choice(choices)
-        embed = make_embed(
-            "🎯 The wheel of fate has spoken",
-            f"Out of {', '.join(f'`{choice}`' for choice in choices)}…\n\n# 🏆 {winner}",
-            color=Palette.FUN,
-        )
-        brand_footer(embed, "Destiny delivered")
-        await respond(interaction, embed)
+        await respond(interaction, build_choice_embed(choices, winner))
 
     @app_commands.command(name="color", description="Preview any hex color")
     @app_commands.describe(hex_code="Hex color, e.g. #5865F2")
@@ -488,14 +360,7 @@ class Utility(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        value = int(match.group(1), 16)
-        red, green, blue = (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF
-        embed = make_embed(f"🎨 #{match.group(1).upper()}", color=value)
-        embed.add_field(name="RGB", value=f"`{red}, {green}, {blue}`", inline=True)
-        embed.add_field(name="Int", value=f"`{value}`", inline=True)
-        embed.set_image(url=f"https://singlecolorimage.com/get/{match.group(1)}/400x100")
-        brand_footer(embed, "Color preview")
-        await respond(interaction, embed)
+        await respond(interaction, build_color_embed(match.group(1)))
 
 
 async def setup(bot):

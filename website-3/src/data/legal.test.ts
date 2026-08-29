@@ -13,7 +13,7 @@ import {
 
 describe("public legal identity", () => {
   it("contains the operator-confirmed identity and infrastructure", () => {
-    expect(LEGAL_EFFECTIVE_DATE).toBe("August 12, 2026");
+    expect(LEGAL_EFFECTIVE_DATE).toBe("August 27, 2026");
     expect(LEGAL_OPERATOR).toEqual({
       name: "Breabin Victor",
       contactAddress: "support@novaguard.fun",
@@ -46,6 +46,24 @@ describe("public legal identity", () => {
     expect(footer).toContain("&copy;");
   });
 
+  it("keeps the publishing identity and creator credits explicit", () => {
+    const root = resolve(process.cwd(), "..");
+    const license = readFileSync(resolve(root, "LICENSE"), "utf8");
+    const notice = readFileSync(resolve(root, "NOTICE"), "utf8");
+    const readme = readFileSync(resolve(root, "README.md"), "utf8");
+    const footer = readFileSync(resolve(process.cwd(), "src/components/Footer.astro"), "utf8");
+
+    for (const document of [license, notice, readme, footer]) {
+      expect(document).toContain("VIK-DD");
+    }
+    expect(notice).toContain("Breabin Victor");
+    expect(notice).toContain("same person");
+    expect(readme).toContain("Developed by <strong>VIK &amp; CloudMedia</strong>");
+    expect(footer).toContain("Developed by VIK &amp; CloudMedia");
+    expect(readme.toLowerCase()).not.toContain("creator names");
+    expect(footer.toLowerCase()).not.toContain("names");
+  });
+
   it("keeps privacy and terms wired to the shared legal identity", () => {
     const privacy = readFileSync(resolve(process.cwd(), "src/pages/privacy.astro"), "utf8");
     const terms = readFileSync(resolve(process.cwd(), "src/pages/terms.astro"), "utf8");
@@ -57,6 +75,10 @@ describe("public legal identity", () => {
     }
     expect(privacy).toContain("PRIVACY_EFFECTIVE_DATE");
     expect(terms).toContain("LEGAL_EFFECTIVE_DATE");
+    expect(privacy).toContain("has applied since August 23, 2026");
+    expect(privacy).not.toContain("enters into force on August 23, 2026");
+    expect(privacy).toContain("two additional months");
+    expect(privacy).toContain("within the first month");
     expect(privacy).toContain('id="your-choices"');
     expect(privacy.indexOf('id="your-choices"')).toBeGreaterThan(privacy.indexOf("05 · Providers"));
   });

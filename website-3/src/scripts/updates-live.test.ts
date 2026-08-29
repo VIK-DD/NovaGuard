@@ -22,8 +22,8 @@ describe("style scope on cards built at runtime", () => {
   function group(version: string) {
     return {
       version,
-      phase: "open-beta",
-      phaseLabel: "Open Beta",
+      phase: "stable",
+      phaseLabel: "",
       updates: [],
       updateCount: 0,
       significantCount: 0,
@@ -94,11 +94,16 @@ describe("the live feed request", () => {
   });
 });
 
-function group(version: string, current: boolean): ReleaseGroup {
+function group(
+  version: string,
+  current: boolean,
+  phase = "stable",
+  phaseLabel = "",
+): ReleaseGroup {
   return {
     version,
-    phase: "open-beta",
-    phaseLabel: "Open Beta",
+    phase,
+    phaseLabel,
     updates: [],
     updateCount: 0,
     significantCount: 0,
@@ -117,7 +122,7 @@ function populatedGroup(version: string, current: boolean): ReleaseGroup {
         created_at: "2026-08-12T00:35:00+00:00",
         highlights: ["Native release card"],
         release: version,
-        phase: "open-beta",
+        phase: "stable",
         significant: true,
       },
     ],
@@ -131,17 +136,17 @@ function populatedGroup(version: string, current: boolean): ReleaseGroup {
 describe("live release cards", () => {
   beforeEach(() => {
     document.body.replaceChildren();
-    delete document.documentElement.dataset.currentRelease;
   });
 
-  it("styles phase badges through current state, not unconditionally", () => {
-    const historic = versionCard(group("2.1", false));
-    const current = versionCard(group("2.2", true));
+  it("labels historical alpha and beta cards, but leaves stable releases clean", () => {
+    const alpha = versionCard(group("1.9", false, "alpha", "Alpha"));
+    const beta = versionCard(group("2.9", false, "open-beta", "Beta"));
+    const current = versionCard(group("3.0", true));
 
-    expect(historic.hasAttribute("data-current-release")).toBe(false);
+    expect(alpha.querySelector("[data-release-phase-badge]")?.textContent).toBe("Alpha");
+    expect(beta.querySelector("[data-release-phase-badge]")?.textContent).toBe("Beta");
     expect(current.hasAttribute("data-current-release")).toBe(true);
-    expect(historic.querySelector("[data-release-phase-badge]")).not.toBeNull();
-    expect(current.querySelector("[data-release-phase-badge]")).not.toBeNull();
+    expect(current.querySelector("[data-release-phase-badge]")).toBeNull();
   });
 
   it("builds a complete expandable card for a version added live", () => {
@@ -157,18 +162,17 @@ describe("live release cards", () => {
 
   it("moves the current state when a newer version appears", () => {
     const root = document.createElement("div");
-    const note = document.createElement("p");
-    note.dataset.releaseSyncNote = "";
-    note.hidden = false;
-    note.textContent = "Release 2.2 is syncing.";
-    document.body.append(note);
-    const previous = versionCard(group("2.1", true));
-    const latest = versionCard(group("2.2", true));
+    const stat = document.createElement("span");
+    stat.dataset.currentReleaseVersion = "";
+    stat.textContent = "3.0";
+    document.body.append(stat);
+    const previous = versionCard(group("3.0", true));
+    const latest = versionCard(group("3.1", true));
     previous.open = true;
     previous.dataset.open = "";
     root.append(previous, latest);
 
-    syncCurrentVersion(root, "2.2");
+    syncCurrentVersion(root, "3.1");
 
     expect(root.querySelectorAll("[data-current-release]")).toHaveLength(1);
     expect(previous.hasAttribute("data-current-release")).toBe(false);
@@ -177,9 +181,30 @@ describe("live release cards", () => {
     expect(previous.hasAttribute("data-open")).toBe(false);
     expect(latest.open).toBe(true);
     expect(latest.hasAttribute("data-open")).toBe(true);
-    expect(previous.querySelector<HTMLElement>("[data-current-release-marker]")?.hidden).toBe(true);
-    expect(latest.querySelector<HTMLElement>("[data-current-release-marker]")?.hidden).toBe(false);
-    expect(note.hidden).toBe(true);
-    expect(note.textContent).toBe("");
+    expect(stat.textContent).toBe("3.1");
+  });
+
+  it("does not recreate the removed Current status", () => {
+    const component = readFileSync(
+      resolve(process.cwd(), "src/components/ReleaseAccordion.astro"),
+      "utf8",
+    );
+    const card = versionCard(populatedGroup("2.3", true));
+
+    expect(`${component}\n${card.outerHTML}`).not.toContain("data-current-release-marker");
+    expect(card.textContent).not.toContain("Current");
+  });
+
+  it("renders the static current version immediately and never asks live stats to override it", () => {
+    const page = readFileSync(
+      resolve(process.cwd(), "src/pages/updates/[...page].astro"),
+      "utf8",
+    );
+
+    expect(page).toContain("{release.version}");
+    expect(page).not.toContain("&mdash;");
+    expect(page).not.toContain("__ngGetLiveStats");
+    expect(page).not.toContain("data-release-sync-note");
+    expect(page).not.toContain("detailed changelog is syncing");
   });
 });

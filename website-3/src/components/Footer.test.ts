@@ -40,6 +40,26 @@ describe("Footer", () => {
     expect(footer).toContain('aria-label="Legal"');
   });
 
+  it("balances navigation with a real brand and community panel", () => {
+    expect(footer).toContain('/assets/novaguard-icon-96.png');
+    expect(footer).toContain('aria-label="Community"');
+    expect(footer).toContain('href="https://discord.gg/CbDy3GyhWm"');
+    expect(footer).toContain('href="/vote"');
+    expect(footer).toContain('href="/faq"');
+    expect(footer).toContain("Vote on Top.gg");
+    expect(footer).toContain("Powerful Discord moderation and utilities");
+    expect(footer).not.toContain("Open Beta");
+    expect(footer).toContain("Developed by VIK &amp; CloudMedia");
+    expect(footer.toLowerCase()).not.toContain("names");
+    expect(footer).toContain('viewBox="-6 -6 139.14 108.36"');
+  });
+
+  it("does not advertise social accounts that do not exist yet", () => {
+    expect(footer).not.toContain("instagram.com");
+    expect(footer).not.toContain("twitter.com");
+    expect(footer).not.toContain("x.com/");
+  });
+
   it("keeps every navigation link inside a labelled nav", () => {
     // Screen readers announce the group; loose links in the footer arrive as
     // an unexplained pile.

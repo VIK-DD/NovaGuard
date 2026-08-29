@@ -47,6 +47,7 @@ from core.config import (
 from core.database import DB_PATH, load_economy_data, load_levels_data, load_voice_store
 from core.error_digest import send_error_digest
 from core.github_api import github_api
+from core.help_ui import HelpView, Paginator, build_help_home_embed
 from core.maintenance import (
     DEFAULT_MAINTENANCE_MESSAGE,
     load_maintenance_state,
@@ -55,15 +56,30 @@ from core.maintenance import (
 )
 from core.release_versions import current_project_release
 from core.health_report import (
-    clamp_field,
     fail_line,
     info_line,
-    json_file_status,
     ok_line,
     storage_health_lines,
     warn_line,
 )
 from core.storage import DATA_DIR, get_guild_settings, load_data
+from core.system_presenters import (
+    build_botinfo_embed,
+    build_doctor_config_lines,
+    build_doctor_embed,
+    build_doctor_feature_lines,
+    build_doctor_github_lines,
+    build_doctor_permission_lines,
+    build_doctor_runtime_lines,
+    build_ping_embed,
+    build_public_status_embed,
+    build_uptime_embed,
+    doctor_profile,
+    ping_profile,
+    public_status_links,
+    public_status_profile,
+    summarize_loop_lag,
+)
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import build_link_view, defer_interaction, format_timedelta, respond, truncate
 
@@ -82,140 +98,6 @@ PRESENCE_UPDATE_TIMEOUT_SECONDS = 5
 STARTUP_UPDATE_INITIAL_DELAY_SECONDS = 12
 STARTUP_UPDATE_RETRY_DELAY_SECONDS = 20
 STARTUP_UPDATE_MAX_ATTEMPTS = 6
-
-
-def command_line_entries(command, prefix=""):
-    current = f"{prefix} {command.name}".strip()
-    if isinstance(command, app_commands.Group):
-        lines = []
-        for subcommand in command.commands:
-            lines.extend(command_line_entries(subcommand, current))
-        return lines or [f"`/{current}` — {command.description}"]
-    return [f"`/{current}` — {command.description}"]
-
-
-def cog_command_lines(cog):
-    lines = []
-    for command in cog.get_app_commands():
-        lines.extend(command_line_entries(command))
-    return lines
-
-
-def build_category_embed(cog):
-    emoji = getattr(cog, "EMOJI", "📦")
-    color = getattr(cog, "COLOR", Palette.PRIMARY)
-    description = getattr(cog, "DESCRIPTION", "")
-    lines = cog_command_lines(cog)
-
-    embed = make_embed(
-        f"{emoji} {cog.qualified_name}",
-        f"{description}\n\n" + "\n".join(lines),
-        color=color,
-    )
-    brand_footer(embed, f"{len(lines)} command(s) in this category")
-    return embed
-
-
-def build_help_home_embed(bot):
-    release = current_project_release()
-    lines = []
-    total = 0
-    for name, cog in bot.cogs.items():
-        commands_count = len(cog_command_lines(cog))
-        total += commands_count
-        emoji = getattr(cog, "EMOJI", "📦")
-        description = getattr(cog, "DESCRIPTION", "Commands")
-        lines.append(f"{emoji} **{name}** `{commands_count}` — {description}")
-
-    embed = make_embed(
-        "🌈 Command Hub",
-        "Everything is a **slash command** now — type `/` and explore!\n"
-        "Pick a category from the menu below for the full list.\n\n" + "\n".join(lines),
-        color=Palette.PRIMARY,
-    )
-    embed.add_field(
-        name="Quick Stats",
-        value=(
-            f"Categories: `{len(bot.cogs)}` • Commands: `{total}` • "
-            f"Version: `v{release['version']} {release['phase_label']}`"
-        ),
-        inline=False,
-    )
-    brand_footer(embed, "Help hub")
-    return embed
-
-
-class HelpSelect(discord.ui.Select):
-    def __init__(self, bot):
-        options = [
-            discord.SelectOption(
-                label="Overview",
-                value="__home__",
-                emoji="🌈",
-                description="Back to the category overview",
-            )
-        ]
-        for name, cog in bot.cogs.items():
-            options.append(
-                discord.SelectOption(
-                    label=name,
-                    value=name,
-                    emoji=getattr(cog, "EMOJI", "📦"),
-                    description=truncate(getattr(cog, "DESCRIPTION", "Commands"), 90),
-                )
-            )
-        super().__init__(placeholder="Pick a category to explore…", options=options[:25])
-        self.bot = bot
-
-    async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "__home__":
-            embed = build_help_home_embed(self.bot)
-        else:
-            cog = self.bot.cogs.get(self.values[0])
-            embed = build_category_embed(cog) if cog else build_help_home_embed(self.bot)
-        await interaction.response.edit_message(embed=embed)
-
-
-class HelpView(discord.ui.View):
-    def __init__(self, bot):
-        super().__init__(timeout=300)
-        self.add_item(HelpSelect(bot))
-
-
-class Paginator(discord.ui.View):
-    def __init__(self, embeds, user_id):
-        super().__init__(timeout=300)
-        self.embeds = embeds
-        self.user_id = user_id
-        self.index = 0
-        self._sync_buttons()
-
-    def _sync_buttons(self):
-        self.previous_page.disabled = self.index == 0
-        self.next_page.disabled = self.index >= len(self.embeds) - 1
-        self.counter.label = f"{self.index + 1}/{len(self.embeds)}"
-
-    async def interaction_check(self, interaction):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("Start your own session to flip these pages!", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
-    async def previous_page(self, interaction, button):
-        self.index = max(self.index - 1, 0)
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
-
-    @discord.ui.button(label="1/1", style=discord.ButtonStyle.gray, disabled=True)
-    async def counter(self, interaction, button):
-        pass
-
-    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
-    async def next_page(self, interaction, button):
-        self.index = min(self.index + 1, len(self.embeds) - 1)
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
 
 
 class System(commands.Cog):
@@ -254,45 +136,7 @@ class System(commands.Cog):
             self.startup_update_task.cancel()
 
     def loop_lag_snapshot(self):
-        samples = list(self.loop_lag_samples)
-        if not samples:
-            return {
-                "label": "Warming up",
-                "line": info_line("Event loop", "collecting lag samples"),
-                "details": "Collecting samples",
-                "color": Palette.INFO,
-                "latest": 0,
-                "average": 0,
-                "peak": 0,
-            }
-
-        latest = samples[-1]
-        average = sum(samples) / len(samples)
-        peak = max(samples)
-
-        details = f"latest `{latest:.0f}ms` • avg `{average:.0f}ms` • peak `{peak:.0f}ms`"
-        if peak >= 3000 or average >= 1000:
-            label = "High lag"
-            line = fail_line("Event loop", details)
-            color = Palette.DANGER
-        elif peak >= 800 or average >= 250:
-            label = "Small lag"
-            line = warn_line("Event loop", details)
-            color = Palette.WARNING
-        else:
-            label = "Healthy"
-            line = ok_line("Event loop", details)
-            color = Palette.SUCCESS
-
-        return {
-            "label": label,
-            "line": line,
-            "details": details.replace("`", ""),
-            "color": color,
-            "latest": latest,
-            "average": average,
-            "peak": peak,
-        }
+        return summarize_loop_lag(self.loop_lag_samples)
 
     def maintenance_state(self):
         return load_maintenance_state()
@@ -645,7 +489,8 @@ class System(commands.Cog):
                 )
             guild_exports = await self._upload_guild_exports(backup, created_at)
             if guild_exports.get("configured"):
-                log.warning(
+                log_method = log.warning if guild_exports["failed"] else log.info
+                log_method(
                     "Guild backup exports finished: "
                     f"{guild_exports['uploaded']} uploaded, {guild_exports['failed']} failed"
                 )
@@ -753,35 +598,13 @@ class System(commands.Cog):
         await defer_interaction(interaction)
         rest_ms = round((time.perf_counter() - started) * 1000)
 
-        if gateway_ms < 150:
-            color, mood = Palette.SUCCESS, "Feeling fast today ⚡"
-        elif gateway_ms < 300:
-            color, mood = Palette.WARNING, "A little sleepy 😴"
-        else:
-            color, mood = Palette.DANGER, "Running through molasses 🐌"
-
-        embed = make_embed("🏓 Pong!", mood, color=color)
-        embed.add_field(name="🛰️ Gateway", value=f"`{gateway_ms}ms`", inline=True)
-        embed.add_field(name="⚡ REST", value=f"`{rest_ms}ms`", inline=True)
-        embed.add_field(
-            name="⏱️ Uptime",
-            value=f"`{format_timedelta(datetime.now(UTC) - self.bot.launched_at)}`",
-            inline=True,
-        )
-        brand_footer(embed, "Pulse check")
-        await respond(interaction, embed)
+        uptime = datetime.now(UTC) - self.bot.launched_at
+        await respond(interaction, build_ping_embed(gateway_ms, rest_ms, uptime))
 
     @app_commands.command(name="uptime", description="How long the bot has been online")
     async def uptime(self, interaction: discord.Interaction):
         await defer_interaction(interaction)
-        delta = datetime.now(UTC) - self.bot.launched_at
-        embed = make_embed(
-            "⏱️ Uptime",
-            f"Online for **{format_timedelta(delta)}**\nBooted {discord.utils.format_dt(self.bot.launched_at, 'R')}",
-            color=Palette.TEAL,
-        )
-        brand_footer(embed, "Still going strong")
-        await respond(interaction, embed)
+        await respond(interaction, build_uptime_embed(self.bot.launched_at))
 
     @app_commands.command(name="botinfo", description="Version, build, runtime and live stats")
     async def botinfo(self, interaction: discord.Interaction):
@@ -791,43 +614,20 @@ class System(commands.Cog):
         total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
         command_count = len(list(self.bot.tree.walk_commands()))
 
-        embed = make_embed(
-            f"🤖 {self.bot.user.name}",
-            f"v`{release['version']}` **{release['phase_label']}** — the slash-command era.",
-            color=Palette.PRIMARY,
+        embed = build_botinfo_embed(
+            bot_name=self.bot.user.name,
+            avatar_url=self.bot.user.display_avatar.url if self.bot.user.display_avatar else None,
+            release=release,
+            build_count=len(history),
+            server_count=len(self.bot.guilds),
+            total_members=total_members,
+            command_count=command_count,
+            category_count=len(self.bot.cogs),
+            python_version=platform.python_version(),
+            discord_version=discord.__version__,
+            gateway_ms=round(self.bot.latency * 1000),
+            uptime=datetime.now(UTC) - self.bot.launched_at,
         )
-        if self.bot.user.display_avatar:
-            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
-        embed.add_field(
-            name="🏗️ Build",
-            value=f"Builds shipped: `{len(history)}`\nAuto-changelog: `Active`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🌍 Reach",
-            value=f"Servers: `{len(self.bot.guilds)}`\nMembers: `{total_members:,}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🧩 Commands",
-            value=f"Slash commands: `{command_count}`\nCategories: `{len(self.bot.cogs)}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🐍 Runtime",
-            value=(
-                f"Python `{platform.python_version()}`\n"
-                f"discord.py `{discord.__version__}`\n"
-                f"Gateway `{round(self.bot.latency * 1000)}ms`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="⏱️ Uptime",
-            value=f"`{format_timedelta(datetime.now(UTC) - self.bot.launched_at)}`",
-            inline=True,
-        )
-        brand_footer(embed, "Bot info")
         await respond(interaction, embed)
 
     @app_commands.command(name="status", description="Public bot status: uptime, latency and project links")
@@ -839,54 +639,22 @@ class System(commands.Cog):
         lag = self.loop_lag_snapshot()
         maintenance_active = self.maintenance_state().get("enabled")
 
-        if maintenance_active:
-            color = Palette.WARNING
-            mood = "Maintenance mode is active. Core systems are online, but commands are limited."
-        elif gateway_ms >= 500 or lag["label"] == "High lag":
-            color = Palette.DANGER
-            mood = "Online, but the Raspberry Pi is feeling pressure."
-        elif gateway_ms >= 250 or lag["label"] == "Small lag":
-            color = Palette.WARNING
-            mood = "Online with a little latency wobble."
-        else:
-            color = Palette.SUCCESS
-            mood = "Online, responsive and ready."
-
-        embed = make_embed(
-            f"🟢 {self.bot.user.name} Status",
-            mood,
-            color=color,
+        embed = build_public_status_embed(
+            bot_name=self.bot.user.name,
+            avatar_url=self.bot.user.display_avatar.url if self.bot.user.display_avatar else None,
+            gateway_ms=gateway_ms,
+            uptime=uptime,
+            lag=lag,
+            maintenance_active=maintenance_active,
+            release=release,
+            command_count=len(list(self.bot.tree.walk_commands())),
+            project_label=github_config.primary_repo or github_config.username,
         )
-        if self.bot.user.display_avatar:
-            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
-        embed.add_field(name="Gateway", value=f"`{gateway_ms}ms`", inline=True)
-        embed.add_field(name="Event Loop", value=f"`{lag['label']}`\n{lag['details']}", inline=True)
-        embed.add_field(name="Uptime", value=f"`{format_timedelta(uptime)}`", inline=True)
-        embed.add_field(
-            name="Build",
-            value=(
-                f"v`{release['version']}` **{release['phase_label']}**\n"
-                f"Slash commands: `{len(list(self.bot.tree.walk_commands()))}`"
-            ),
-            inline=True,
+        buttons = public_status_links(
+            github_config.primary_repo,
+            github_config.username,
+            github_config.uptime_url,
         )
-        embed.add_field(
-            name="Project",
-            value=(
-                f"GitHub: `{github_config.primary_repo or github_config.username or 'Not configured'}`\n"
-                f"Presence: `{'Maintenance' if maintenance_active else 'Streaming'}`"
-            ),
-            inline=True,
-        )
-        brand_footer(embed, "Public status")
-
-        buttons = []
-        if github_config.primary_repo:
-            buttons.append(("Repository", f"https://github.com/{github_config.primary_repo}"))
-        if github_config.username:
-            buttons.append(("GitHub Profile", f"https://github.com/{github_config.username}"))
-        if github_config.uptime_url:
-            buttons.append(("Uptime", github_config.uptime_url))
         await respond(interaction, embed, view=build_link_view(buttons))
 
     @app_commands.command(name="doctor", description="Deep health check for the bot, config and integrations")
@@ -906,37 +674,27 @@ class System(commands.Cog):
         update_channel_id = guild_settings.get("update_channel") or github_config.update_channel_id
         github_channel_id = guild_settings.get("github_event_channel") or github_config.event_channel_id
         error_channel_id = guild_settings.get("error_log_channel") or ERROR_LOG_CHANNEL_ID
-        runtime_lines = [
-            ok_line("Gateway", f"{gateway_ms}ms") if gateway_ms < 300 else warn_line("Gateway", f"{gateway_ms}ms, a little slow"),
-            ok_line("Discord ACK", f"{ack_ms}ms") if ack_ms < 1000 else warn_line("Discord ACK", f"{ack_ms}ms, slow response"),
-            lag["line"],
-            ok_line("Uptime", format_timedelta(uptime)),
-            ok_line("Runtime", f"Python {platform.python_version()} • discord.py {discord.__version__}"),
-            ok_line("Loaded", f"{len(self.bot.cogs)} cogs • {command_count} slash commands"),
-        ]
+        runtime_lines = build_doctor_runtime_lines(
+            gateway_ms=gateway_ms,
+            ack_ms=ack_ms,
+            lag_line=lag["line"],
+            uptime=uptime,
+            python_version=platform.python_version(),
+            discord_version=discord.__version__,
+            cog_count=len(self.bot.cogs),
+            command_count=command_count,
+        )
 
-        config_lines = [
-            ok_line("TOKEN", "configured") if os.getenv("TOKEN") else fail_line("TOKEN", "missing"),
-            ok_line(".env", "found") if (BASE_DIR / ".env").exists() else warn_line(".env", "not found; using shell env only"),
-            ok_line("GUILD_ID", f"{GUILD_ID} (use /resync server for instant updates)")
-            if GUILD_ID
-            else warn_line("GUILD_ID", "global sync can be slower"),
-            ok_line("Update channel", f"<#{update_channel_id}>")
-            if update_channel_id
-            else warn_line("Update channel", "not configured; run /setup"),
-            ok_line("GitHub feed", f"<#{github_channel_id}>")
-            if github_channel_id
-            else warn_line("GitHub feed", "not configured; run /setup"),
-            ok_line("GITHUB_TOKEN", "configured")
-            if github_config.token
-            else warn_line("GITHUB_TOKEN", "optional, but recommended for rate limits"),
-            ok_line("ANTHROPIC_API_KEY", "configured")
-            if os.getenv("ANTHROPIC_API_KEY")
-            else warn_line("ANTHROPIC_API_KEY", "/ask disabled until configured"),
-            ok_line("Error digest channel", f"<#{error_channel_id}>")
-            if error_channel_id
-            else info_line("Error digest channel", "optional; run /setup to enable"),
-        ]
+        config_lines = build_doctor_config_lines(
+            token_configured=bool(os.getenv("TOKEN")),
+            env_found=(BASE_DIR / ".env").exists(),
+            guild_id=GUILD_ID,
+            update_channel_id=update_channel_id,
+            github_channel_id=github_channel_id,
+            github_token_configured=bool(github_config.token),
+            anthropic_configured=bool(os.getenv("ANTHROPIC_API_KEY")),
+            error_channel_id=error_channel_id,
+        )
 
         permissions = interaction.app_permissions
         permission_checks = [
@@ -949,21 +707,14 @@ class System(commands.Cog):
             ("Thread Messages", permissions.send_messages_in_threads),
             ("Manage Roles", permissions.manage_roles),
         ]
-        permission_lines = [
-            ok_line(label, "available") if granted else warn_line(label, "missing or channel-limited")
-            for label, granted in permission_checks
-        ]
+        permission_lines = build_doctor_permission_lines(permission_checks)
 
-        github_lines = [
-            ok_line("Username", github_config.username) if github_config.username else warn_line("Username", "not configured"),
-            ok_line("Primary Repo", github_config.primary_repo)
-            if github_config.primary_repo
-            else warn_line("Primary Repo", "not configured"),
-            ok_line("Watcher Repos", ", ".join(github_config.watch_repos))
-            if github_config.watch_repos
-            else warn_line("Watcher Repos", "none configured"),
-            ok_line("Polling", f"every {github_config.poll_seconds}s"),
-        ]
+        github_lines = build_doctor_github_lines(
+            username=github_config.username,
+            primary_repo=github_config.primary_repo,
+            watch_repos=github_config.watch_repos,
+            poll_seconds=github_config.poll_seconds,
+        )
         try:
             if github_config.primary_repo:
                 repo = await asyncio.wait_for(github_api.fetch_repo(github_config.primary_repo), timeout=8)
@@ -997,50 +748,24 @@ class System(commands.Cog):
         else:
             error_digest_line = info_line("Error digest", "disabled until configured with /setup")
 
-        feature_lines = [
-            warn_line("Maintenance mode", self.maintenance_state().get("message"))
-            if self.maintenance_state().get("enabled")
-            else ok_line("Maintenance mode", "inactive"),
-            ok_line("Streaming status", f"rotating every {stream_status_interval_seconds}s")
-            if self.rotate_stream_status.is_running() and not self.maintenance_state().get("enabled")
-            else info_line("Streaming status", "paused while maintenance is active")
-            if self.maintenance_state().get("enabled")
-            else warn_line("Streaming status", "loop stopped"),
-            ok_line("Startup updates", "background-safe") if update_channel_id else warn_line("Startup updates", "no channel set"),
-            ok_line("GitHub watcher", "running")
-            if github_watcher and github_watcher.is_running()
-            else warn_line("GitHub watcher", "stopped or not configured"),
-            ok_line("Giveaways/Roles/Tickets", "persistent buttons"),
-            error_digest_line,
-            info_line("Polls", "temporary by design; buttons expire after restart/24h"),
-        ]
+        feature_lines = build_doctor_feature_lines(
+            maintenance_state=self.maintenance_state(),
+            stream_running=self.rotate_stream_status.is_running(),
+            stream_interval_seconds=stream_status_interval_seconds,
+            update_channel_id=update_channel_id,
+            github_watcher_running=bool(github_watcher and github_watcher.is_running()),
+            error_digest_line=error_digest_line,
+        )
 
         storage_lines = storage_health_lines()
-        all_lines = runtime_lines + config_lines + permission_lines + storage_lines + github_lines + feature_lines
-        error_count = sum(line.startswith("❌") for line in all_lines)
-        warning_count = sum(line.startswith("⚠️") for line in all_lines)
-
-        if error_count:
-            title = "🩺 Doctor Check • Needs attention"
-            description = f"Found **{error_count} issue(s)** and **{warning_count} note(s)**."
-            color = Palette.DANGER
-        elif warning_count:
-            title = "🩺 Doctor Check • Healthy with notes"
-            description = f"No critical issues. **{warning_count} note(s)** are worth knowing."
-            color = Palette.WARNING
-        else:
-            title = "🩺 Doctor Check • All systems healthy"
-            description = "Everything looks clean. The little Raspberry Pi is vibing."
-            color = Palette.SUCCESS
-
-        embed = make_embed(title, description, color=color)
-        embed.add_field(name="Pulse", value=clamp_field(runtime_lines), inline=False)
-        embed.add_field(name="Configuration", value=clamp_field(config_lines), inline=False)
-        embed.add_field(name="Storage", value=clamp_field(storage_lines), inline=False)
-        embed.add_field(name="Permissions", value=clamp_field(permission_lines), inline=False)
-        embed.add_field(name="GitHub", value=clamp_field(github_lines), inline=False)
-        embed.add_field(name="Feature Notes", value=clamp_field(feature_lines), inline=False)
-        brand_footer(embed, "Doctor diagnostics")
+        embed = build_doctor_embed(
+            runtime_lines=runtime_lines,
+            config_lines=config_lines,
+            storage_lines=storage_lines,
+            permission_lines=permission_lines,
+            github_lines=github_lines,
+            feature_lines=feature_lines,
+        )
         await respond(interaction, embed, ephemeral=True)
 
     @app_commands.command(name="help", description="Interactive command hub — browse every category")

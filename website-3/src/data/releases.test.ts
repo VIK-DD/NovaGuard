@@ -3,13 +3,18 @@ import { describe, expect, it } from "vitest";
 import archive from "./updates-archive.json";
 import {
   ALPHA_CUTOFF_ISO,
+  ALPHA_PHASE,
   BETA_PHASE,
+  OFFICIAL_RELEASE_FLOOR,
+  STABLE_PHASE,
   UPDATES_PER_VERSION,
   alphaSlotSizes,
   assignReleases,
   cleanText,
+  canonicalPublicVersion,
   currentRelease,
   isSignificant,
+  newestPublicVersion,
   releaseGroups,
 } from "./releases";
 import type { Release } from "./updates";
@@ -127,12 +132,12 @@ describe("phase boundary", () => {
   });
 });
 
-describe("open beta", () => {
-  const beta = (releases: Release[]) =>
-    assignReleases(releases).filter((item) => item.phase === BETA_PHASE);
+describe("public version cycle", () => {
+  const postAlpha = (releases: Release[]) =>
+    assignReleases(releases).filter((item) => item.phase !== ALPHA_PHASE);
 
   it("starts at 2.0", () => {
-    expect(beta([...history(31), betaEntry(1, [FEATURE])])[0].release).toBe("2.0");
+    expect(postAlpha([...history(31), betaEntry(1, [FEATURE])])[0].release).toBe("2.0");
   });
 
   it("advances after the agreed number of significant updates", () => {
@@ -140,12 +145,40 @@ describe("open beta", () => {
       ...history(31),
       ...Array.from({ length: UPDATES_PER_VERSION + 1 }, (_, i) => betaEntry(i + 1, [FEATURE])),
     ];
-    const stamped = beta(releases);
+    const stamped = postAlpha(releases);
 
     expect(stamped.slice(0, UPDATES_PER_VERSION).map((i) => i.release)).toEqual(
       Array(UPDATES_PER_VERSION).fill("2.0"),
     );
     expect(stamped[UPDATES_PER_VERSION].release).toBe("2.1");
+  });
+
+  it("rolls from 2.9 to the official 3.0 release", () => {
+    const releases = [
+      ...history(31),
+      ...Array.from({ length: UPDATES_PER_VERSION * 10 + 1 }, (_, i) =>
+        betaEntry(i + 1, [FEATURE]),
+      ),
+    ];
+
+    const stamped = postAlpha(releases);
+    expect(stamped.at(-2)?.release).toBe("2.9");
+    expect(stamped.at(-1)?.release).toBe("3.0");
+    expect(stamped.at(-1)?.phase).toBe(STABLE_PHASE);
+  });
+
+  it("rolls from 3.9 to 4.0", () => {
+    const releases = [
+      ...history(31),
+      ...Array.from({ length: UPDATES_PER_VERSION * 20 + 1 }, (_, i) =>
+        betaEntry(i + 1, [FEATURE]),
+      ),
+    ];
+    const stamped = postAlpha(releases);
+
+    expect(stamped.at(-2)?.release).toBe("3.9");
+    expect(stamped.at(-1)?.release).toBe("4.0");
+    expect(stamped.at(-1)?.phase).toBe(STABLE_PHASE);
   });
 
   it("lets ordinary work fill a version too", () => {
@@ -157,7 +190,7 @@ describe("open beta", () => {
       ...Array.from({ length: 20 }, (_, index) => betaEntry(index + 1, [CHORE])),
     ];
 
-    expect([...new Set(beta(releases).map((item) => item.release))].sort()).toEqual([
+    expect([...new Set(postAlpha(releases).map((item) => item.release))].sort()).toEqual([
       "2.0",
       "2.1",
       "2.2",
@@ -166,10 +199,32 @@ describe("open beta", () => {
   });
 
   it("still publishes small changes", () => {
-    const stamped = beta([...history(31), betaEntry(1, [CHORE])]);
+    const stamped = postAlpha([...history(31), betaEntry(1, [CHORE])]);
 
     expect(stamped).toHaveLength(1);
     expect(stamped[0].significant).toBe(false);
+  });
+});
+
+describe("public version normalization", () => {
+  it("converts legacy two-digit minors into the one-decimal release cycle", () => {
+    expect(canonicalPublicVersion("2.9")).toBe("2.9");
+    expect(canonicalPublicVersion("2.10")).toBe("3.0");
+    expect(canonicalPublicVersion("2.11")).toBe("3.1");
+    expect(canonicalPublicVersion("3.10")).toBe("4.0");
+  });
+
+  it("never lets runtime data move the official site below 3.0", () => {
+    expect(OFFICIAL_RELEASE_FLOOR).toBe("3.0");
+    expect(newestPublicVersion("2.9")).toBe("3.0");
+    expect(newestPublicVersion("2.10", "3.0")).toBe("3.0");
+    expect(newestPublicVersion("3.1")).toBe("3.1");
+  });
+
+  it("ignores malformed runtime versions", () => {
+    expect(canonicalPublicVersion("v3.0")).toBeNull();
+    expect(canonicalPublicVersion("3")).toBeNull();
+    expect(newestPublicVersion("latest", null)).toBe("3.0");
   });
 });
 
@@ -198,21 +253,21 @@ describe("grouping", () => {
     expect(placed).toHaveLength(releases.length);
   });
 
-  it("names the live version", () => {
-    expect(currentRelease(releases).version).toBe(releaseGroups(releases)[0].version);
-    expect(currentRelease(releases).phaseLabel).toBe("Open Beta");
+  it("keeps the official public release at the stable floor", () => {
+    expect(releaseGroups(releases)[0].phaseLabel).toBe("Beta");
+    expect(currentRelease(releases)).toEqual({ version: "3.0", phaseLabel: "" });
   });
 
   it("survives an empty archive", () => {
     expect(releaseGroups([])).toEqual([]);
-    expect(currentRelease([]).version).toBe("2.0");
+    expect(currentRelease([]).version).toBe("3.0");
   });
 
   it("never reports closed alpha as the current release", () => {
     const alphaOnly = history(31);
 
     expect(releaseGroups(alphaOnly).every((group) => !group.current)).toBe(true);
-    expect(currentRelease(alphaOnly)).toEqual({ version: "2.0", phaseLabel: "Open Beta" });
+    expect(currentRelease(alphaOnly)).toEqual({ version: "3.0", phaseLabel: "" });
   });
 });
 
@@ -239,6 +294,18 @@ describe("presentation", () => {
   it("never empties a real sentence", () => {
     expect(cleanText("\u{1F680} Backups now upload")).toBe("Backups now upload");
   });
+
+  it("uses command wording instead of the removed creator-name wording", () => {
+    expect(cleanText("Improved commands — same names, smoother behavior: /status")).toBe(
+      "Improved commands — same commands, smoother behavior: /status",
+    );
+  });
+
+  it("does not present an old runtime generation as a product release", () => {
+    expect(cleanText('Initial tracked release for v3.1.0 "Nova"')).toBe(
+      "Initial tracked NovaGuard release",
+    );
+  });
 });
 
 describe("the real archive", () => {
@@ -264,11 +331,20 @@ describe("the real archive", () => {
     expect(placed).toHaveLength(releases.length);
   });
 
-  it("never puts a pre-cutoff update in open beta or a post-cutoff update in alpha", () => {
+  it("keeps alpha before the cutoff and assigns later phases by public version", () => {
     for (const item of assignReleases(releases)) {
-      const expectedPhase = item.created_at < ALPHA_CUTOFF_ISO ? "alpha" : BETA_PHASE;
+      const expectedPhase =
+        item.created_at < ALPHA_CUTOFF_ISO
+          ? ALPHA_PHASE
+          : Number(item.release.split(".")[0]) < 3
+            ? BETA_PHASE
+            : STABLE_PHASE;
       expect(item.phase).toBe(expectedPhase);
     }
+  });
+
+  it("has reached the official 3.0 release without a public phase label", () => {
+    expect(currentRelease(releases)).toEqual({ version: "3.0", phaseLabel: "" });
   });
 
   it("finds real significant updates in it", () => {

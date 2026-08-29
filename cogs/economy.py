@@ -14,6 +14,23 @@ from cogs.admin import require_admin
 from core import shop
 from core.admin_auth import record_audit
 from core.database import load_economy_data, upsert_economy_wallets
+from core.economy_helpers import (
+    CURRENCY,
+    SLOT_REELS,
+    SlotOutcome,
+    economy_status_payload,
+    get_wallet,
+    parse_saved_datetime,
+    ranked_wallets,
+    slot_outcome,
+    wallet_snapshot,
+)
+from core.economy_presenters import (
+    build_balance_embed,
+    build_inventory_embed,
+    build_richest_embed,
+    build_shop_embed,
+)
 from core.economy_settings import ECONOMY_DEFAULTS, resolve_economy
 from core.storage import get_guild_settings
 from core.theme import Palette, brand_footer, make_embed, progress_bar
@@ -21,14 +38,12 @@ from core.utils import humanize_number, respond
 
 log = logging.getLogger(__name__)
 
-CURRENCY = "🪙"
 DAILY_BASE = ECONOMY_DEFAULTS["daily_base"]
 DAILY_STREAK_BONUS = ECONOMY_DEFAULTS["daily_streak_bonus"]
 WORK_COOLDOWN = timedelta(minutes=ECONOMY_DEFAULTS["work_cooldown_minutes"])
 # How late a claim can be and still continue a streak. Past this the streak
 # resets - unless a shield is spent.
 STREAK_GRACE = timedelta(hours=48)
-SLOT_REELS = ["🍒", "🍋", "🍇", "💎", "7️⃣"]
 WORK_FLAVORS = [
     "You debugged production at 3 AM",
     "You wrote documentation nobody will read",
@@ -39,33 +54,9 @@ WORK_FLAVORS = [
     "You renamed `data2_final_FINAL.py` responsibly",
     "You centered a div on the first try",
 ]
-
-
-def parse_saved_datetime(value):
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
 # How often the in-memory wallets are written back to SQLite as a safety net.
 # Mutating commands also flush right away, so this only covers missed paths.
 ECONOMY_FLUSH_SECONDS = 60
-
-
-def get_wallet(data, guild_id, user_id):
-    guild_data = data.setdefault(str(guild_id), {})
-    return guild_data.setdefault(
-        str(user_id),
-        {"coins": 0, "daily_streak": 0, "last_daily": None, "last_work": None, "trophies": []},
-    )
-
-
 class Economy(commands.Cog):
     """Server currency with daily rewards, work and games of chance."""
 
@@ -140,41 +131,7 @@ class Economy(commands.Cog):
         return None
 
     def status_payload(self, guild):
-        guild_data = self.data.get(str(guild.id), {})
-        wallets = [
-            (user_id, wallet)
-            for user_id, wallet in guild_data.items()
-            if isinstance(wallet, dict)
-        ]
-        ordered = sorted(wallets, key=lambda item: int(item[1].get("coins", 0) or 0), reverse=True)
-        leaderboard = []
-        for position, (user_id, wallet) in enumerate(ordered[:10], 1):
-            member = guild.get_member(int(user_id)) if str(user_id).isdigit() else None
-            leaderboard.append(
-                {
-                    "position": position,
-                    "user_id": str(user_id),
-                    "display_name": member.display_name if member else f"Member {user_id}",
-                    "coins": max(0, int(wallet.get("coins", 0) or 0)),
-                    "daily_streak": max(0, int(wallet.get("daily_streak", 0) or 0)),
-                }
-            )
-        return {
-            "tracked_wallets": len(wallets),
-            "total_coins": sum(max(0, int(wallet.get("coins", 0) or 0)) for _, wallet in wallets),
-            "leaderboard": leaderboard,
-            "shop": [
-                {
-                    "key": item["key"],
-                    "label": item["label"],
-                    "icon": item.get("icon") or "🪙",
-                    "price": int(item["price"]),
-                    "kind": item["kind"],
-                    "description": item.get("description"),
-                }
-                for item in shop.catalog()
-            ],
-        }
+        return economy_status_payload(self.data, guild)
 
     def wallet_snapshot(self, guild_id, user_id):
         """Read a wallet without creating one.
@@ -183,7 +140,7 @@ class Economy(commands.Cog):
         write an empty wallet for every member who ever sent a message, which
         is a lot of rows for a question that is almost always "nothing".
         """
-        return self.data.get(str(guild_id), {}).get(str(user_id))
+        return wallet_snapshot(self.data, guild_id, user_id)
 
     def xp_multiplier(self, guild_id, user_id) -> float:
         """How much XP a member currently earns per message, as a factor."""
@@ -225,41 +182,7 @@ class Economy(commands.Cog):
         target = member or interaction.user
         data = self.data
         wallet = get_wallet(data, interaction.guild_id, target.id)
-
-        title = shop.worn_title(wallet)
-        embed = make_embed(
-            f"💰 {target.display_name}'s wallet",
-            f"# {CURRENCY} {humanize_number(wallet['coins'])}",
-            color=Palette.GOLD,
-        )
-        if title:
-            embed.set_author(name=f"{title} · {target.display_name}", icon_url=target.display_avatar.url)
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(name="🔥 Daily streak", value=f"`{wallet.get('daily_streak', 0)} day(s)`", inline=True)
-
-        shields = shop.shields(wallet)
-        if shields:
-            embed.add_field(name="🛡️ Streak shields", value=f"`{shields}`", inline=True)
-
-        trophies = [key for key in wallet.get("trophies", []) if shop.item(key)]
-        if trophies:
-            shelf = " ".join(shop.item(key)["icon"] for key in trophies)
-            embed.add_field(name="🏆 Trophy shelf", value=shelf, inline=True)
-
-        effects = shop.active_effects(wallet)
-        if effects:
-            embed.add_field(
-                name="✨ Active",
-                value="\n".join(
-                    f"{shop.label_for(record.get('item'))} —"
-                    f" ends {discord.utils.format_dt(shop.parse_time(record['expires_at']), 'R')}"
-                    for record in effects.values()
-                ),
-                inline=False,
-            )
-
-        brand_footer(embed, "Economy · /shop to spend, /inventory for yours")
-        await respond(interaction, embed)
+        await respond(interaction, build_balance_embed(target, wallet))
 
     @app_commands.command(name="daily", description="Claim your daily coins (streak bonus!)")
     @app_commands.guild_only()
@@ -459,16 +382,13 @@ class Economy(commands.Cog):
         reels = [random.choice(SLOT_REELS) for _ in range(3)]
         display = " | ".join(reels)
 
-        if reels[0] == reels[1] == reels[2]:
-            multiplier = 10 if reels[0] == "7️⃣" else 5
-            net = amount * multiplier - amount
-            title, color = f"🎰 JACKPOT x{multiplier}!", Palette.GOLD
-        elif reels[0] == reels[1] or reels[1] == reels[2] or reels[0] == reels[2]:
-            # 1.5x payout keeps the long-run house edge at ~4% (a 2x pair made slots player-positive)
-            net = amount // 2
+        outcome = slot_outcome(reels, amount)
+        net = outcome.net
+        if outcome.kind == "jackpot":
+            title, color = f"🎰 JACKPOT x{outcome.multiplier}!", Palette.GOLD
+        elif outcome.kind == "pair":
             title, color = "🎰 Two of a kind!", Palette.SUCCESS
         else:
-            net = -amount
             title, color = "🎰 No luck…", Palette.DANGER
 
         wallet["coins"] += net
@@ -484,24 +404,8 @@ class Economy(commands.Cog):
     async def richest(self, interaction: discord.Interaction):
         if await self._settings_or_reject(interaction) is None:
             return
-        data = self.data
-        guild_data = data.get(str(interaction.guild_id), {})
-        ordered = sorted(guild_data.items(), key=lambda kv: kv[1].get("coins", 0), reverse=True)
-        ordered = [(uid, wallet) for uid, wallet in ordered if wallet.get("coins")]
-
-        if not ordered:
-            embed = make_embed("🌱 Nothing yet", "Nobody has earned coins. Try `/daily`!", color=Palette.INFO)
-            brand_footer(embed)
-            return await respond(interaction, embed)
-
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-        lines = [
-            f"{medals.get(index, f'`#{index}`')} <@{uid}> — {CURRENCY} `{humanize_number(wallet['coins'])}`"
-            for index, (uid, wallet) in enumerate(ordered[:10], 1)
-        ]
-        embed = make_embed(f"💰 Richest • {interaction.guild.name}", "\n".join(lines), color=Palette.GOLD)
-        brand_footer(embed, "Economy leaderboard")
-        await respond(interaction, embed)
+        wallets = ranked_wallets(self.data, interaction.guild_id)
+        await respond(interaction, build_richest_embed(interaction.guild, wallets))
 
     @app_commands.command(name="shop", description="Browse the shop")
     @app_commands.guild_only()
@@ -509,34 +413,7 @@ class Economy(commands.Cog):
         if await self._settings_or_reject(interaction, "shop_enabled") is None:
             return
         wallet = get_wallet(self.data, interaction.guild_id, interaction.user.id)
-        embed = make_embed(
-            "🛍️ Shop",
-            f"You have {CURRENCY} `{humanize_number(wallet['coins'])}`. Buy with `/buy`.",
-            color=Palette.PURPLE,
-        )
-
-        for kind, heading in (
-            (shop.BOOSTER, "⚡ Boosters"),
-            (shop.PERK, "🛠️ Perks"),
-            (shop.TITLE, "🎖️ Titles"),
-            (shop.TROPHY, "🏆 Trophies"),
-            (shop.CRATE, "📦 Crates"),
-        ):
-            entries = shop.catalog(kind)
-            if not entries:
-                continue
-            lines = []
-            for entry in entries:
-                owned = " *(owned)*" if shop.owns(wallet, entry["key"]) else ""
-                note = f"\n-# {entry['description']}" if entry.get("description") else ""
-                lines.append(
-                    f"{shop.label_for(entry['key'])} — {CURRENCY} `{humanize_number(entry['price'])}`"
-                    f"{owned}{note}"
-                )
-            embed.add_field(name=heading, value="\n".join(lines), inline=False)
-
-        brand_footer(embed, "Crates open with /crate · titles equip with /title")
-        await respond(interaction, embed)
+        await respond(interaction, build_shop_embed(wallet))
 
     @app_commands.command(name="buy", description="Buy something from the shop")
     @app_commands.describe(item="What are you buying?")
@@ -596,39 +473,7 @@ class Economy(commands.Cog):
             return
         target = member or interaction.user
         wallet = get_wallet(self.data, interaction.guild_id, target.id)
-
-        worn = shop.worn_title(wallet)
-        embed = make_embed(
-            f"🎒 {target.display_name}'s inventory",
-            f"Wearing **{worn}**." if worn else "No title worn.",
-            color=Palette.PURPLE,
-        )
-
-        effects = shop.active_effects(wallet)
-        embed.add_field(
-            name="✨ Running now",
-            value="\n".join(
-                f"{shop.label_for(record.get('item'))} —"
-                f" ends {discord.utils.format_dt(shop.parse_time(record['expires_at']), 'R')}"
-                for record in effects.values()
-            )
-            or "-# Nothing active.",
-            inline=False,
-        )
-
-        owned = [key for key in shop.owned_keys(wallet) if shop.item(key)]
-        embed.add_field(
-            name="📦 Owned",
-            value=" · ".join(shop.label_for(key) for key in owned) or "-# Nothing yet.",
-            inline=False,
-        )
-
-        shields = shop.shields(wallet)
-        if shields:
-            embed.add_field(name="🛡️ Streak shields", value=f"`{shields}`", inline=True)
-
-        brand_footer(embed, "Economy · /shop to buy more")
-        await respond(interaction, embed)
+        await respond(interaction, build_inventory_embed(target, wallet))
 
     @app_commands.command(name="crate", description="Open a mystery crate")
     @app_commands.guild_only()

@@ -29,6 +29,14 @@ BACKUP_DIR = BASE_DIR / "backups"
 OFFSITE_STATE_FILENAME = "offsite_state.json"
 MAX_BACKUPS = 10
 MIN_BACKUP_BYTES = 200
+# Restore limits bound disk and memory use even when an operator is handed a
+# malformed legacy ZIP. Normal NovaGuard archives are far below these ceilings.
+MAX_ARCHIVE_MEMBERS = 5_000
+MAX_ARCHIVE_MEMBER_BYTES = 256 * 1024 * 1024
+MAX_ARCHIVE_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+MAX_ARCHIVE_COMPRESSION_RATIO = 200
+MIN_COMPRESSION_RATIO_CHECK_BYTES = 1024 * 1024
+MAX_JSON_MEMBER_BYTES = 16 * 1024 * 1024
 RESTORE_CHECK_DIR = BACKUP_DIR / "restore-check"
 BACKUP_PATTERNS = (
     "novaguard-backup-*.zip.ngbackup",
@@ -552,9 +560,47 @@ def deferred_remote_retention(message="Remote retention deferred because the ful
     }
 
 
-def _safe_extract(zip_file, target_dir):
+def _validate_zip_limits(zip_file):
+    members = zip_file.infolist()
+    if len(members) > MAX_ARCHIVE_MEMBERS:
+        raise ValueError(
+            f"Backup contains too many members ({len(members)}; maximum {MAX_ARCHIVE_MEMBERS})."
+        )
+
+    total_size = 0
+    names = set()
+    for member in members:
+        if member.filename in names:
+            raise ValueError(f"Backup contains a duplicate member: {member.filename}")
+        names.add(member.filename)
+        if member.flag_bits & 0x1:
+            raise ValueError(f"Backup contains a ZIP-encrypted member: {member.filename}")
+        if member.file_size > MAX_ARCHIVE_MEMBER_BYTES:
+            raise ValueError(
+                f"Backup member is too large: {member.filename} ({member.file_size} bytes)."
+            )
+        if member.file_size >= MIN_COMPRESSION_RATIO_CHECK_BYTES:
+            compression_ratio = (
+                member.file_size / member.compress_size if member.compress_size else float("inf")
+            )
+            if compression_ratio > MAX_ARCHIVE_COMPRESSION_RATIO:
+                raise ValueError(
+                    "Backup member has an unsafe compression ratio: "
+                    f"{member.filename} ({compression_ratio:.1f}:1)."
+                )
+        total_size += member.file_size
+        if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                "Backup exceeds the maximum uncompressed size "
+                f"({MAX_ARCHIVE_UNCOMPRESSED_BYTES} bytes)."
+            )
+    return members
+
+
+def _safe_extract(zip_file, target_dir, *, members=None):
     target_dir = Path(target_dir).resolve()
-    for member in zip_file.infolist():
+    members = _validate_zip_limits(zip_file) if members is None else members
+    for member in members:
         if stat.S_ISLNK(member.external_attr >> 16):
             raise ValueError(f"Backup contains a symbolic link: {member.filename}")
         member_path = (target_dir / member.filename).resolve()
@@ -605,10 +651,11 @@ def extract_backup(backup_path, target_dir, *, replace=False):
     os.chmod(target_dir, 0o700)
     try:
         with readable_backup_path(backup_path) as clear_path, zipfile.ZipFile(clear_path) as zip_file:
+            members = _validate_zip_limits(zip_file)
             bad_member = zip_file.testzip()
             if bad_member:
                 raise ValueError(f"Corrupt zip member: {bad_member}")
-            _safe_extract(zip_file, target_dir)
+            _safe_extract(zip_file, target_dir, members=members)
         _restrict_tree_permissions(target_dir)
     except Exception:
         shutil.rmtree(target_dir, ignore_errors=True)
@@ -620,7 +667,8 @@ def _sqlite_integrity_from_zip(zip_file, archive_name):
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="novaguard-backup-check-", dir=BACKUP_DIR) as temp_dir:
         db_copy = Path(temp_dir) / "novaguard.sqlite3"
-        db_copy.write_bytes(zip_file.read(archive_name))
+        with zip_file.open(archive_name) as source, db_copy.open("wb") as destination:
+            shutil.copyfileobj(source, destination, length=1024 * 1024)
         with closing(sqlite3.connect(db_copy)) as connection:
             result = connection.execute("PRAGMA integrity_check").fetchone()
     return result[0] if result else "no result"
@@ -654,19 +702,27 @@ def inspect_backup(backup_path, *, extract=False):
 
     try:
         with readable_backup_path(backup_path) as clear_path, zipfile.ZipFile(clear_path) as zip_file:
+            members = _validate_zip_limits(zip_file)
             bad_member = zip_file.testzip()
             if bad_member:
                 report["errors"].append(f"Corrupt zip member: {bad_member}")
 
-            names = zip_file.namelist()
+            names = [member.filename for member in members]
             report["included"] = names
             if not names:
                 report["errors"].append("Backup archive is empty.")
 
-            for archive_name in names:
-                if archive_name.endswith(".json"):
+            for member in members:
+                archive_name = member.filename
+                if archive_name.endswith(".json") and not member.is_dir():
+                    if member.file_size > MAX_JSON_MEMBER_BYTES:
+                        report["errors"].append(
+                            f"{archive_name} is too large to validate safely "
+                            f"({member.file_size} bytes)."
+                        )
+                        continue
                     try:
-                        json.loads(zip_file.read(archive_name).decode("utf-8"))
+                        json.loads(zip_file.read(member).decode("utf-8"))
                         report["json_files"].append(archive_name)
                     except (UnicodeDecodeError, json.JSONDecodeError) as error:
                         report["errors"].append(f"{archive_name} is not valid JSON: {error}")

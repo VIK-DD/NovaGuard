@@ -8,7 +8,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.release_versions import (  # noqa: E402
     ALPHA_SLOTS,
+    ALPHA_PHASE,
     BETA_PHASE,
+    STABLE_PHASE,
     UPDATES_PER_VERSION,
     alpha_slot_sizes,
     assign_releases,
@@ -16,6 +18,7 @@ from core.release_versions import (  # noqa: E402
     current_project_release,
     current_release,
     is_significant,
+    public_release_label,
     release_groups,
 )
 
@@ -207,27 +210,49 @@ class PhaseBoundaryTests(unittest.TestCase):
         self.assertEqual([item["build"] for item in assign_releases(entries)], [1, 100])
 
 
-class OpenBetaTests(unittest.TestCase):
-    def _beta(self, entries):
-        return [item for item in assign_releases(entries) if item["phase"] == BETA_PHASE]
+class PublicVersionCycleTests(unittest.TestCase):
+    def _post_alpha(self, entries):
+        return [item for item in assign_releases(entries) if item["phase"] != ALPHA_PHASE]
 
     def test_open_beta_starts_at_two_zero(self):
         entries = history(HISTORICAL_BUILDS) + [beta_entry(1, [FEATURE])]
 
-        self.assertEqual(self._beta(entries)[0]["release"], "2.0")
+        self.assertEqual(self._post_alpha(entries)[0]["release"], "2.0")
 
     def test_a_version_holds_the_agreed_number_of_updates(self):
         entries = history(HISTORICAL_BUILDS) + [
             beta_entry(offset, [FEATURE])
             for offset in range(1, UPDATES_PER_VERSION + 2)
         ]
-        beta = self._beta(entries)
+        post_alpha = self._post_alpha(entries)
 
         self.assertEqual(
-            [item["release"] for item in beta[:UPDATES_PER_VERSION]],
+            [item["release"] for item in post_alpha[:UPDATES_PER_VERSION]],
             ["2.0"] * UPDATES_PER_VERSION,
         )
-        self.assertEqual(beta[UPDATES_PER_VERSION]["release"], "2.1")
+        self.assertEqual(post_alpha[UPDATES_PER_VERSION]["release"], "2.1")
+
+    def test_two_nine_rolls_over_to_three_zero(self):
+        entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [FEATURE])
+            for offset in range(1, UPDATES_PER_VERSION * 10 + 2)
+        ]
+        post_alpha = self._post_alpha(entries)
+
+        self.assertEqual(post_alpha[-2]["release"], "2.9")
+        self.assertEqual(post_alpha[-1]["release"], "3.0")
+        self.assertEqual(post_alpha[-1]["phase"], STABLE_PHASE)
+
+    def test_three_nine_rolls_over_to_four_zero(self):
+        entries = history(HISTORICAL_BUILDS) + [
+            beta_entry(offset, [FEATURE])
+            for offset in range(1, UPDATES_PER_VERSION * 20 + 2)
+        ]
+        post_alpha = self._post_alpha(entries)
+
+        self.assertEqual(post_alpha[-2]["release"], "3.9")
+        self.assertEqual(post_alpha[-1]["release"], "4.0")
+        self.assertEqual(post_alpha[-1]["phase"], STABLE_PHASE)
 
     def test_ordinary_work_fills_a_version_just_like_features_do(self):
         # The threshold used to count only feature work, which sounded right
@@ -237,10 +262,10 @@ class OpenBetaTests(unittest.TestCase):
         entries = history(HISTORICAL_BUILDS) + [
             beta_entry(offset, [CHORE]) for offset in range(1, UPDATES_PER_VERSION + 2)
         ]
-        beta = self._beta(entries)
+        post_alpha = self._post_alpha(entries)
 
-        self.assertEqual(beta[UPDATES_PER_VERSION - 1]["release"], "2.0")
-        self.assertEqual(beta[UPDATES_PER_VERSION]["release"], "2.1")
+        self.assertEqual(post_alpha[UPDATES_PER_VERSION - 1]["release"], "2.0")
+        self.assertEqual(post_alpha[UPDATES_PER_VERSION]["release"], "2.1")
 
     def test_a_run_of_chores_keeps_advancing_the_version(self):
         entries = history(HISTORICAL_BUILDS) + [
@@ -248,7 +273,7 @@ class OpenBetaTests(unittest.TestCase):
         ]
 
         self.assertEqual(
-            sorted({item["release"] for item in self._beta(entries)}),
+            sorted({item["release"] for item in self._post_alpha(entries)}),
             ["2.0", "2.1", "2.2", "2.3"],
         )
 
@@ -256,10 +281,10 @@ class OpenBetaTests(unittest.TestCase):
         # They fill a version now, but they must not be flagged as notable -
         # the "New" marker still has to mean a feature.
         entries = history(HISTORICAL_BUILDS) + [beta_entry(1, [CHORE])]
-        beta = self._beta(entries)
+        post_alpha = self._post_alpha(entries)
 
-        self.assertEqual(len(beta), 1)
-        self.assertFalse(beta[0]["significant"])
+        self.assertEqual(len(post_alpha), 1)
+        self.assertFalse(post_alpha[0]["significant"])
 
 
 class GroupingTests(unittest.TestCase):
@@ -298,11 +323,11 @@ class GroupingTests(unittest.TestCase):
         live = current_release(self.entries)
 
         self.assertEqual(live["version"], release_groups(self.entries)[0]["version"])
-        self.assertEqual(live["phase_label"], "Open Beta")
+        self.assertEqual(live["phase_label"], "Beta")
 
     def test_an_empty_history_still_reports_a_starting_version(self):
         self.assertEqual(release_groups([]), [])
-        self.assertEqual(current_release([])["version"], "2.0")
+        self.assertEqual(current_release([])["version"], "3.0")
 
     def test_closed_alpha_is_never_reported_as_the_current_release(self):
         alpha_groups = release_groups(history(HISTORICAL_BUILDS))
@@ -310,7 +335,7 @@ class GroupingTests(unittest.TestCase):
         self.assertFalse(any(group["current"] for group in alpha_groups))
         self.assertEqual(
             current_release(history(HISTORICAL_BUILDS)),
-            {"version": "2.0", "phase": BETA_PHASE, "phase_label": "Open Beta"},
+            {"version": "3.0", "phase": STABLE_PHASE, "phase_label": ""},
         )
 
     def test_project_release_merges_the_archive_with_live_engine_state(self):
@@ -326,10 +351,16 @@ class GroupingTests(unittest.TestCase):
         live = current_project_release(state, archive=history(HISTORICAL_BUILDS))
 
         self.assertEqual(live["version"], "2.1")
-        self.assertEqual(live["phase_label"], "Open Beta")
+        self.assertEqual(live["phase_label"], "Beta")
 
 
 class PresentationTests(unittest.TestCase):
+    def test_public_label_never_appends_a_lifecycle_badge(self):
+        release = {"version": "3.0", "phase": STABLE_PHASE, "phase_label": ""}
+
+        self.assertEqual(public_release_label(release), "3.0")
+        self.assertEqual(public_release_label(release, prefix="v"), "v3.0")
+
     def test_emoji_are_stripped_from_everything_shown(self):
         stamped = assign_releases([entry(1, [FEATURE])])
 
@@ -338,6 +369,18 @@ class PresentationTests(unittest.TestCase):
 
     def test_stripping_emoji_never_empties_a_real_sentence(self):
         self.assertEqual(clean_text("\U0001F680 Backups now upload"), "Backups now upload")
+
+    def test_public_copy_uses_command_wording(self):
+        self.assertEqual(
+            clean_text("Improved commands — same names, smoother behavior: /status"),
+            "Improved commands — same commands, smoother behavior: /status",
+        )
+
+    def test_historical_runtime_generation_is_not_presented_as_a_product_release(self):
+        self.assertEqual(
+            clean_text('Initial tracked release for v3.1.0 "Nova"'),
+            "Initial tracked NovaGuard release",
+        )
 
     def test_decoration_only_highlights_disappear_instead_of_leaving_blanks(self):
         stamped = assign_releases([entry(1, ["\U0001F680", "", "Real change"])])

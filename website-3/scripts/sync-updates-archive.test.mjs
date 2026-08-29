@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { fallbackNotice, isValidEntry, shouldReplaceArchive } from "./sync-updates-archive.mjs";
+import {
+  fallbackNotice,
+  isValidEntry,
+  normalizePublicEntry,
+  shouldReplaceArchive,
+} from "./sync-updates-archive.mjs";
 
 const entry = (build, created_at = "2026-08-01T23:21:39+00:00") => ({ build, created_at });
 
@@ -67,5 +72,45 @@ describe("fallbackNotice", () => {
     delete process.env.GITHUB_ACTIONS;
 
     expect(fallbackNotice(57, "feed unreachable")).not.toMatch(/^::warning/);
+  });
+});
+
+describe("normalizePublicEntry", () => {
+  it("normalizes the legacy 2.10 value into the official stable 3.0 release", () => {
+    expect(
+      normalizePublicEntry({
+        ...entry(93),
+        release: "2.10",
+        phase: "open-beta",
+        phase_label: "Open Beta",
+      }),
+    ).toMatchObject({ release: "3.0", phase: "stable", phase_label: "" });
+  });
+
+  it("keeps historical beta but shortens its label and public wording", () => {
+    expect(
+      normalizePublicEntry({
+        ...entry(92),
+        release: "2.9",
+        phase: "open-beta",
+        phase_label: "Open Beta",
+        highlights: ["Improved commands — same names, smoother behavior: /status"],
+      }),
+    ).toMatchObject({
+      release: "2.9",
+      phase: "open-beta",
+      phase_label: "Beta",
+      highlights: ["Improved commands — same commands, smoother behavior: /status"],
+    });
+  });
+
+  it("removes an obsolete runtime generation from historical public copy", () => {
+    expect(
+      normalizePublicEntry({
+        ...entry(32),
+        release: "1.9",
+        changes: ['Initial tracked release for v3.1.0 "Nova"'],
+      }).changes,
+    ).toEqual(["Initial tracked NovaGuard release"]);
   });
 });

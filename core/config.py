@@ -10,8 +10,9 @@ GITHUB_STATE_FILE = BASE_DIR / ".github_state.json"
 
 # Internal runtime/API generation. This is deliberately not the public product
 # version: the public release is derived from the update history in
-# core.release_versions and advances automatically (2.0, 2.1, ...).
-BOT_RUNTIME_VERSION = "3.1.0"
+# core.release_versions and advances automatically with decimal rollover
+# (2.8, 2.9, 3.0, 3.1, ...).
+BOT_RUNTIME_VERSION = "3.0.0"
 # Backwards-compatible alias for older integrations. New user-facing code must
 # use current_project_release() instead of displaying this value.
 BOT_VERSION = BOT_RUNTIME_VERSION

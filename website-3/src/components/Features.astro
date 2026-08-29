@@ -17,22 +17,22 @@ import { features } from "../data/features";
         </h2>
       </div>
 
-      <dl data-reveal-group class="divide-y divide-line border-t border-line">
+      <ol data-reveal-group class="divide-y divide-line border-t border-line">
         {
           features.map((f, i) => (
-            <div data-reveal-item class="group grid gap-2 py-6 sm:grid-cols-[3rem_1fr_auto] sm:items-baseline sm:gap-6">
-              <dt class="font-mono text-xs text-ink-faint">{String(i + 1).padStart(2, "0")}</dt>
-              <div>
-                <p class="font-display text-lg font-semibold">{f.title}</p>
+            <li data-reveal-item class="group grid gap-2 py-6 sm:grid-cols-[3rem_1fr_auto] sm:items-baseline sm:gap-6">
+              <span aria-hidden="true" class="font-mono text-xs text-ink-faint">{String(i + 1).padStart(2, "0")}</span>
+              <article>
+                <h3 class="font-display text-lg font-semibold">{f.title}</h3>
                 <p class="mt-1.5 max-w-lg text-sm leading-relaxed text-ink-muted">{f.body}</p>
-              </div>
+              </article>
               <p class="font-mono text-xs text-ink-faint transition-colors group-hover:text-primary sm:text-right">
                 {f.tag}
               </p>
-            </div>
+            </li>
           ))
         }
-      </dl>
+      </ol>
     </div>
   </div>
 </section>

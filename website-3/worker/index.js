@@ -1,3 +1,8 @@
+import {
+  PUBLIC_LAUNCH_PATH,
+  hasPublicLaunchPassed,
+} from "../launch-config.js";
+
 // Deliberately NOT "ng_session": that name belongs to the bot API's login
 // cookie on api.novaguard.fun. They live on different hosts today, but a
 // future `Domain=.novaguard.fun` on either would make them clobber each other.
@@ -21,7 +26,6 @@ const DEFAULT_STATUS_API_BASE = "https://api.novaguard.fun/api/v1";
 const STATUS_SNAPSHOT_TIMEOUT_MS = 8000;
 const UPDATES_FEED_TIMEOUT_MS = 8000;
 const MAINTENANCE_VALUES = new Set(["1", "true", "on", "enabled", "protected", "private"]);
-const SECURITY_SCAN_OPEN_VALUES = new Set(["1", "true", "on", "enabled", "open"]);
 const MAINTENANCE_FRESH_MS = 30_000;
 const MAINTENANCE_GRACE_MS = 120_000;
 const MAINTENANCE_TIMEOUT_MS = 2_500;
@@ -227,7 +231,18 @@ function loginUrl(request, error = false) {
   return url;
 }
 
-function isPublicPath(pathname) {
+function isLegalPath(pathname) {
+  return (
+    pathname === "/privacy" ||
+    pathname.startsWith("/privacy/") ||
+    pathname === "/terms" ||
+    pathname.startsWith("/terms/") ||
+    pathname === "/server-admin-notice" ||
+    pathname.startsWith("/server-admin-notice/")
+  );
+}
+
+function isPrelaunchPublicPath(pathname) {
   return (
     pathname === "/" ||
     pathname === "/index.html" ||
@@ -251,11 +266,61 @@ function isPublicPath(pathname) {
   );
 }
 
-// The few paths that must answer even mid-maintenance, because the maintenance
-// page itself is built from them. Everything else — including `/` and the
-// Coming Soon face — closes.
+function isRetiredLaunchPath(pathname) {
+  return (
+    pathname === "/" ||
+    pathname === "/index.html" ||
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    ((pathname === "/coming-soon" || pathname.startsWith("/coming-soon/")) &&
+      !pathname.startsWith("/coming-soon/assets/"))
+  );
+}
+
+function retiredGateRedirect(request) {
+  const status = request.method === "GET" || request.method === "HEAD" ? 302 : 303;
+  const headers = new Headers({
+    Location: new URL(PUBLIC_LAUNCH_PATH, request.url).toString(),
+    "Cache-Control": "no-store",
+  });
+  headers.append(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+  );
+  headers.append(
+    "Set-Cookie",
+    `${CSRF_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Lax`,
+  );
+  return new Response(null, { status, headers });
+}
+
+function publicRobotsResponse() {
+  return new Response(
+    [
+      "User-agent: *",
+      "Allow: /",
+      "Disallow: /dashboard/",
+      "Disallow: /login/",
+      "Disallow: /preview/",
+      "Disallow: /maintenance/",
+      "Disallow: /api/",
+      "",
+    ].join("\n"),
+    {
+      headers: {
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    },
+  );
+}
+
+// The few paths that must answer even mid-maintenance. Legal notices remain
+// available without a launch password or preview code so people can understand
+// the service's terms and data practices before authorising the bot.
 function isAlwaysOpenPath(pathname) {
   return (
+    isLegalPath(pathname) ||
     // The way back in. Linked from nowhere, but it has to answer while the
     // site is shut or the code would have nowhere to be typed.
     pathname === "/preview" ||
@@ -272,14 +337,9 @@ function isMaintenanceEnabled(env) {
   return MAINTENANCE_VALUES.has(String(env.MAINTENANCE_MODE || "").trim().toLowerCase());
 }
 
-function isSecurityScanOpen(env) {
-  return SECURITY_SCAN_OPEN_VALUES.has(String(env.SECURITY_SCAN_OPEN || "").trim().toLowerCase());
-}
-
 function assetCacheControl(pathname) {
-  // These pages now sit behind the password. A `public` header on an
-  // authenticated response could be stored by a shared cache and handed to a
-  // visitor with no session, so they are never publicly cacheable.
+  // Form and private application pages must never be retained by a browser or
+  // intermediary, regardless of whether the public launch has happened.
   if (
     pathname === "/login" ||
     pathname === "/login/" ||
@@ -297,6 +357,11 @@ function assetCacheControl(pathname) {
     // session that fetched it, in this browser or in anything between.
     return "no-store";
   }
+  if (isLegalPath(pathname)) {
+    // These are public transparency documents. Keep edge copies short-lived so
+    // policy corrections propagate promptly while the pages remain available.
+    return "public, max-age=300, stale-while-revalidate=3600";
+  }
   if (
     pathname === "/home" ||
     pathname.startsWith("/home/") ||
@@ -311,13 +376,14 @@ function assetCacheControl(pathname) {
     pathname.startsWith("/commands/") ||
     pathname === "/setup" ||
     pathname.startsWith("/setup/") ||
-    pathname === "/privacy" ||
-    pathname.startsWith("/privacy/") ||
-    pathname === "/terms" ||
-    pathname.startsWith("/terms/") ||
-    pathname === "/server-admin-notice" ||
-    pathname.startsWith("/server-admin-notice/")
+    pathname === "/vote" ||
+    pathname.startsWith("/vote/") ||
+    pathname === "/faq" ||
+    pathname.startsWith("/faq/")
   ) {
+    if (hasPublicLaunchPassed()) {
+      return "public, max-age=300, stale-while-revalidate=3600";
+    }
     // `private` keeps these out of any shared cache, which is what the password
     // gate requires. Letting the visitor's own browser hold them for a minute is
     // what makes paging through /updates and going back feel instant.
@@ -593,6 +659,36 @@ async function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
+async function enforceLoginRateLimit(env) {
+  const limiter = env.LOGIN_RATE_LIMITER;
+  if (!limiter || typeof limiter.limit !== "function") {
+    logWorkerEvent("error", "login_rate_limiter_missing");
+    return new Response("Login is temporarily unavailable.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+    });
+  }
+
+  try {
+    // No stable user identity exists before login. A route-wide key avoids
+    // processing IP addresses and caps password guesses per Cloudflare location.
+    const { success } = await limiter.limit({ key: "password-gate" });
+    if (success) return null;
+
+    logWorkerEvent("warn", "auth_login_rate_limited");
+    return new Response("Too many login attempts. Try again in one minute.", {
+      status: 429,
+      headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+    });
+  } catch (error) {
+    logWorkerEvent("error", "login_rate_limiter_failed", { error: errorMessage(error) });
+    return new Response("Login is temporarily unavailable.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+    });
+  }
+}
+
 async function handleLogin(request, env) {
   if (!env.AUTH_PASSWORD) {
     logWorkerEvent("error", "auth_password_missing");
@@ -622,6 +718,8 @@ async function handleLogin(request, env) {
 
   const password = String(form.get("password") || "");
   const next = safeNext(String(form.get("next") || "/dashboard/"));
+  const limited = await enforceLoginRateLimit(env);
+  if (limited) return limited;
 
   if (!(await timingSafeEqual(password, env.AUTH_PASSWORD))) {
     logWorkerEvent("warn", "auth_login_denied");
@@ -874,11 +972,16 @@ async function serveMaintenancePage(request, env, state) {
 
 async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
+  const publiclyLaunched = hasPublicLaunchPassed();
 
   if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
   if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
-  if (url.pathname === "/api/auth/login") return handleLogin(request, env);
-  if (url.pathname === "/api/auth/logout") return handleLogout(request);
+  if (url.pathname === "/api/auth/login") {
+    return publiclyLaunched ? retiredGateRedirect(request) : handleLogin(request, env);
+  }
+  if (url.pathname === "/api/auth/logout") {
+    return publiclyLaunched ? retiredGateRedirect(request) : handleLogout(request);
+  }
   if (url.pathname === "/api/preview") return handlePreview(request, env);
   // Assets answer first: the maintenance page is built from them, so gating
   // them would leave it unable to render itself.
@@ -901,17 +1004,36 @@ async function handleRequest(request, env, ctx) {
     return serveMaintenancePage(request, env, { message: "" });
   }
 
+  if (publiclyLaunched) {
+    if (url.pathname === "/robots.txt") return publicRobotsResponse();
+    if (isRetiredLaunchPath(url.pathname)) return retiredGateRedirect(request);
+
+    if (url.pathname === "/maintenance") {
+      return Response.redirect(new URL("/maintenance/", request.url), 308);
+    }
+    if (url.pathname.startsWith("/dashboard/")) {
+      // During a real API outage the public marketing site still works, but
+      // the dashboard cannot. Keep the same fail-closed behavior used before
+      // launch without bringing the retired password gate back.
+      if (maintenance.enabled && !previewHolder) {
+        return serveMaintenancePage(request, env, maintenance);
+      }
+      if (url.pathname !== "/dashboard/") {
+        return serveAsset(new Request(new URL("/dashboard/", request.url), request), env);
+      }
+    }
+    return serveAsset(request, env);
+  }
+
   if (url.pathname === "/login") return Response.redirect(new URL("/login/", request.url), 308);
-  if (isPublicPath(url.pathname)) return serveAsset(request, env);
+  if (isPrelaunchPublicPath(url.pathname)) return serveAsset(request, env);
 
   // A preview code stands in for the soft-launch password. The alternative
   // pushes the operator to hand out that password to show someone an update,
   // and it is fixed and never expires; a preview code is 24 random bytes,
   // rotates every maintenance window, and dies in twelve hours.
   const authenticated =
-    isSecurityScanOpen(env) ||
-    previewHolder ||
-    (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
+    previewHolder || (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
   if (!authenticated) return Response.redirect(loginUrl(request), 302);
 
   if (url.pathname === "/maintenance") {

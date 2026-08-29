@@ -5,24 +5,30 @@
 // in one small module means the two implementations can be compared line by
 // line; the Python docstring carries the full reasoning.
 //
-// Two phases: alpha is closed and spans exactly 1.0-1.9, open beta runs from
-// 2.0 and advances every five significant updates. Small changes still appear
-// in their version's list but never push the number, or the version churns on
-// noise and stops meaning anything.
+// Alpha is closed at 1.9, open beta spans 2.0-2.9, and 3.0 starts the stable
+// cycle. Public versions keep one decimal digit: 2.9 rolls to 3.0, 3.9 rolls
+// to 4.0, and so on. Every published update fills the current version;
+// significance only controls the "New" marker in the changelog.
 
 import type { Release } from "./updates";
 
 export const ALPHA_PHASE = "alpha";
 export const BETA_PHASE = "open-beta";
+export const STABLE_PHASE = "stable";
 
 export const PHASE_LABELS: Record<string, string> = {
   [ALPHA_PHASE]: "Alpha",
-  [BETA_PHASE]: "Open Beta",
+  [BETA_PHASE]: "Beta",
+  [STABLE_PHASE]: "",
 };
+
+/** First official release. Public runtime data must never move below it. */
+export const OFFICIAL_RELEASE_FLOOR = "3.0";
 
 const ALPHA_MAJOR = 1;
 const ALPHA_SLOTS = 10;
 const BETA_MAJOR = 2;
+const MINOR_SLOTS_PER_MAJOR = 10;
 
 /** How many published updates fill one open-beta version. */
 export const UPDATES_PER_VERSION = 6;
@@ -77,9 +83,54 @@ export function cleanText(value: string): string {
   return value
     .normalize("NFKC")
     .replace(EMOJI_PATTERN, "")
+    .replace(/same names, smoother behavior/gi, "same commands, smoother behavior")
+    .replace(
+      /Initial tracked release for v\d+\.\d+\.\d+(?:\s+"Nova")?/gi,
+      "Initial tracked NovaGuard release",
+    )
     .replace(/\s+/g, " ")
     .replace(/^[\s\-–—•]+|[\s\-–—•]+$/g, "")
     .trim();
+}
+
+/**
+ * Convert release strings to NovaGuard's one-decimal public scheme.
+ *
+ * Older API processes could emit 2.10 after 2.9. That value means the next
+ * one-decimal slot, 3.0, rather than a SemVer minor release. Normalizing at
+ * the display boundary lets an old process coexist safely with the new site
+ * while it is being restarted.
+ */
+export function canonicalPublicVersion(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d+\.\d+$/.test(value.trim())) return null;
+  const [rawMajor, rawMinor] = value.trim().split(".").map(Number);
+  if (!Number.isSafeInteger(rawMajor) || !Number.isSafeInteger(rawMinor)) return null;
+  const major = rawMajor + Math.floor(rawMinor / MINOR_SLOTS_PER_MAJOR);
+  const minor = rawMinor % MINOR_SLOTS_PER_MAJOR;
+  return `${major}.${minor}`;
+}
+
+function versionParts(value: string): [number, number] {
+  const [major, minor] = value.split(".").map(Number);
+  return [major, minor];
+}
+
+/** Return the newest valid public version, never below the official 3.0 floor. */
+export function newestPublicVersion(...values: unknown[]): string {
+  let newest = OFFICIAL_RELEASE_FLOOR;
+  for (const value of values) {
+    const candidate = canonicalPublicVersion(value);
+    if (!candidate) continue;
+    const [candidateMajor, candidateMinor] = versionParts(candidate);
+    const [newestMajor, newestMinor] = versionParts(newest);
+    if (
+      candidateMajor > newestMajor ||
+      (candidateMajor === newestMajor && candidateMinor > newestMinor)
+    ) {
+      newest = candidate;
+    }
+  }
+  return newest;
 }
 
 function highlightsOf(release: Release): string[] {
@@ -122,6 +173,18 @@ function alphaReleaseFor(position: number, sizes: number[]): string {
   return `${ALPHA_MAJOR}.${ALPHA_SLOTS - 1}`;
 }
 
+export function publicVersionForSlot(slot: number): string {
+  const safeSlot = Math.max(0, Math.trunc(slot));
+  const major = BETA_MAJOR + Math.floor(safeSlot / MINOR_SLOTS_PER_MAJOR);
+  return `${major}.${safeSlot % MINOR_SLOTS_PER_MAJOR}`;
+}
+
+export function publicPhaseForSlot(slot: number): string {
+  const safeSlot = Math.max(0, Math.trunc(slot));
+  const major = BETA_MAJOR + Math.floor(safeSlot / MINOR_SLOTS_PER_MAJOR);
+  return major < 3 ? BETA_PHASE : STABLE_PHASE;
+}
+
 /**
  * Stamp every update with its release and phase, oldest first, so a version
  * fills in the order things actually happened. Dates order the feed; the build
@@ -135,7 +198,7 @@ export function assignReleases(releases: Release[]): StampedRelease[] {
 
   const sizes = alphaSlotSizes(ordered.filter(isAlpha).length);
   let alphaSeen = 0;
-  let betaMinor = 0;
+  let publicSlot = 0;
   let updatesInVersion = 0;
 
   return ordered.map((release) => {
@@ -151,11 +214,11 @@ export function assignReleases(releases: Release[]): StampedRelease[] {
       // A version opens, collects updates, and closes once it is full, so the
       // update that fills it is the last of its version rather than the first
       // of the next.
-      version = `${BETA_MAJOR}.${betaMinor}`;
-      phase = BETA_PHASE;
+      version = publicVersionForSlot(publicSlot);
+      phase = publicPhaseForSlot(publicSlot);
       updatesInVersion += 1;
       if (updatesInVersion >= UPDATES_PER_VERSION) {
-        betaMinor += 1;
+        publicSlot += 1;
         updatesInVersion = 0;
       }
     }
@@ -209,9 +272,9 @@ export function releaseGroups(releases: Release[]): ReleaseGroup[] {
     // Newest update first inside a version: people read the latest change
     // before the one that opened the version weeks earlier.
     group.updates.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-    // Alpha is closed. If the baked archive has not yet received its first
-    // beta update, 1.9 is history rather than the current release.
-    group.current = index === 0 && group.phase === BETA_PHASE;
+    // Alpha is closed. Only the newest post-alpha group can be current,
+    // whether it belongs to the historical beta or stable cycle.
+    group.current = index === 0 && group.phase !== ALPHA_PHASE;
   }
   return ordered;
 }
@@ -219,8 +282,12 @@ export function releaseGroups(releases: Release[]): ReleaseGroup[] {
 /** The version the project is on right now. */
 export function currentRelease(releases: Release[]): { version: string; phaseLabel: string } {
   const groups = releaseGroups(releases);
-  if (!groups.length || groups[0].phase !== BETA_PHASE) {
-    return { version: `${BETA_MAJOR}.0`, phaseLabel: PHASE_LABELS[BETA_PHASE] };
+  if (!groups.length || groups[0].phase === ALPHA_PHASE) {
+    return { version: OFFICIAL_RELEASE_FLOOR, phaseLabel: PHASE_LABELS[STABLE_PHASE] };
   }
-  return { version: groups[0].version, phaseLabel: groups[0].phaseLabel };
+  const version = newestPublicVersion(groups[0].version);
+  return {
+    version,
+    phaseLabel: Number(version.split(".")[0]) >= 3 ? "" : groups[0].phaseLabel,
+  };
 }

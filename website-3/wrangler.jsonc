@@ -7,6 +7,19 @@
   "secrets": {
     "required": ["AUTH_PASSWORD"]
   },
+  // Ten password submissions per minute in each Cloudflare location while the
+  // temporary launch gate is active. The endpoint retires automatically at
+  // public launch; leaving the dormant binding configured is harmless.
+  "ratelimits": [
+    {
+      "name": "LOGIN_RATE_LIMITER",
+      "namespace_id": "2026082601",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ],
   // Keep enough production telemetry to diagnose edge/API failures without
   // retaining every static-asset request. Traces are automatic once enabled.
   "observability": {
@@ -22,7 +35,8 @@
     }
   },
   // Astro builds to ./dist (Next.js used ./out). run_worker_first lets the
-  // worker enforce the password gate before any static asset is served.
+  // Worker enforce the exact launch instant and maintenance state before any
+  // static page is served.
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

@@ -1,5 +1,6 @@
 ---
 import { LEGAL_COPYRIGHT_START_YEAR } from "../data/legal";
+import Icon from "./Icon.astro";
 
 // Derived at build time, not hardcoded: the site rebuilds hourly, so the
 // closing year stays right without anyone remembering it every January.
@@ -12,12 +13,59 @@ const copyrightYears =
 
 <footer data-site-footer class="border-t border-line bg-bg-subtle">
   <div
-    class="mx-auto grid max-w-6xl gap-12 px-5 py-11 text-sm sm:px-6 sm:py-14 lg:grid-cols-[1fr_auto]"
+    class="mx-auto grid max-w-6xl gap-10 px-5 py-10 text-sm sm:px-6 sm:py-11 lg:grid-cols-[minmax(0,1.2fr)_auto] lg:gap-16"
   >
-    <div>
-      <p class="font-display text-lg font-semibold">NovaGuard</p>
-      <p class="mt-3 text-xs tracking-wide text-ink-faint">
-        &copy; {copyrightYears} NovaGuard &middot; Developed by VIK &amp; CloudMedia
+    <div class="flex max-w-md flex-col">
+      <div class="flex items-center gap-3.5">
+        <img
+          src="/assets/novaguard-icon-96.png"
+          alt=""
+          width="48"
+          height="48"
+          loading="lazy"
+          decoding="async"
+          class="size-12 shrink-0 drop-shadow-[0_8px_18px_hsl(var(--primary)/0.12)]"
+        />
+        <p class="font-display text-xl font-semibold tracking-[-0.01em] text-ink">NovaGuard</p>
+      </div>
+
+      <p class="mt-3.5 max-w-sm text-sm leading-relaxed text-ink-muted">
+        Powerful Discord moderation and utilities for calm, reliable server management. Set up what
+        your community needs and leave the rest out.
+      </p>
+
+      <nav aria-label="Community" class="mt-4 flex flex-wrap items-center gap-2.5">
+        <a
+          href="https://discord.gg/CbDy3GyhWm"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Join the NovaGuard Discord server (opens in a new tab)"
+          class="footer-social ng-pressable inline-flex min-h-10 items-center gap-2 rounded-[6px] border border-line px-3 text-ink-muted"
+        >
+          <svg
+            viewBox="-6 -6 139.14 108.36"
+            class="size-[18px] shrink-0 overflow-visible"
+            aria-hidden="true"
+          >
+            <path
+              fill="currentColor"
+              d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0 105.89 105.89 0 0 0 19.39 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-9.43 68.42 68.42 0 0 1-10.06-4.84c.84-.62 1.66-1.27 2.46-1.93a75.57 75.57 0 0 0 64.74 0c.8.66 1.62 1.31 2.46 1.93a68.68 68.68 0 0 1-10.08 4.85 77 77 0 0 0 6.91 9.41A105.25 105.25 0 0 0 126.2 80.22c2.64-27.38-4.51-51.11-18.5-72.15ZM42.45 65.69c-9.64 0-17.56-8.89-17.56-19.8s7.75-19.8 17.56-19.8 17.72 8.89 17.56 19.8-7.91 19.8-17.56 19.8Zm42.24 0c-9.64 0-17.56-8.89-17.56-19.8s7.75-19.8 17.56-19.8 17.72 8.89 17.56 19.8-7.91 19.8-17.56 19.8Z"
+            />
+          </svg>
+          <span>Discord</span>
+        </a>
+        <a
+          href="/vote"
+          aria-label="Top.gg voting status"
+          class="footer-social ng-pressable inline-flex min-h-10 items-center gap-2 rounded-[6px] border border-line px-3 text-ink-muted"
+        >
+          <Icon name="vote" size={18} />
+          <span>Vote on Top.gg</span>
+        </a>
+      </nav>
+
+      <p class="mt-6 text-xs leading-relaxed tracking-wide text-ink-faint">
+        &copy; {copyrightYears} VIK-DD &middot; Developed by VIK &amp; CloudMedia
       </p>
     </div>
     <div class="grid grid-cols-2 gap-8 sm:gap-12 lg:min-w-96">
@@ -33,7 +81,33 @@ const copyrightYears =
         <a href="/privacy" class="transition-colors hover:text-ink">Privacy &amp; cookies</a>
         <a href="/server-admin-notice" class="transition-colors hover:text-ink">Server admin notice</a>
         <a href="/terms" class="transition-colors hover:text-ink">Terms</a>
+        <a href="/faq" class="transition-colors hover:text-ink">FAQ</a>
       </nav>
     </div>
   </div>
 </footer>
+
+<style>
+  .footer-social {
+    transition:
+      color 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease,
+      transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .footer-social:hover {
+      border-color: hsl(var(--border-strong));
+      background: hsl(var(--card));
+      color: hsl(var(--foreground));
+      transform: translateY(-1px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .footer-social {
+      transition: none;
+    }
+  }
+</style>

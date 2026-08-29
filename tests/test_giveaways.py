@@ -223,6 +223,13 @@ class DrawTests(GiveawayStoreTestCase):
 
         self.assertEqual(len(set(entry["winner_ids"])), 3)
 
+    async def test_corrupt_duplicate_entries_cannot_win_twice(self):
+        self.store([giveaway(entrants=[1, 1, 2, 3], winners=3)])
+
+        entry = await self.cog.finish_giveaway(MESSAGE)
+
+        self.assertEqual(sorted(entry["winner_ids"]), [1, 2, 3])
+
     async def test_fewer_entrants_than_prizes_draws_everyone_present(self):
         # random.sample raises when asked for more than the population holds,
         # which would end the giveaway watcher rather than the giveaway.
@@ -262,6 +269,16 @@ class DrawTests(GiveawayStoreTestCase):
         saved = self.stored()[0]
         self.assertTrue(saved["ended"])
         self.assertEqual(saved["winner_ids"], entry["winner_ids"])
+
+    async def test_reroll_prefers_people_who_did_not_already_win(self):
+        entry = giveaway(entrants=[1, 2, 3, 4], winners=2, ended=True)
+        entry["winner_ids"] = [1, 2]
+        self.store([entry])
+
+        rerolled, winner_ids, _ = await self.cog.reroll_giveaway(MESSAGE)
+
+        self.assertEqual(set(winner_ids), {3, 4})
+        self.assertEqual(rerolled["winner_ids"], winner_ids)
 
 
 if __name__ == "__main__":

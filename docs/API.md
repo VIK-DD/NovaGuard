@@ -62,13 +62,18 @@ Public. `200` when the DB is reachable, `503` otherwise.
 { "ok": true, "bot_ready": true, "db_ok": true }
 ```
 
+### `GET /ready`
+Public readiness probe. Returns the same payload as `/health`, but responds
+`200` only when both the database and Discord bot are ready; otherwise `503`.
+Use this endpoint for deploy gates and monitors that rely on HTTP status.
+
 ### `GET /stats`
 Public. Bot-wide counters.
 ```json
-{ "version": "2.0", "phase": "open-beta", "phase_label": "Open Beta",
-  "release_label": "2.0 Open Beta", "runtime_version": "3.1.0",
+{ "version": "3.0", "phase": "stable", "phase_label": "",
+  "release_label": "3.0", "runtime_version": "3.0.0",
   "codename": "Nova", "guilds": 3, "members": 512,
-  "commands": 78, "uptime_seconds": 8123, "ready": true }
+  "commands": 81, "uptime_seconds": 8123, "ready": true }
 ```
 
 ### `GET /updates?limit=50`
@@ -83,7 +88,7 @@ deduplicated by `created_at`. `limit` defaults to 50 and is clamped to 200.
                  "highlights": ["..."], "changes": ["..."],
                  "added_lines": 48, "removed_lines": 8, "changed_files": 1 } ],
   "count": 29,
-  "release": { "version": "2.0", "phase": "open-beta", "phase_label": "Open Beta" } }
+  "release": { "version": "3.0", "phase": "stable", "phase_label": "" } }
 ```
 
 `version`, `codename`, `highlights`, `changes` and the line counts are all
@@ -250,9 +255,9 @@ reports and newest update-feed entries.
 
 ```json
 {
-  "status": { "ready": true, "version": "2.0", "phase": "open-beta",
-              "phase_label": "Open Beta", "release_label": "2.0 Open Beta",
-              "runtime_version": "3.1.0", "codename": "Nova",
+  "status": { "ready": true, "version": "3.0", "phase": "stable",
+              "phase_label": "", "release_label": "3.0",
+              "runtime_version": "3.0.0", "codename": "Nova",
     "uptime_seconds": 1200, "commands": 66, "guilds": 5, "members": 132 },
   "guild": { "id": "…", "name": "…", "icon": "…|null", "member_count": 42 },
   "setup": { "configured_channels": 6, "total_channels": 7,

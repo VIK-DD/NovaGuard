@@ -4,7 +4,9 @@
 # copied there at build time by scripts/soft-launch.mjs — not a rewrite rule
 # here. Some hosts (Cloudflare Workers static assets) don't honor 200
 # "rewrite" rules in this file, only real redirects (3xx) below are
-# guaranteed to work everywhere. See README.md for how to go fully live.
+# guaranteed to work everywhere. The shared launch timestamp switches the
+# build and Worker to the official site automatically; no manual edit here is
+# required.
 
 # MAINTENANCE MODE — uncomment while shipping bot updates to route the
 # whole site to the classic Coming Soon page, redeploy, then re-comment:

@@ -38,16 +38,14 @@ from core.maintenance import (  # noqa: E402
     verify_preview_code,
 )
 from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
-from core.webserver import (  # noqa: E402
+from core.web_storage import (  # noqa: E402
     _CIPHER,
     _hash_sid,
-    ApiError,
-    WebServer,
-    after_login_strands_user,
     db_load_session,
     db_ping,
     db_save_session,
 )
+from core.webserver import ApiError, WebServer, after_login_strands_user  # noqa: E402
 
 TEST_GUILD_ID = 987654321987654321
 BASE = "http://127.0.0.1:8399"
@@ -207,6 +205,34 @@ async def main():
             await check("security headers present", r.headers.get("X-Content-Type-Options") == "nosniff")
         await check("db_ping direct", db_ping() is True)
 
+        # Liveness remains readable while Discord connects; readiness must
+        # stay closed until both Discord and SQLite are actually available.
+        server.bot.ready = False
+        try:
+            async with http.get(f"{V1}/health") as r:
+                data = await r.json()
+                await check(
+                    "health stays live while the bot connects",
+                    r.status == 200 and data["ok"] is False and data["bot_ready"] is False,
+                )
+            async with http.get(f"{V1}/ready") as r:
+                data = await r.json()
+                await check(
+                    "ready is 503 while the bot connects",
+                    r.status == 503 and data["ok"] is False and data["db_ok"] is True,
+                )
+            async with http.get(f"{LEGACY}/ready") as r:
+                await check("legacy /api/ready alias works", r.status == 503)
+        finally:
+            server.bot.ready = True
+
+        async with http.get(f"{V1}/ready") as r:
+            data = await r.json()
+            await check(
+                "ready is 200 only after all checks pass",
+                r.status == 200 and data["ok"] is True and data["bot_ready"] is True,
+            )
+
         # ── maintenance state rides along on /health ──────────────────
         # Saved and restored around the checks: this writes the real
         # data/maintenance.json, and a test must not leave the bot shut down.
@@ -339,8 +365,10 @@ async def main():
             await check(
                 "stats expose canonical public release",
                 r.status == 200
-                and data.get("version") == "2.0"
-                and data.get("phase_label") == "Open Beta"
+                and data.get("version") == "3.0"
+                and data.get("phase") == "stable"
+                and data.get("phase_label") == ""
+                and data.get("release_label") == "3.0"
                 and {"release_label", "runtime_version", "guilds", "commands"} <= set(data),
             )
 
@@ -454,21 +482,57 @@ async def main():
 
         async with http.get(f"{V1}/guilds/{TEST_GUILD_ID}/dashboard", cookies=cookies) as r:
             data = await r.json()
-            offsite = data.get("backup", {}).get("offsite", {})
             await check(
-                "dashboard exposes sanitized off-site backup health",
-                r.status == 200
-                and {
-                    "configured",
-                    "matches_backup",
-                    "latest_ok",
-                    "uploaded_at",
-                    "check_ok",
-                    "checked_at",
+                "guild dashboard does not expose instance backup state",
+                r.status == 200 and "backup" not in data,
+            )
+            await check(
+                "guild dashboard preserves the website payload contract",
+                set(data) == {
+                    "status",
+                    "guild",
+                    "setup",
+                    "modules",
+                    "automod",
+                    "levels",
+                    "voice",
+                    "updates",
                 }
-                == set(offsite)
-                and "destination" not in offsite
-                and "remote_path" not in offsite,
+                and set(data["setup"])
+                == {
+                    "configured_channels",
+                    "total_channels",
+                    "recommended_done",
+                    "recommended_total",
+                }
+                and set(data["levels"])
+                == {"enabled", "tracked_members", "total_xp", "leaderboard"}
+                and set(data["voice"])
+                == {"configured", "report_channel_id", "pending_count", "recent_reports"}
+                and [module["key"] for module in data["modules"]]
+                == [
+                    "welcome",
+                    "moderation",
+                    "levels",
+                    "voice",
+                    "tickets",
+                    "roles",
+                    "giveaways",
+                    "ai",
+                    "economy",
+                    "updates",
+                ],
+            )
+
+        async with http.post(
+            f"{V1}/guilds/{TEST_GUILD_ID}/actions/backup_check",
+            json={},
+            cookies=cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "guild dashboard rejects instance backup actions",
+                r.status == 404 and data.get("code") == "unknown_action",
             )
 
         # ── CSRF Origin guard on mutations (fix #8) ───────────────────

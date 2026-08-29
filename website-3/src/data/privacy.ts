@@ -57,8 +57,8 @@ export const ESSENTIAL_COOKIES = [
   {
     name: "ng_gate",
     lifetime: "2 hours",
-    purpose: "Opens the private pre-launch website after the correct access password is entered.",
-    when: "Private launch gate only",
+    purpose: "Opened the temporary pre-launch website after the correct access password was entered. It is automatically cleared when the public launch begins.",
+    when: "Pre-launch only; retired at the public launch",
   },
   {
     name: "ng_preview",
@@ -150,7 +150,7 @@ export const THIRD_PARTIES = [
   {
     name: "Cloudflare",
     href: "https://www.cloudflare.com/privacypolicy/",
-    detail: "Hosts and protects the website at the network edge and may process IP address and request metadata.",
+    detail: "Hosts and protects the website at the network edge and may process IP address and request metadata. Cloudflare Web Analytics/RUM is disabled, so NovaGuard does not inject its client-side analytics beacon. Cloudflare security features may still set strictly necessary cookies such as __cf_bm (30 minutes after inactivity).",
   },
   {
     name: "Oracle Cloud Infrastructure",

@@ -1,6 +1,6 @@
 // Zod schemas mirroring docs/API.md — the single source of truth for the
 // dashboard's view of the bot API. Update alongside the contract.
-import { z } from "zod";
+import { z } from "./zod";
 
 export const StatsSchema = z.object({
   version: z.string(),
@@ -284,28 +284,11 @@ export const DashboardSchema = z.object({
       }),
     ),
   }),
-  backup: z.object({
-    available: z.boolean(),
-    latest_name: z.string().nullable(),
-    latest_size: z.number(),
-    latest_size_text: z.string().nullable(),
-    latest_at: z.string().nullable(),
-    ok: z.boolean(),
-    warnings: z.array(z.string()),
-    errors: z.array(z.string()),
-    offsite: z.object({
-      configured: z.boolean(),
-      matches_backup: z.boolean(),
-      latest_ok: z.boolean(),
-      uploaded_at: z.string().nullable(),
-      check_ok: z.boolean().nullable(),
-      checked_at: z.string().nullable(),
-    }),
-  }),
   updates: z.array(
     z.object({
       build: z.number().optional(),
-      // The public version this update shipped in, e.g. "2.0" / "Open Beta".
+      // The public version this update shipped in. Lifecycle data stays
+      // machine-readable; public UI prints the version only.
       // Optional so a bot that has not been updated yet still parses; the
       // dashboard falls back to the build number when it is missing.
       release: z.string().optional(),
@@ -336,15 +319,6 @@ export const DashboardActionSchema = z.object({
       description: z.string(),
       role_ids: z.array(z.string()),
       updated_at: z.string(),
-    })
-    .optional(),
-  backup: z
-    .object({
-      name: z.string(),
-      size_text: z.string(),
-      ok: z.boolean(),
-      warnings: z.array(z.string()),
-      errors: z.array(z.string()),
     })
     .optional(),
 });

@@ -4,22 +4,14 @@ import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
 import archive from "../data/updates-archive.json";
 import { currentRelease } from "../data/releases";
+import type { Release } from "../data/updates";
 
-// The version is known at build time, so render it into the page instead of a
-// dash. Everything else on this page (uptime, servers, database…) genuinely
-// needs the live poll, but the version does not, and showing "—" for a second
-// before it appeared was the flash people noticed on every click. The live
-// poll still overwrites this with the canonical value from the bot.
-// Matched to the live poll's format (release_label, e.g. "2.5 Open Beta") so
-// that when the poll lands it replaces this with an identical string and
-// nothing visibly changes.
-const baked = currentRelease(archive as Parameters<typeof currentRelease>[0]);
-const bakedVersion = `${baked.version} ${baked.phaseLabel}`;
+const release = currentRelease(archive as Release[]);
 ---
 
 <Base title="Status — NovaGuard" description="Live operational status of the NovaGuard bot.">
   <Nav />
-  <main data-status-page class="mx-auto max-w-2xl px-5 py-12 sm:px-6 sm:py-20">
+  <main data-status-page data-release-floor={release.version} class="mx-auto max-w-2xl px-5 py-12 sm:px-6 sm:py-20">
     <p class="text-xs tracking-[0.25em] text-ink-muted uppercase">System bulletin</p>
     <h1 data-status-headline class="font-display mt-4 text-3xl leading-tight sm:text-5xl">
       Taking the pulse…
@@ -36,7 +28,9 @@ const bakedVersion = `${baked.version} ${baked.phaseLabel}`;
       </div>
       <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
         <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Version</dt>
-        <dd data-f="version" class="font-display text-lg sm:text-xl">{bakedVersion}</dd>
+        <dd data-f="version" aria-live="polite" class="font-display text-lg sm:text-xl">
+          Checking…
+        </dd>
       </div>
       <div class="flex items-baseline justify-between gap-4 border-t border-line py-4">
         <dt class="text-xs tracking-[0.2em] text-ink-muted uppercase">Uptime</dt>

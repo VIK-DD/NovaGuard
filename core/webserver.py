@@ -29,14 +29,13 @@ Enable with WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET.
 """
 
 import asyncio
-import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
 import secrets
-import threading
 import time
 from collections import deque
 from datetime import UTC, datetime, timedelta
@@ -49,10 +48,8 @@ from . import shop
 from .ai_settings import resolve_ai, validate_ai
 from .api_security import API_CONTENT_SECURITY_POLICY
 from .automod_settings import resolve_automod, validate_automod
-from .backups import inspect_backup, list_backups, remote_backup_status
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import (
-    connect,
     count_open_tickets,
     get_role_panel_record,
     list_ticket_records,
@@ -62,25 +59,37 @@ from .database import (
     load_voice_store,
     save_role_panel_record,
 )
+from .dashboard_insights import (
+    dashboard_levels_summary,
+    dashboard_module_summary,
+    dashboard_setup_summary,
+    dashboard_voice_summary,
+)
 from .economy_settings import resolve_economy, validate_economy
+from .giveaway_helpers import validate_giveaway_input
 from .invite_permissions import DEFAULT_INVITE_PERMISSIONS
-from .level_curve import level_from_xp
 from .levels_settings import resolve_levels, validate_levels
 from .maintenance import (
     DEFAULT_MAINTENANCE_MESSAGE,
     load_maintenance_state,
     verify_preview_code,
 )
-from .release_versions import current_project_release
+from .release_versions import current_project_release, public_release_label
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
-
-try:  # at-rest token encryption is optional — degrade gracefully if unavailable
-    from cryptography.fernet import Fernet, InvalidToken
-except ImportError:  # pragma: no cover - exercised only on minimal installs
-    Fernet = None
-    InvalidToken = Exception
+from .web_storage import (
+    _CIPHER,
+    db_add_audit,
+    db_delete_session,
+    db_gc,
+    db_get_audit,
+    db_load_session,
+    db_ping,
+    db_save_session,
+    db_touch_session,
+    init_web_tables,
+)
 
 log = logging.getLogger("novaguard.web")
 
@@ -141,7 +150,16 @@ if COOKIE_SAMESITE not in {"Lax", "Strict", "None"}:
     COOKIE_SAMESITE = "Lax"
 if COOKIE_SAMESITE == "None":
     COOKIE_SECURE = True
-TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
+_TRUST_PROXY_REQUESTED = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+# Forwarded client addresses are trustworthy only when the API cannot also be
+# reached directly. Cloudflare Tunnel connects through loopback; a public bind
+# would let any client forge CF-Connecting-IP and evade per-address controls.
+TRUST_PROXY = _TRUST_PROXY_REQUESTED and WEB_HOST in {"127.0.0.1", "::1", "localhost"}
 INVITE_PERMISSIONS = (
     os.getenv("WEB_INVITE_PERMISSIONS", DEFAULT_INVITE_PERMISSIONS).strip()
     or DEFAULT_INVITE_PERMISSIONS
@@ -157,12 +175,8 @@ STATE_TTL = 600
 GUILDS_CACHE_SECONDS = 120
 DISCORD_DNS_CACHE_SECONDS = 300
 DISCORD_REQUEST_TIMEOUT_SECONDS = 10
-MAX_SESSIONS_PER_USER = 5
-AUDIT_KEEP_DAYS = 90
 MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
-TOKEN_PREFIX = "enc:"  # marks an encrypted token column so legacy rows still load
-SCHEMA_VERSION = 1  # bump + add a migration branch in init_web_tables when tables change
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
@@ -186,114 +200,11 @@ NATIVE_MANAGER_CHANNEL_KEYS = (
 )
 CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
-DASHBOARD_VOICE_HISTORY_LIMIT = 5
-DASHBOARD_LEADERBOARD_LIMIT = 5
-
-_DB_LOCK = threading.Lock()
 
 # HMAC key for signing OAuth state tokens. Reuses the client secret so it needs
 # no extra configuration; a per-process random fallback keeps things sane when
 # OAuth is not configured (login is disabled in that case anyway).
 _STATE_SECRET = (CLIENT_SECRET or secrets.token_urlsafe(32)).encode("utf-8")
-
-
-def _cipher_from_secret(secret):
-    """Derive a domain-separated Fernet key without storing the raw secret."""
-    if Fernet is None or not secret:
-        return None
-    key = base64.urlsafe_b64encode(hashlib.sha256(("novaguard-token::" + secret).encode()).digest())
-    return Fernet(key)
-
-
-def _build_ciphers():
-    """Prefer the dedicated key but retain read-only legacy compatibility."""
-    dedicated_secret = os.getenv("WEB_TOKEN_KEY", "").strip()
-    primary = _cipher_from_secret(dedicated_secret or CLIENT_SECRET)
-    legacy = None
-    if dedicated_secret and CLIENT_SECRET and dedicated_secret != CLIENT_SECRET:
-        # Earlier NovaGuard versions always used the Discord client secret even
-        # when WEB_TOKEN_KEY was configured. Keep it only for decrypting those
-        # rows; every subsequent write is encrypted with the dedicated key.
-        legacy = _cipher_from_secret(CLIENT_SECRET)
-    return primary, legacy
-
-
-_CIPHER, _LEGACY_CIPHER = _build_ciphers()
-
-
-def _encrypt_token(value):
-    if value is None or _CIPHER is None:
-        return value
-    return TOKEN_PREFIX + _CIPHER.encrypt(value.encode("utf-8")).decode("ascii")
-
-
-def _decrypt_token(value):
-    if not isinstance(value, str) or not value.startswith(TOKEN_PREFIX):
-        return value  # legacy plaintext (or None) — return unchanged
-    if _CIPHER is None:
-        return None  # encrypted but we lost the key ⇒ treat as unusable
-    token = value[len(TOKEN_PREFIX):].encode("ascii")
-    for cipher in (_CIPHER, _LEGACY_CIPHER):
-        if cipher is None:
-            continue
-        try:
-            return cipher.decrypt(token).decode("utf-8")
-        except InvalidToken:
-            continue
-    return None
-
-
-# ── SQL layer (runs in threads via asyncio.to_thread) ────────────────
-
-def init_web_tables():
-    with _DB_LOCK, connect() as db:
-        db.execute("CREATE TABLE IF NOT EXISTS web_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_sessions (
-                sid_hash TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                user_json TEXT NOT NULL,
-                access_token TEXT NOT NULL,
-                refresh_token TEXT,
-                token_expires_at REAL NOT NULL DEFAULT 0,
-                guilds_json TEXT NOT NULL DEFAULT '{}',
-                guilds_fetched_at REAL NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                expires_at REAL NOT NULL,
-                last_seen_at REAL NOT NULL DEFAULT 0
-            )
-            """
-        )
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id TEXT NOT NULL,
-                user_id TEXT NOT NULL,
-                username TEXT NOT NULL,
-                action TEXT NOT NULL,
-                changes_json TEXT NOT NULL,
-                ip TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        db.execute("CREATE INDEX IF NOT EXISTS idx_web_audit_guild ON web_audit (guild_id, id DESC)")
-        db.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id)")
-
-        # ── schema migrations (dedicated web_meta, never touches the bot's DB) ──
-        row = db.execute("SELECT value FROM web_meta WHERE key = 'schema_version'").fetchone()
-        version = int(row["value"]) if row else 0
-        # future migrations go here, e.g.:
-        #   if version < 2:
-        #       db.execute("ALTER TABLE web_sessions ADD COLUMN ...")
-        if version != SCHEMA_VERSION:
-            db.execute(
-                "INSERT INTO web_meta (key, value) VALUES ('schema_version', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (str(SCHEMA_VERSION),),
-            )
 
 
 def count_visible_commands(tree):
@@ -306,198 +217,6 @@ def count_visible_commands(tree):
     81, and it matches what the bot logs as "synced N slash commands".
     """
     return sum(1 for _ in tree.get_commands())
-
-
-def db_ping():
-    """Cheap connectivity probe for the health endpoint."""
-    try:
-        with _DB_LOCK, connect() as db:
-            db.execute("SELECT 1").fetchone()
-        return True
-    except Exception:
-        return False
-
-
-def _hash_sid(sid):
-    return hashlib.sha256(sid.encode("utf-8")).hexdigest()
-
-
-def db_save_session(sid, entry):
-    with _DB_LOCK, connect() as db:
-        db.execute(
-            """
-            INSERT OR REPLACE INTO web_sessions
-            (sid_hash, user_id, user_json, access_token, refresh_token, token_expires_at,
-             guilds_json, guilds_fetched_at, created_at, expires_at, last_seen_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                _hash_sid(sid),
-                entry["user"]["id"],
-                json.dumps(entry["user"]),
-                _encrypt_token(entry["access_token"]),
-                _encrypt_token(entry.get("refresh_token")),
-                entry.get("token_expires_at", 0),
-                json.dumps(entry.get("guilds", {})),
-                entry.get("guilds_fetched_at", 0),
-                entry.get("created_at") or datetime.now(UTC).isoformat(),
-                entry["expires_at"],
-                time.time(),
-            ),
-        )
-        # keep only the newest sessions per user
-        db.execute(
-            """
-            DELETE FROM web_sessions WHERE user_id = ? AND sid_hash NOT IN (
-                SELECT sid_hash FROM web_sessions WHERE user_id = ?
-                ORDER BY created_at DESC LIMIT ?
-            )
-            """,
-            (entry["user"]["id"], entry["user"]["id"], MAX_SESSIONS_PER_USER),
-        )
-
-
-def db_load_session(sid):
-    with _DB_LOCK, connect() as db:
-        row = db.execute(
-            "SELECT * FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),)
-        ).fetchone()
-    if row is None:
-        return None
-    entry = {
-        "user": json.loads(row["user_json"]),
-        "access_token": _decrypt_token(row["access_token"]),
-        "refresh_token": _decrypt_token(row["refresh_token"]),
-        "token_expires_at": row["token_expires_at"],
-        "guilds": json.loads(row["guilds_json"]),
-        "guilds_fetched_at": row["guilds_fetched_at"],
-        "created_at": row["created_at"],
-        "expires_at": row["expires_at"],
-        "last_seen_at": row["last_seen_at"],
-    }
-    if entry["expires_at"] < time.time():
-        db_delete_session(sid)
-        return None
-    return entry
-
-
-def db_delete_session(sid):
-    with _DB_LOCK, connect() as db:
-        db.execute("DELETE FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),))
-
-
-def db_touch_session(sid, entry):
-    with _DB_LOCK, connect() as db:
-        db.execute(
-            """
-            UPDATE web_sessions SET access_token = ?, refresh_token = ?, token_expires_at = ?,
-                   guilds_json = ?, guilds_fetched_at = ?, last_seen_at = ?
-            WHERE sid_hash = ?
-            """,
-            (
-                _encrypt_token(entry["access_token"]),
-                _encrypt_token(entry.get("refresh_token")),
-                entry.get("token_expires_at", 0),
-                json.dumps(entry.get("guilds", {})),
-                entry.get("guilds_fetched_at", 0),
-                time.time(),
-                _hash_sid(sid),
-            ),
-        )
-
-
-def db_gc():
-    cutoff = datetime.now(UTC).timestamp() - AUDIT_KEEP_DAYS * 86400
-    with _DB_LOCK, connect() as db:
-        db.execute("DELETE FROM web_sessions WHERE expires_at < ?", (time.time(),))
-        db.execute(
-            "DELETE FROM web_audit WHERE created_at < ?",
-            (datetime.fromtimestamp(cutoff, UTC).isoformat(),),
-        )
-
-
-def db_add_audit(guild_id, user, action, changes, ip):
-    with _DB_LOCK, connect() as db:
-        db.execute(
-            """
-            INSERT INTO web_audit (guild_id, user_id, username, action, changes_json, ip, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(guild_id),
-                user["id"],
-                user["username"],
-                action,
-                json.dumps(changes, ensure_ascii=False),
-                ip,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-
-
-def db_get_audit(
-    guild_id,
-    limit,
-    *,
-    cursor=None,
-    kind=None,
-    action=None,
-    actor=None,
-    after=None,
-    before=None,
-):
-    clauses = ["guild_id = ?"]
-    params = [str(guild_id)]
-    if cursor is not None:
-        clauses.append("id < ?")
-        params.append(cursor)
-    if kind == "settings":
-        clauses.append("(action = 'config_update' OR action LIKE 'update_%')")
-    elif kind == "actions":
-        clauses.append("action LIKE 'dashboard_%'")
-    elif kind == "login":
-        clauses.append("action = 'login'")
-    if action:
-        clauses.append("action = ?")
-        params.append(action)
-    if actor:
-        clauses.append("(username LIKE ? OR user_id = ?)")
-        params.extend((f"%{actor}%", actor))
-    if after:
-        clauses.append("created_at >= ?")
-        params.append(after)
-    if before:
-        clauses.append("created_at < ?")
-        params.append(before)
-
-    # Fetch one extra row so the API can advertise a real next page instead
-    # of making the client issue an empty request at the end of the trail.
-    params.append(limit + 1)
-    with _DB_LOCK, connect() as db:
-        rows = db.execute(
-            f"""
-            SELECT id, username, user_id, action, changes_json, created_at
-            FROM web_audit
-            WHERE {' AND '.join(clauses)}
-            ORDER BY id DESC LIMIT ?
-            """,
-            params,
-        ).fetchall()
-    has_more = len(rows) > limit
-    rows = rows[:limit]
-    entries = [
-        {
-            "id": row["id"],
-            "username": row["username"],
-            "user_id": row["user_id"],
-            "action": row["action"],
-            "changes": json.loads(row["changes_json"]),
-            "created_at": row["created_at"],
-        }
-        for row in rows
-    ]
-    next_cursor = entries[-1]["id"] if has_more and entries else None
-    return entries, next_cursor
 
 
 # ── errors ───────────────────────────────────────────────────────────
@@ -552,6 +271,7 @@ class WebServer:
         # (method, path, handler) — registered under /api/v1 and legacy /api
         routes = [
             ("GET", "/health", self.handle_health),
+            ("GET", "/ready", self.handle_ready),
             ("GET", "/stats", self.handle_stats),
             ("GET", "/updates", self.handle_updates),
             ("POST", "/maintenance/preview", self.handle_maintenance_preview),
@@ -671,17 +391,26 @@ class WebServer:
 
     # ── request plumbing ─────────────────────────────────────────────
 
+    @staticmethod
+    def _normalized_ip(value):
+        try:
+            return str(ipaddress.ip_address(str(value or "").strip()))
+        except ValueError:
+            return None
+
     def _client_ip(self, request):
         if TRUST_PROXY:
             # CF-Connecting-IP is set by Cloudflare and cannot be spoofed by the
             # client through the tunnel; fall back to the first X-Forwarded-For hop.
-            cf_ip = request.headers.get("CF-Connecting-IP", "").strip()
+            cf_ip = self._normalized_ip(request.headers.get("CF-Connecting-IP"))
             if cf_ip:
                 return cf_ip
             forwarded = request.headers.get("X-Forwarded-For", "")
             if forwarded:
-                return forwarded.split(",")[0].strip()
-        return request.remote or "?"
+                forwarded_ip = self._normalized_ip(forwarded.split(",", 1)[0])
+                if forwarded_ip:
+                    return forwarded_ip
+        return self._normalized_ip(request.remote) or "?"
 
     def _rate_limit(self, request, scope):
         limit, window = RATE_LIMITS[scope]
@@ -1022,7 +751,7 @@ class WebServer:
             assert self.http is not None
             if entry.get("access_token"):
                 try:
-                    await self.http.post(
+                    async with self.http.post(
                         f"{DISCORD_API}/oauth2/token/revoke",
                         data={
                             "client_id": CLIENT_ID,
@@ -1031,8 +760,11 @@ class WebServer:
                             "token_type_hint": "access_token",
                         },
                         headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                except aiohttp.ClientError:
+                    ) as upstream:
+                        # Discord returns no useful body here, but consuming it
+                        # releases the connection back to aiohttp's pool.
+                        await upstream.read()
+                except (aiohttp.ClientError, asyncio.TimeoutError):
                     pass
             await asyncio.to_thread(db_delete_session, sid)
             self._session_locks.pop(sid, None)
@@ -1042,7 +774,7 @@ class WebServer:
 
     # ── public endpoints ─────────────────────────────────────────────
 
-    async def handle_health(self, request):
+    async def _health_payload(self):
         db_ok = await asyncio.to_thread(db_ping)
         # The website reads this to decide whether to close the dashboard, so
         # it is a small file read — off the event loop, like db_ping above.
@@ -1054,17 +786,25 @@ class WebServer:
             # window opened — and the website binds preview cookies to it, so a
             # code from a previous window stops working on its own.
             maintenance["since"] = state.get("updated_at")
-        payload = {
+        bot_ready = self.bot.is_ready()
+        return {
             # Maintenance is deliberately absent from `ok`: this endpoint
             # answers "is the API alive", not "is the site open". Folding them
             # together would make the public status widget cry outage during a
             # routine update.
-            "ok": bool(db_ok and self.bot.is_ready()),
-            "bot_ready": self.bot.is_ready(),
+            "ok": bool(db_ok and bot_ready),
+            "bot_ready": bot_ready,
             "db_ok": db_ok,
             "maintenance": maintenance,
         }
-        return web.json_response(payload, status=200 if db_ok else 503)
+
+    async def handle_health(self, request):
+        payload = await self._health_payload()
+        return web.json_response(payload, status=200 if payload["db_ok"] else 503)
+
+    async def handle_ready(self, request):
+        payload = await self._health_payload()
+        return web.json_response(payload, status=200 if payload["ok"] else 503)
 
     async def handle_maintenance_preview(self, request):
         # "auth" is 10 requests per 60 s, keyed on the visitor's real address —
@@ -1124,7 +864,7 @@ class WebServer:
                 "version": release["version"],
                 "phase": release["phase"],
                 "phase_label": release["phase_label"],
-                "release_label": f'{release["version"]} {release["phase_label"]}',
+                "release_label": public_release_label(release),
                 "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "guilds": len(guilds),
@@ -1369,107 +1109,33 @@ class WebServer:
             ],
         }
 
-    @staticmethod
-    def _dashboard_level_from_xp(total_xp):
-        return level_from_xp(total_xp)[0]
-
-    @staticmethod
-    def _dashboard_seconds_between(started_at, ended_at):
-        if not started_at or not ended_at:
-            return 0
-        try:
-            start = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
-            end = datetime.fromisoformat(str(ended_at).replace("Z", "+00:00"))
-        except ValueError:
-            return 0
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=UTC)
-        return max(int((end.astimezone(UTC) - start.astimezone(UTC)).total_seconds()), 0)
-
     async def _dashboard_payload(self, guild):
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         levels_settings = resolve_levels(settings)
         launched_at = getattr(self.bot, "launched_at", None)
         uptime = int((datetime.now(UTC) - launched_at).total_seconds()) if launched_at else 0
 
-        configured_channels = sum(1 for key in CHANNEL_KEYS if settings.get(key))
-        recommended_keys = ["update_channel", "error_log_channel", "log_channel", "welcome_channel"]
-        if github_config.watch_repos or github_config.primary_repo:
-            recommended_keys.append("github_event_channel")
-        recommended_done = sum(1 for key in recommended_keys if settings.get(key))
+        setup_summary = dashboard_setup_summary(
+            settings,
+            CHANNEL_KEYS,
+            github_watch_configured=bool(
+                github_config.watch_repos or github_config.primary_repo
+            ),
+        )
 
         levels_data = await asyncio.to_thread(load_levels_data)
         guild_levels = levels_data.get(str(guild.id), {})
-        total_xp = sum(max(int(record.get("xp", 0) or 0), 0) for record in guild_levels.values())
-        leaderboard = []
-        for position, (user_id, record) in enumerate(
-            sorted(guild_levels.items(), key=lambda item: item[1].get("xp", 0), reverse=True)[
-                :DASHBOARD_LEADERBOARD_LIMIT
-            ],
-            start=1,
-        ):
-            member = guild.get_member(int(user_id)) if str(user_id).isdigit() else None
-            xp = int(record.get("xp", 0) or 0)
-            leaderboard.append(
-                {
-                    "position": position,
-                    "user_id": str(user_id),
-                    "display_name": member.display_name if member else f"User {user_id}",
-                    "xp": xp,
-                    "messages": int(record.get("messages", 0) or 0),
-                    "level": self._dashboard_level_from_xp(xp),
-                }
-            )
+        levels_summary = dashboard_levels_summary(guild, guild_levels)
 
         voice_history = await asyncio.to_thread(load_voice_store, "voice_report_history", {})
         voice_pending = await asyncio.to_thread(load_voice_store, "voice_pending_reports", {})
         guild_voice_history = voice_history.get(str(guild.id), []) if isinstance(voice_history, dict) else []
         guild_voice_pending = voice_pending.get(str(guild.id), {}) if isinstance(voice_pending, dict) else {}
-        voice_reports = []
-        for report in guild_voice_history[:DASHBOARD_VOICE_HISTORY_LIMIT]:
-            session = report.get("session") or {}
-            members = session.get("members") if isinstance(session, dict) else {}
-            started_at = session.get("started_at") if isinstance(session, dict) else None
-            ended_at = report.get("ended_at")
-            voice_reports.append(
-                {
-                    "id": str(report.get("id") or ""),
-                    "channel_id": str(report.get("channel_id") or ""),
-                    "channel_name": report.get("channel_name") or "Voice session",
-                    "started_at": started_at,
-                    "ended_at": ended_at,
-                    "sent_at": report.get("sent_at"),
-                    "duration_seconds": self._dashboard_seconds_between(started_at, ended_at),
-                    "unique_members": len(members) if isinstance(members, dict) else 0,
-                    "peak_members": int(session.get("peak_members", 0) or 0) if isinstance(session, dict) else 0,
-                }
-            )
-
-        backups = await asyncio.to_thread(list_backups, 1)
-        newest_backup = backups[0] if backups else None
-        backup_report = await asyncio.to_thread(inspect_backup, newest_backup["path"]) if newest_backup else None
-        offsite_status = await asyncio.to_thread(
-            remote_backup_status,
-            newest_backup["name"] if newest_backup else None,
+        voice_summary = dashboard_voice_summary(
+            settings,
+            guild_voice_history,
+            guild_voice_pending,
         )
-        offsite_latest = offsite_status.get("latest") or {}
-        offsite_check = offsite_status.get("latest_remote_check") or offsite_latest.get("check") or {}
-        offsite_backup = {
-            # Deliberately omit destination, remote_path, stdout and stderr.
-            # A Manage Server user needs health, not host storage internals.
-            "configured": bool(offsite_status.get("configured")),
-            "matches_backup": bool(offsite_status.get("matches_backup")),
-            "latest_ok": bool(offsite_latest.get("ok")),
-            "uploaded_at": offsite_latest.get("uploaded_at")
-            if isinstance(offsite_latest.get("uploaded_at"), str)
-            else None,
-            "check_ok": bool(offsite_check.get("ok")) if offsite_check else None,
-            "checked_at": offsite_check.get("checked_at")
-            if isinstance(offsite_check.get("checked_at"), str)
-            else None,
-        }
 
         update_state = load_update_state()
         update_feed = merged_update_feed(
@@ -1480,40 +1146,13 @@ class WebServer:
         release = current_project_release(update_state)
 
         automod = resolve_automod(settings)
-        modules = [
-            {
-                "key": "welcome",
-                "label": "Welcome",
-                "enabled": bool(
-                    settings.get("welcome_channel")
-                    or settings.get("goodbye_channel")
-                    or settings.get("autorole")
-                ),
-            },
-            {
-                "key": "moderation",
-                "label": "Moderation",
-                "enabled": bool(
-                    settings.get("log_channel")
-                    or settings.get("error_log_channel")
-                    or automod.get("invites")
-                    or automod.get("spam")
-                    or automod.get("badwords")
-                ),
-            },
-            {"key": "levels", "label": "Levels", "enabled": bool(levels_settings.get("enabled"))},
-            {"key": "voice", "label": "Voice reports", "enabled": bool(settings.get("voice_report_channel"))},
-            {"key": "tickets", "label": "Tickets", "enabled": bool(settings.get("ticket_staff_role"))},
-            {"key": "roles", "label": "Role panels", "enabled": bool(settings.get("role_panel_channel"))},
-            {"key": "giveaways", "label": "Giveaways", "enabled": bool(settings.get("giveaway_channel"))},
-            {"key": "ai", "label": "AI assistant", "enabled": bool(resolve_ai(settings)["enabled"])},
-            {"key": "economy", "label": "Economy", "enabled": bool(resolve_economy(settings)["enabled"])},
-            {
-                "key": "updates",
-                "label": "Updates",
-                "enabled": bool(settings.get("update_channel") or settings.get("github_event_channel")),
-            },
-        ]
+        modules = dashboard_module_summary(
+            settings,
+            automod,
+            levels_settings,
+            resolve_ai(settings),
+            resolve_economy(settings),
+        )
 
         return {
             "status": {
@@ -1521,7 +1160,7 @@ class WebServer:
                 "version": release["version"],
                 "phase": release["phase"],
                 "phase_label": release["phase_label"],
-                "release_label": f'{release["version"]} {release["phase_label"]}',
+                "release_label": public_release_label(release),
                 "runtime_version": BOT_RUNTIME_VERSION,
                 "codename": BOT_CODENAME,
                 "uptime_seconds": uptime,
@@ -1535,12 +1174,7 @@ class WebServer:
                 "icon": str(guild.icon) if guild.icon else None,
                 "member_count": guild.member_count or 0,
             },
-            "setup": {
-                "configured_channels": configured_channels,
-                "total_channels": len(CHANNEL_KEYS),
-                "recommended_done": recommended_done,
-                "recommended_total": len(recommended_keys),
-            },
+            "setup": setup_summary,
             "modules": modules,
             "automod": {
                 "invites": bool(automod.get("invites")),
@@ -1549,27 +1183,9 @@ class WebServer:
             },
             "levels": {
                 "enabled": bool(levels_settings.get("enabled")),
-                "tracked_members": len(guild_levels),
-                "total_xp": total_xp,
-                "leaderboard": leaderboard,
+                **levels_summary,
             },
-            "voice": {
-                "configured": bool(settings.get("voice_report_channel")),
-                "report_channel_id": str(settings.get("voice_report_channel")) if settings.get("voice_report_channel") else None,
-                "pending_count": len(guild_voice_pending) if isinstance(guild_voice_pending, dict) else 0,
-                "recent_reports": voice_reports,
-            },
-            "backup": {
-                "available": bool(newest_backup),
-                "latest_name": newest_backup["name"] if newest_backup else None,
-                "latest_size": newest_backup["size"] if newest_backup else 0,
-                "latest_size_text": newest_backup["size_text"] if newest_backup else None,
-                "latest_at": newest_backup["mtime"].isoformat() if newest_backup else None,
-                "ok": bool(backup_report and backup_report.get("ok")),
-                "warnings": backup_report.get("warnings", []) if backup_report else [],
-                "errors": backup_report.get("errors", []) if backup_report else [],
-                "offsite": offsite_backup,
-            },
+            "voice": voice_summary,
             "updates": update_feed[:5],
         }
 
@@ -1593,45 +1209,11 @@ class WebServer:
             self._client_ip(request),
         )
 
-    async def _handle_backup_check_action(self):
-        backups = await asyncio.to_thread(list_backups, 1)
-        latest = backups[0] if backups else None
-        if latest is None:
-            raise ApiError(404, "No backup archive exists yet.", code="backup_not_found")
-
-        report = await asyncio.to_thread(inspect_backup, latest["path"], extract=True)
-        if not report.get("ok"):
-            return {
-                "ok": False,
-                "action": "backup_check",
-                "message": f"Backup check finished with {len(report.get('errors', []))} error(s).",
-                "backup": {
-                    "name": latest["name"],
-                    "size_text": latest["size_text"],
-                    "ok": False,
-                    "warnings": report.get("warnings", []),
-                    "errors": report.get("errors", []),
-                },
-            }
-
-        warnings = report.get("warnings", [])
-        return {
-            "ok": True,
-            "action": "backup_check",
-            "message": "Latest backup passed the restore check.",
-            "backup": {
-                "name": latest["name"],
-                "size_text": latest["size_text"],
-                "ok": True,
-                "warnings": warnings,
-                "errors": [],
-            },
-        }
-
     async def _handle_voice_test_action(self, guild, entry):
         import discord
 
-        from cogs.voice import build_report_embed, new_session, now_utc, record_member_join, record_member_leave
+        from .voice_presenters import build_report_embed
+        from .voice_sessions import new_session, now_utc, record_member_join, record_member_leave
 
         settings = await asyncio.to_thread(get_guild_settings, guild.id)
         channel_id = settings.get("voice_report_channel")
@@ -1916,8 +1498,6 @@ class WebServer:
     async def _handle_giveaway_start_action(self, request, guild, entry):
         import discord
 
-        from cogs.giveaways import validate_giveaway_input
-
         body = await self._giveaway_action_body(request)
         duration, prize, winners, errors = validate_giveaway_input(
             body.get("duration"), body.get("prize"), body.get("winners")
@@ -2035,9 +1615,7 @@ class WebServer:
         _, entry, guild = await self._authorized_guild(request)
         action = request.match_info["action"].replace("-", "_")
 
-        if action == "backup_check":
-            payload = await self._handle_backup_check_action()
-        elif action == "voice_test":
+        if action == "voice_test":
             payload = await self._handle_voice_test_action(guild, entry)
         elif action == "update_preview":
             payload = await self._handle_update_preview_action(guild)
