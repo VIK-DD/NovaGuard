@@ -28,6 +28,22 @@ export function isValidEntry(entry) {
   );
 }
 
+/**
+ * What to print when the feed could not be used and the baked archive stands.
+ *
+ * Falling back is safe for the release *notes* — a stale page beats a broken
+ * one — but not for the release *number*: /status renders the version computed
+ * from this archive, so a fallback nobody notices publishes an older version
+ * than the bot reports, and a reader watches it flick to the real one a second
+ * after the page loads. That went unnoticed for twelve builds because the line
+ * announcing it sat in the middle of a green run's log. In CI it is an
+ * annotation now, which surfaces on the run summary instead.
+ */
+export function fallbackNotice(entryCount, reason) {
+  const line = `sync-updates-archive: keeping baked archive (${entryCount} entries) — ${reason}`;
+  return process.env.GITHUB_ACTIONS ? `::warning::${line}` : line;
+}
+
 export function shouldReplaceArchive(current, fetched) {
   if (!Array.isArray(fetched) || fetched.length === 0) return false;
   if (!fetched.every(isValidEntry)) return false;

@@ -7,8 +7,15 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.storage import load_data, save_data
-from core.theme import Palette, brand_footer, make_embed
+from core.theme import Palette, brand_footer, make_embed, rainbow_color
 from core.utils import defer_interaction, parse_duration, respond, truncate
+
+
+# What one embed description holds. /say posts a card rather than bare text,
+# so the ceiling is Discord's 4096 for a description, not the 2000 a plain
+# message gets. Refused rather than truncated: half an announcement is worse
+# than being told to shorten it.
+SAY_LIMIT = 4096
 
 
 def can_act_on(actor: discord.Member, target: discord.Member) -> bool:
@@ -206,7 +213,7 @@ class Moderation(commands.Cog):
         brand_footer(confirm)
         await respond(interaction, confirm, ephemeral=True)
 
-    @app_commands.command(name="say", description="Make NovaGuard post a plain message")
+    @app_commands.command(name="say", description="Make NovaGuard post a message as a card")
     @app_commands.describe(
         message="What NovaGuard should say (use \\n for new lines)",
         channel="Where to post it; defaults to this channel",
@@ -228,21 +235,31 @@ class Moderation(commands.Cog):
             embed = make_embed("🤔 Nothing to say", "Give me some text to post.", color=Palette.WARNING)
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
-        if len(text) > 2000:
+        if len(text) > SAY_LIMIT:
             embed = make_embed(
                 "✂️ Too long",
-                f"Discord caps a message at 2000 characters; that was `{len(text)}`.",
+                f"A card holds {SAY_LIMIT:,} characters; that was `{len(text):,}`.",
                 color=Palette.WARNING,
             )
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
+        # A card, not bare text: it reads as something the server posted on
+        # purpose rather than as a bot talking. The colour is drawn fresh each
+        # time so two announcements never look like the same one twice, and
+        # the footer is the same brand mark every other embed carries.
+        card = make_embed(description=text, color=rainbow_color())
+        brand_footer(card)
+
         try:
             # @everyone, @here and role pings are refused even if a manager
             # types them: /say must not become a way to mass-ping the server
-            # through the bot. Naming a specific member still works.
+            # through the bot. Naming a specific member still works. Embed text
+            # never resolves a mention at all, so this is now belt and braces -
+            # kept because the day someone adds a content line back, the guard
+            # has to already be here rather than be remembered.
             await target.send(
-                text,
+                embed=card,
                 allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
             )
         except discord.Forbidden:

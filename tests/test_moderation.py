@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cogs.moderation as moderation  # noqa: E402
 from cogs.moderation import can_act_on  # noqa: E402
+from core.config import github_config  # noqa: E402
 
 
 class FakeRole:
@@ -326,19 +327,44 @@ class SayCommandTests(unittest.IsolatedAsyncioTestCase):
         await self.cog.say.callback(self.cog, i, message, channel)
         return i
 
+    def posted(self):
+        self.assertEqual(len(self.channel.sent), 1)
+        content, kwargs = self.channel.sent[0]
+        return content, kwargs, kwargs.get("embed")
+
     async def test_it_posts_the_message_in_the_channel(self):
         await self.say("Server maintenance at 20:00.")
 
-        self.assertEqual(len(self.channel.sent), 1)
-        content, _ = self.channel.sent[0]
-        self.assertEqual(content, "Server maintenance at 20:00.")
+        _, _, embed = self.posted()
+        self.assertEqual(embed.description, "Server maintenance at 20:00.")
 
-    async def test_it_posts_a_plain_message_not_an_embed(self):
-        # "say" means the bot speaks; an embed would look like an announcement.
+    async def test_it_posts_an_embed_rather_than_bare_text(self):
+        # A card reads as something the server said on purpose. Bare text from
+        # a bot reads like a bot, which is the opposite of what /say is for.
         await self.say("hello")
-        _, kwargs = self.channel.sent[0]
 
-        self.assertNotIn("embed", kwargs)
+        content, _, embed = self.posted()
+        self.assertIsNotNone(embed)
+        self.assertIsNone(content)
+
+    async def test_the_card_carries_the_brand_footer(self):
+        await self.say("hello")
+
+        _, _, embed = self.posted()
+        self.assertEqual(embed.footer.text, github_config.brand_name)
+        self.assertTrue(embed.footer.icon_url)
+
+    async def test_the_colour_is_not_the_same_card_every_time(self):
+        # The colour is the only thing that varies between two /say cards, so
+        # a fixed one would make every announcement look like the last.
+        seen = set()
+        for index in range(25):
+            self.channel = FakeChannel()
+            await self.say(f"message {index}")
+            _, _, embed = self.posted()
+            seen.add(embed.color.value)
+
+        self.assertGreater(len(seen), 10)
 
     async def test_it_never_lets_the_bot_ping_everyone_or_roles(self):
         # The whole reason this command is gated and guarded: a manager must
@@ -353,8 +379,8 @@ class SayCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_backslash_n_becomes_a_real_newline(self):
         await self.say("line one\\nline two")
 
-        content, _ = self.channel.sent[0]
-        self.assertEqual(content, "line one\nline two")
+        _, _, embed = self.posted()
+        self.assertEqual(embed.description, "line one\nline two")
 
     async def test_empty_text_posts_nothing(self):
         await self.say("   ")
@@ -362,9 +388,18 @@ class SayCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.sent, [])
 
     async def test_a_message_over_the_discord_limit_is_refused(self):
-        await self.say("x" * 2001)
+        # An embed description holds 4096, not the 2000 a plain message does,
+        # so the cap moved with the format. One over is still refused rather
+        # than silently truncated: a cut-off announcement is worse than none.
+        await self.say("x" * 4097)
 
         self.assertEqual(self.channel.sent, [])
+
+    async def test_a_message_that_fits_the_embed_but_not_a_plain_one_is_posted(self):
+        await self.say("x" * 3000)
+
+        _, _, embed = self.posted()
+        self.assertEqual(len(embed.description), 3000)
 
     async def test_using_it_is_recorded_in_the_mod_log(self):
         # A command that can impersonate staff must leave a trace of who did it.

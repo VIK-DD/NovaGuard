@@ -1,5 +1,177 @@
 [
   {
+    "created_at": "2026-08-21T10:36:19.872382+00:00",
+    "significant": true,
+    "build": 69,
+    "added_lines": 132,
+    "removed_lines": 18,
+    "changed_files": 8,
+    "changes": [
+      "New commands ready to try: `/say`",
+      "Refreshed the website build, the command catalog on the website, the privacy and terms pages and the website"
+    ],
+    "release": "2.6",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-20T12:48:25.139330+00:00",
+    "significant": false,
+    "build": 68,
+    "added_lines": 240,
+    "removed_lines": 27,
+    "changed_files": 5,
+    "changes": [
+      "Behind-the-scenes improvements to the GitHub cards & watcher, giveaways, the utility tools and the GitHub connection (+1 more)"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-20T11:03:16.335191+00:00",
+    "significant": false,
+    "build": 67,
+    "added_lines": 76,
+    "removed_lines": 6,
+    "changed_files": 1,
+    "changes": [
+      "Behind-the-scenes improvements to the setup wizard"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T21:09:02.829757+00:00",
+    "significant": false,
+    "build": 66,
+    "added_lines": 34,
+    "removed_lines": 2,
+    "changed_files": 1,
+    "changes": [
+      "Refreshed the website"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T20:55:29.936212+00:00",
+    "significant": false,
+    "build": 65,
+    "added_lines": 203,
+    "removed_lines": 4,
+    "changed_files": 5,
+    "changes": [
+      "Refreshed the website",
+      "Behind-the-scenes improvements to the GitHub cards & watcher, config check, github commits and update announcements"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T20:29:42.348683+00:00",
+    "significant": false,
+    "build": 64,
+    "added_lines": 12155,
+    "removed_lines": 3,
+    "changed_files": 73,
+    "changes": [
+      "Refreshed docs and examples: `website-3/astro.config.mjs`, `website-3/scripts/dashboard-spa-fallback.mjs`, `website-3/scripts/security-audit-rules.mjs`, `website-3/scripts/security-audit.mjs`, `website-3/scripts/soft-launch.mjs`, `website-3/scripts/sync-updates-archive.mjs`",
+      "Behind-the-scenes improvements to the setup wizard and update announcements"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-19T20:08:08.654727+00:00",
+    "significant": true,
+    "build": 63,
+    "added_lines": 391,
+    "removed_lines": 18,
+    "changed_files": 7,
+    "changes": [
+      "New commands ready to try: `/infopanel`"
+    ],
+    "release": "2.5",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T21:32:43.956327+00:00",
+    "significant": false,
+    "build": 62,
+    "added_lines": 34,
+    "removed_lines": 0,
+    "changed_files": 1,
+    "changes": [
+      "Behind-the-scenes improvements to clientrole"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T21:18:10.972441+00:00",
+    "significant": true,
+    "build": 61,
+    "added_lines": 273,
+    "removed_lines": 14,
+    "changed_files": 5,
+    "changes": [
+      "New commands ready to try: `/clientrole off`, `/clientrole set`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T20:49:18.036654+00:00",
+    "significant": true,
+    "build": 60,
+    "added_lines": 402,
+    "removed_lines": 0,
+    "changed_files": 4,
+    "changes": [
+      "New commands ready to try: `/statuspanel`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T20:15:27.949810+00:00",
+    "significant": false,
+    "build": 59,
+    "added_lines": 218,
+    "removed_lines": 159,
+    "changed_files": 16,
+    "changes": [
+      "Improved commands — same names, smoother behavior: `/voice test`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
+    "created_at": "2026-08-18T13:52:40.126613+00:00",
+    "significant": false,
+    "build": 58,
+    "added_lines": 245,
+    "removed_lines": 4493,
+    "changed_files": 25,
+    "changes": [
+      "Retired commands: `/clear`, `/disconnect`, `/filter`, `/loop`, `/nowplaying`, `/play`, `/queue`, `/remove`, `/seek`, `/shuffle`, `/skip`, `/soundcheck`, `/volume`",
+      "Refreshed docs and examples: `SETUP.md`"
+    ],
+    "release": "2.4",
+    "phase": "open-beta",
+    "phase_label": "Open Beta"
+  },
+  {
     "created_at": "2026-08-17T15:08:22.745640+00:00",
     "significant": false,
     "build": 57,

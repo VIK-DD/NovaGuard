@@ -1,5 +1,7 @@
 """Visual identity: color palette, embed factory, progress bars."""
 
+import colorsys
+import random
 from datetime import UTC, datetime
 
 import discord
@@ -35,6 +37,26 @@ LANGUAGE_COLORS = {
 
 def pick_embed_color(language_name=None, fallback=Palette.PRIMARY):
     return discord.Color(LANGUAGE_COLORS.get(language_name or "", fallback))
+
+
+# Saturation and value are fixed; only the hue moves. That is what makes a run
+# of these read as a rainbow rather than a pile of unrelated colours, and it is
+# also what keeps every one of them legible: picking all three at random lands
+# on near-black and on washed-out pastel often enough to look broken. The band
+# below stays bright on Discord's dark theme without glaring on its light one.
+RAINBOW_SATURATION = 0.65
+RAINBOW_VALUE = 0.95
+
+
+def rainbow_color(rng=random):
+    """A vivid colour from anywhere on the spectrum, different every call.
+
+    ``rng`` exists so a caller that needs the same card twice - a test, a
+    preview - can pass its own generator instead of reaching into the global
+    one. Returns a plain int because that is what ``discord.Color`` takes.
+    """
+    red, green, blue = colorsys.hsv_to_rgb(rng.random(), RAINBOW_SATURATION, RAINBOW_VALUE)
+    return (round(red * 255) << 16) | (round(green * 255) << 8) | round(blue * 255)
 
 
 def make_embed(title=None, description=None, color=Palette.PRIMARY, timestamp=True, url=None):

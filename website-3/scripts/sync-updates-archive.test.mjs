@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { isValidEntry, shouldReplaceArchive } from "./sync-updates-archive.mjs";
+import { afterEach, describe, expect, it } from "vitest";
+import { fallbackNotice, isValidEntry, shouldReplaceArchive } from "./sync-updates-archive.mjs";
 
 const entry = (build, created_at = "2026-08-01T23:21:39+00:00") => ({ build, created_at });
 
@@ -34,5 +34,38 @@ describe("shouldReplaceArchive", () => {
 
   it("treats a missing baked archive as replaceable by any valid feed", () => {
     expect(shouldReplaceArchive(undefined, [entry(1)])).toBe(true);
+  });
+});
+
+describe("fallbackNotice", () => {
+  const wasCI = process.env.GITHUB_ACTIONS;
+  afterEach(() => {
+    if (wasCI === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = wasCI;
+  });
+
+  it("says how stale the archive it kept is, and why it kept it", () => {
+    delete process.env.GITHUB_ACTIONS;
+
+    const notice = fallbackNotice(57, "feed answered 403");
+
+    expect(notice).toContain("57");
+    expect(notice).toContain("feed answered 403");
+  });
+
+  it("raises a CI annotation so a silent fallback cannot hide in the log", () => {
+    // This is the whole point. The published version number is computed from
+    // the baked archive, so a fallback nobody notices ships a site claiming an
+    // older release than the bot reports — which readers see as the version
+    // flickering from the stale value to the real one on every page load.
+    process.env.GITHUB_ACTIONS = "true";
+
+    expect(fallbackNotice(57, "feed answered 403")).toMatch(/^::warning/);
+  });
+
+  it("stays a plain line outside CI, where the annotation is just noise", () => {
+    delete process.env.GITHUB_ACTIONS;
+
+    expect(fallbackNotice(57, "feed unreachable")).not.toMatch(/^::warning/);
   });
 });
