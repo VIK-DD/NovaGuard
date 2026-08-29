@@ -22,7 +22,11 @@ INVITE_PERMISSION_BITS = MappingProxyType(
         "embed_links": 1 << 14,
         "attach_files": 1 << 15,
         "read_message_history": 1 << 16,
-        "mention_everyone": 1 << 17,
+        # mention_everyone (1 << 17) was requested here and used by nothing.
+        # Every send path already passes allowed_mentions with everyone=False,
+        # /say refuses @everyone explicitly, and bot.py sets the same default
+        # process-wide - so the permission bought nothing and asked every
+        # server that installs NovaGuard to trust it with a mass ping.
         # Voice presence tracking.
         "connect": 1 << 20,
         "speak": 1 << 21,
