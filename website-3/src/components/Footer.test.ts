@@ -44,12 +44,13 @@ describe("Footer", () => {
     expect(footer).toContain('/assets/novaguard-icon-96.png');
     expect(footer).toContain('aria-label="Community"');
     expect(footer).toContain('href="https://discord.gg/CbDy3GyhWm"');
-    expect(footer).toContain('href="https://github.com/VIK-DD/NovaGuard"');
+    expect(footer).toContain('href="/vote"');
+    expect(footer).toContain("Vote on Top.gg");
     expect(footer).toContain("Powerful Discord moderation and utilities");
     expect(footer).not.toContain("Open Beta");
     expect(footer).toContain("Developed by VIK &amp; CloudMedia");
     expect(footer.toLowerCase()).not.toContain("names");
-    expect(footer).toContain('viewBox="-1 -1 26 26"');
+    expect(footer).toContain('viewBox="-6 -6 139.14 108.36"');
   });
 
   it("does not advertise social accounts that do not exist yet", () => {

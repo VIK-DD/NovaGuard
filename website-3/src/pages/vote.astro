@@ -1,0 +1,56 @@
+---
+import Base from "../layouts/Base.astro";
+import Footer from "../components/Footer.astro";
+import Icon from "../components/Icon.astro";
+import Nav from "../components/Nav.astro";
+---
+
+<Base
+  title="Vote on Top.gg — NovaGuard"
+  description="NovaGuard is currently waiting for Top.gg verification. Voting will open here as soon as the listing is approved."
+>
+  <Nav />
+  <main class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-5xl items-center px-5 py-20 sm:px-6 sm:py-28">
+    <section class="mx-auto w-full max-w-2xl text-center" aria-labelledby="vote-title">
+      <div
+        class="mx-auto grid size-16 place-items-center rounded-[16px] border border-line bg-card text-primary shadow-[0_18px_55px_hsl(var(--primary)/0.12)]"
+      >
+        <Icon name="vote" size={30} />
+      </div>
+
+      <p class="mt-7 text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+        Top.gg verification
+      </p>
+      <h1 id="vote-title" class="font-display mt-3 text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
+        Voting is coming soon.
+      </h1>
+      <p class="mx-auto mt-5 max-w-xl text-base leading-relaxed text-ink-muted sm:text-lg">
+        NovaGuard is in the Top.gg verification queue. The estimated waiting time is around
+        <strong class="font-semibold text-ink">1–2 weeks</strong>. Once the listing is approved,
+        this page will take you straight to the official voting page.
+      </p>
+
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <span
+          class="inline-flex min-h-11 items-center gap-2 rounded-[6px] border border-line bg-bg-subtle px-5 py-2.5 text-sm font-medium text-ink-muted"
+        >
+          <span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>
+          Verification pending
+        </span>
+        <a
+          href="https://discord.gg/CbDy3GyhWm"
+          target="_blank"
+          rel="noreferrer"
+          class="ng-pressable inline-flex min-h-11 items-center rounded-[6px] border border-line px-5 py-2.5 text-sm font-medium text-ink transition-[color,border-color,background-color,transform] duration-150 hover:border-[hsl(var(--border-strong))] hover:bg-card"
+        >
+          Join the community
+        </a>
+      </div>
+
+      <p class="mt-8 text-xs leading-relaxed text-ink-faint">
+        No action is needed yet. We will replace this notice with the verified Top.gg destination.
+      </p>
+    </section>
+  </main>
+  <Footer />
+</Base>
