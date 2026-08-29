@@ -385,6 +385,12 @@ class Privacy(commands.Cog):
         await respond(interaction, embed, ephemeral=True)
 
     @privacy.command(name="export", description="Privately download the data tied to your Discord ID")
+    # Every one of these walks the whole store for a single caller and
+    # builds an attachment from the result. They are a member's right, not
+    # a privilege, so they stay open to everyone - but on a 1 GB host an
+    # unthrottled full scan is a resource-exhaustion primitive, and the
+    # honest use of a data-subject right is once, not once a second.
+    @app_commands.checks.cooldown(1, 60.0)
     async def privacy_export(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)
         await flush_live_privacy_state(self.bot)
@@ -416,6 +422,7 @@ class Privacy(commands.Cog):
 
     @privacy.command(name="delete", description="Export, then erase data tied to your Discord ID")
     @app_commands.describe(confirmation=f"Type {USER_DELETE_CONFIRMATION} exactly")
+    @app_commands.checks.cooldown(1, 60.0)
     async def privacy_delete(self, interaction: discord.Interaction, confirmation: str):
         await defer_interaction(interaction, ephemeral=True)
         if confirmation.strip() != USER_DELETE_CONFIRMATION:
@@ -461,6 +468,7 @@ class Privacy(commands.Cog):
 
     @privacy.command(name="server-export", description="Export all NovaGuard data for this server")
     @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 60.0)
     @app_commands.guild_only()
     async def privacy_server_export(self, interaction: discord.Interaction):
         await defer_interaction(interaction, ephemeral=True)

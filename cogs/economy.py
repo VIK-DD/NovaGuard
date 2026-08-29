@@ -400,6 +400,7 @@ class Economy(commands.Cog):
         await respond(interaction, embed)
 
     @app_commands.command(name="richest", description="Top 10 richest members")
+    @app_commands.checks.cooldown(1, 10.0)
     @app_commands.guild_only()
     async def richest(self, interaction: discord.Interaction):
         if await self._settings_or_reject(interaction) is None:

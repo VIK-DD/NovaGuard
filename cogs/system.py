@@ -658,6 +658,7 @@ class System(commands.Cog):
         await respond(interaction, embed, view=build_link_view(buttons))
 
     @app_commands.command(name="doctor", description="Deep health check for the bot, config and integrations")
+    @app_commands.checks.cooldown(1, 30.0)
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()

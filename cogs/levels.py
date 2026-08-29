@@ -419,6 +419,7 @@ class Levels(commands.Cog):
             await self._announce_level_up(message, config, embed)
 
     @app_commands.command(name="rank", description="Your XP card: level, progress and server rank")
+    @app_commands.checks.cooldown(1, 5.0)
     @app_commands.describe(member="Whose rank? (defaults to you)")
     @app_commands.guild_only()
     async def rank(self, interaction: discord.Interaction, member: discord.Member | None = None):
@@ -477,6 +478,7 @@ class Levels(commands.Cog):
         await respond(interaction, embed)
 
     @app_commands.command(name="leaderboard", description="Top 10 most active members")
+    @app_commands.checks.cooldown(1, 10.0)
     @app_commands.guild_only()
     async def leaderboard(self, interaction: discord.Interaction):
         guild_data = self.data.get(str(interaction.guild_id), {})
