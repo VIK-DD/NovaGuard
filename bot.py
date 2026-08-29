@@ -291,12 +291,15 @@ def main():
         try:
             bot.run(token, log_handler=None)
             return
-        except discord.PrivilegedIntentsRequired:
+        except discord.PrivilegedIntentsRequired as error:
+            # `from error` rather than `from None`: this one is read by whoever
+            # is starting the bot, and the library's own line names which
+            # intent Discord refused when more than one is missing.
             raise SystemExit(
                 "\n[!] SERVER MEMBERS INTENT is not enabled.\n"
                 "    Fix: https://discord.com/developers/applications -> your app -> Bot ->\n"
                 "    Privileged Gateway Intents -> enable 'SERVER MEMBERS INTENT', then restart.\n"
-            )
+            ) from error
         except KeyboardInterrupt:
             return
         except Exception as error:

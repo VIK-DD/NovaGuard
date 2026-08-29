@@ -801,7 +801,7 @@ def build_update_history_embeds(update_history):
             color=discord.Color(Palette.PRIMARY),
         )
 
-        for offset, update_entry in enumerate(chunk, start=index + 1):
+        for update_entry in chunk:
             timestamp = parse_github_datetime(update_entry.get("created_at"))
             time_label = discord.utils.format_dt(timestamp, "f") if timestamp else "Unknown time"
             summary = update_entry.get("summary", []) or ["General internal improvements and cleanup"]

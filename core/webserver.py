@@ -1406,7 +1406,7 @@ class WebServer:
         try:
             body = await request.json()
         except Exception:
-            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request") from None
         if not isinstance(body, dict):
             raise ApiError(400, "Body must be a JSON object.", code="bad_request")
 
@@ -1511,7 +1511,7 @@ class WebServer:
         try:
             body = await request.json()
         except Exception:
-            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request") from None
         if not isinstance(body, dict):
             raise ApiError(400, "Body must be a JSON object.", code="bad_request")
         return body
@@ -1692,7 +1692,7 @@ class WebServer:
         try:
             limit = int(raw_limit)
         except (TypeError, ValueError):
-            raise ApiError(400, "Audit limit must be a number.", code="bad_request")
+            raise ApiError(400, "Audit limit must be a number.", code="bad_request") from None
         if limit < 1:
             raise ApiError(400, "Audit limit must be at least 1.", code="bad_request")
         limit = min(limit, 200)
@@ -1703,7 +1703,7 @@ class WebServer:
             try:
                 cursor = int(raw_cursor)
             except (TypeError, ValueError):
-                raise ApiError(400, "Audit cursor is invalid.", code="bad_request")
+                raise ApiError(400, "Audit cursor is invalid.", code="bad_request") from None
             if cursor < 1:
                 raise ApiError(400, "Audit cursor is invalid.", code="bad_request")
 
@@ -1725,7 +1725,7 @@ class WebServer:
             try:
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             except ValueError:
-                raise ApiError(400, f"Audit {name} date is invalid.", code="bad_request")
+                raise ApiError(400, f"Audit {name} date is invalid.", code="bad_request") from None
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=UTC)
             return parsed.astimezone(UTC).isoformat()
@@ -1755,7 +1755,7 @@ class WebServer:
         try:
             body = await request.json()
         except Exception:
-            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request") from None
         if not isinstance(body, dict):
             raise ApiError(400, "Body must be a JSON object.", code="bad_request")
 

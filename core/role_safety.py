@@ -31,7 +31,6 @@ Manage Roles a month later, and the panel would go on handing it out.
 
 from __future__ import annotations
 
-import discord
 
 # Permissions that make a role a staff role. A role holding any of these is
 # something a server grants deliberately, to a named person - never something a
