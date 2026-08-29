@@ -50,3 +50,23 @@ export function localizeFontImport(css, fontFaces) {
   }
   return localized;
 }
+
+/**
+ * Append `?v=<token>` to the named assets wherever the document links them.
+ *
+ * This step rewrites an asset's contents but keeps its file name, and the edge
+ * serves those names with `immutable` for a year. A browser holding the old
+ * copy would never ask for the new one, so a corrected stylesheet would reach
+ * new visitors only. The page HTML revalidates on every load, which is what
+ * lets a token in the markup pull the corrected asset through.
+ *
+ * Already-stamped links are left alone, so running twice changes nothing.
+ */
+export function stampAssetVersions(html, versions) {
+  let stamped = html;
+  for (const [asset, token] of Object.entries(versions)) {
+    const name = asset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    stamped = stamped.replace(new RegExp(`(href="[^"]*${name})(")`, "g"), `$1?v=${token}$2`);
+  }
+  return stamped;
+}

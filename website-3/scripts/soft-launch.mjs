@@ -8,10 +8,12 @@ import {
   PUBLIC_LAUNCH_AT,
   hasPublicLaunchPassed,
 } from "../launch-config.js";
+import { createHash } from "node:crypto";
 import {
   countdownBundleUsesLaunchDate,
   injectCountdownRedirect,
   localizeFontImport,
+  stampAssetVersions,
 } from "./public-launch.mjs";
 
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
@@ -65,11 +67,17 @@ await writeFile(
 const fontFaces =
   '@font-face{font-family:Manrope;font-style:normal;font-display:swap;font-weight:200 800;src:url("./manrope-latin-wght-normal.woff2") format("woff2")}' +
   '@font-face{font-family:"DM Mono";font-style:normal;font-display:swap;font-weight:400;src:url("./dm-mono-latin-400-normal.woff2") format("woff2")}';
+// The rewritten sheets keep their original file names, which the edge serves as
+// `immutable` for a year. Their contents are hashed here so the page can ask for
+// this exact version, or a browser holding a superseded copy would keep it.
+const cssVersions = {};
 for (const asset of await readdir(comingSoonAssets)) {
   if (!asset.endsWith(".css")) continue;
   const path = `${comingSoonAssets}${asset}`;
   const css = await readFile(path, "utf8");
-  await writeFile(path, localizeFontImport(css, fontFaces), "utf8");
+  const localized = localizeFontImport(css, fontFaces);
+  await writeFile(path, localized, "utf8");
+  cssVersions[asset] = createHash("sha256").update(localized).digest("hex").slice(0, 8);
 }
 
 const scriptAssets = (await readdir(comingSoonAssets)).filter((asset) => asset.endsWith(".js"));
@@ -84,7 +92,11 @@ if (!countdownScripts.some(countdownBundleUsesLaunchDate)) {
 
 const comingSoonIndex = `${comingSoon}index.html`;
 const comingSoonHtml = await readFile(comingSoonIndex, "utf8");
-await writeFile(comingSoonIndex, injectCountdownRedirect(comingSoonHtml), "utf8");
+await writeFile(
+  comingSoonIndex,
+  stampAssetVersions(injectCountdownRedirect(comingSoonHtml), cssVersions),
+  "utf8",
+);
 
 const entries = await readdir(comingSoon, { withFileTypes: true });
 for (const entry of entries) {

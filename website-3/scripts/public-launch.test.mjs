@@ -9,6 +9,7 @@ import {
   countdownBundleUsesLaunchDate,
   injectCountdownRedirect,
   localizeFontImport,
+  stampAssetVersions,
 } from "./public-launch.mjs";
 
 describe("public launch configuration", () => {
@@ -99,5 +100,46 @@ describe("localizeFontImport", () => {
 
   it("leaves a sheet that never referenced Google Fonts alone", () => {
     expect(localizeFontImport(REST, FACES)).toBe(REST);
+  });
+});
+
+describe("stampAssetVersions", () => {
+  // soft-launch rewrites an asset's contents but keeps its name, and the edge
+  // serves those names as `immutable` for a year. Without a version token a
+  // browser that already holds the old copy never asks for the new one, so a
+  // fixed stylesheet reaches new visitors only. The page HTML revalidates on
+  // every load, which is what makes stamping it work.
+  const HTML =
+    '<head><link rel="stylesheet" crossorigin href="./assets/index-AbC123.css">' +
+    '<link rel="stylesheet" href="./overrides.css"></head>';
+
+  it("adds the version to the asset it was given", () => {
+    expect(stampAssetVersions(HTML, { "index-AbC123.css": "9f8e7d6c" })).toContain(
+      'href="./assets/index-AbC123.css?v=9f8e7d6c"',
+    );
+  });
+
+  it("leaves assets it was not given untouched", () => {
+    const out = stampAssetVersions(HTML, { "index-AbC123.css": "9f8e7d6c" });
+
+    expect(out).toContain('href="./overrides.css"');
+    expect(out).not.toContain("overrides.css?v=");
+  });
+
+  it("does not stamp the same asset twice", () => {
+    const once = stampAssetVersions(HTML, { "index-AbC123.css": "9f8e7d6c" });
+    const twice = stampAssetVersions(once, { "index-AbC123.css": "9f8e7d6c" });
+
+    expect(twice).toBe(once);
+  });
+
+  it("keeps the rest of the document byte for byte", () => {
+    const out = stampAssetVersions(HTML, { "index-AbC123.css": "9f8e7d6c" });
+
+    expect(out.replace("?v=9f8e7d6c", "")).toBe(HTML);
+  });
+
+  it("is a no-op when there is nothing to stamp", () => {
+    expect(stampAssetVersions(HTML, {})).toBe(HTML);
   });
 });
