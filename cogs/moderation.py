@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.command_guards import ModeratorGroup
 from core.storage import load_data, save_data
 from core.theme import Palette, brand_footer, make_embed, rainbow_color
 from core.utils import defer_interaction, parse_duration, respond, truncate
@@ -44,7 +45,7 @@ class Moderation(commands.Cog):
     COLOR = Palette.DANGER
     DESCRIPTION = "Purge, kick, ban, timeouts, slowmode, announcements and warnings."
 
-    warn = app_commands.Group(
+    warn = ModeratorGroup(
         name="warn",
         description="Warning system for moderators",
         default_permissions=discord.Permissions(moderate_members=True),

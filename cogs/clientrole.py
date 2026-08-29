@@ -17,6 +17,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core.client_role import ADMIN, NOT_ADMIN, client_status
+from core.command_guards import ManagerGroup
 from core.loop_guard import keep_running
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
@@ -49,7 +50,7 @@ class ClientRole(commands.Cog):
     COLOR = Palette.INFO
     DESCRIPTION = "Recognises members who run NovaGuard on their own server."
 
-    clientrole = app_commands.Group(
+    clientrole = ManagerGroup(
         name="clientrole",
         description="Recognise members who run NovaGuard elsewhere",
         default_permissions=discord.Permissions(manage_guild=True),

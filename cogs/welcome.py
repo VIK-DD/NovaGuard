@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.command_guards import ManagerGroup
 from core.role_safety import role_assignment_error
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
@@ -61,7 +62,7 @@ class Welcome(commands.Cog):
     COLOR = Palette.SUCCESS
     DESCRIPTION = "Welcome & goodbye embeds plus auto-role for new members."
 
-    welcome = app_commands.Group(
+    welcome = ManagerGroup(
         name="welcome",
         description="Welcome system setup",
         default_permissions=discord.Permissions(manage_guild=True),

@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.command_guards import ManagerGroup
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond, truncate
@@ -25,7 +26,7 @@ class Logs(commands.Cog):
     COLOR = 0x95A5A6
     DESCRIPTION = "Logs deleted/edited messages, joins, bans and moderation actions."
 
-    logs = app_commands.Group(
+    logs = ManagerGroup(
         name="logs",
         description="Logging system setup",
         default_permissions=discord.Permissions(manage_guild=True),

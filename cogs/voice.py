@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.command_guards import ManagerGroup
 from core.database import load_voice_store, save_voice_store
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
@@ -68,7 +69,7 @@ class VoiceReports(commands.Cog):
     COLOR = Palette.TEAL
     DESCRIPTION = "Voice session reports with joined, left and accumulated time."
 
-    voice = app_commands.Group(
+    voice = ManagerGroup(
         name="voice",
         description="Configure voice session reports",
         default_permissions=discord.Permissions(manage_guild=True),
@@ -588,7 +589,7 @@ class VoiceReports(commands.Cog):
         brand_footer(embed, "Voice session reports")
         await respond(interaction, embed, ephemeral=True)
 
-    resend = app_commands.Group(
+    resend = ManagerGroup(
         name="resend",
         description="Resend a previously delivered voice report",
         parent=voice,

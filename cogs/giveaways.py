@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.command_guards import ManagerGroup
 from core.giveaway_helpers import draw_winners, validate_giveaway_input
 from core.giveaway_presenters import (
     build_giveaway_embed,
@@ -112,7 +113,7 @@ class Giveaways(commands.Cog):
     COLOR = Palette.FUN
     DESCRIPTION = "Button-entry giveaways with automatic winner draws and rerolls."
 
-    giveaway = app_commands.Group(
+    giveaway = ManagerGroup(
         name="giveaway",
         description="Giveaway management",
         default_permissions=discord.Permissions(manage_guild=True),

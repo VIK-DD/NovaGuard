@@ -227,6 +227,24 @@ def keyword_name(call, key):
     return None
 
 
+def _is_group_construction(func):
+    """Whether this call builds a slash-command group.
+
+    `app_commands.Group(...)` is the plain form. Groups that enforce their own
+    permission (core.command_guards.ManagerGroup and friends) are subclasses
+    constructed by bare name, and this parser is what gives a subcommand its
+    `/parent child` name - so failing to recognise them would silently rename
+    `/automod badword add` to `/add` in the changelog and the public command
+    catalogue. Matching on the Group suffix keeps that working for any future
+    subclass without this function needing to hear about it.
+    """
+    if isinstance(func, ast.Attribute):
+        return func.attr == "Group" or func.attr.endswith("Group")
+    if isinstance(func, ast.Name):
+        return func.id == "Group" or func.id.endswith("Group")
+    return False
+
+
 def extract_group_names(tree):
     raw_groups = {}
 
@@ -235,13 +253,7 @@ def extract_group_names(tree):
             continue
         if not isinstance(node.value, ast.Call):
             continue
-        func = node.value.func
-        if not (
-            isinstance(func, ast.Attribute)
-            and func.attr == "Group"
-            and isinstance(func.value, ast.Name)
-            and func.value.id == "app_commands"
-        ):
+        if not _is_group_construction(node.value.func):
             continue
 
         for target in node.targets:

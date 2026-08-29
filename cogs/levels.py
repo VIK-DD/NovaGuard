@@ -14,6 +14,7 @@ from discord.ext import commands, tasks
 
 from cogs.admin import require_admin
 from core.backups import create_backup
+from core.command_guards import ManagerGroup
 from core.database import load_levels_data, save_levels_data, upsert_level_records
 from core.level_curve import (
     BASE_LEVEL_XP,
@@ -66,13 +67,13 @@ class Levels(commands.Cog):
     EMOJI = "🏆"
     COLOR = Palette.GOLD
     DESCRIPTION = "Chat XP, level-up celebrations and the server leaderboard."
-    levels = app_commands.Group(
+    levels = ManagerGroup(
         name="levels",
         description="Level system admin tools",
         default_permissions=discord.Permissions(manage_guild=True),
         guild_only=True,
     )
-    backfill = app_commands.Group(
+    backfill = ManagerGroup(
         name="backfill",
         description="Rebuild XP from historical chat activity",
         parent=levels,
