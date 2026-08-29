@@ -32,10 +32,17 @@ async def resolve_error_channel(bot, guild=None):
 
 
 async def send_error_digest(bot, title, error, context=None, interaction=None):
-    """Send one concise admin embed for serious errors, with short dedupe protection."""
+    """Send one concise admin embed for serious errors, with short dedupe protection.
+
+    The destination is deliberately held in its own name. It used to be called
+    `channel`, and the interaction block below then reused that name for the
+    channel the command was typed in - which silently redirected every slash
+    command traceback into whatever public channel the member was standing in.
+    Nothing here may rebind `destination`.
+    """
     guild = interaction.guild if interaction is not None else None
-    channel = await resolve_error_channel(bot, guild)
-    if channel is None:
+    destination = await resolve_error_channel(bot, guild)
+    if destination is None:
         return False
 
     loop = asyncio.get_running_loop()
@@ -61,8 +68,10 @@ async def send_error_digest(bot, title, error, context=None, interaction=None):
     if interaction is not None:
         command_name = interaction.command.qualified_name if interaction.command else "unknown"
         guild_name = interaction.guild.name if interaction.guild else "DM / unknown"
-        channel = getattr(interaction, "channel", None)
-        channel_label = getattr(channel, "mention", None) or f"`{interaction.channel_id or 'unknown'}`"
+        source_channel = getattr(interaction, "channel", None)
+        channel_label = (
+            getattr(source_channel, "mention", None) or f"`{interaction.channel_id or 'unknown'}`"
+        )
         embed.add_field(
             name="Interaction",
             value=(
@@ -82,7 +91,7 @@ async def send_error_digest(bot, title, error, context=None, interaction=None):
     brand_footer(embed, "Error digest")
 
     try:
-        await asyncio.wait_for(channel.send(embed=embed), timeout=8)
+        await asyncio.wait_for(destination.send(embed=embed), timeout=8)
         return True
     except (discord.HTTPException, asyncio.TimeoutError):
         return False
