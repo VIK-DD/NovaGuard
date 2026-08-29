@@ -75,6 +75,7 @@ from .maintenance import (
     verify_preview_code,
 )
 from .release_versions import current_project_release, public_release_label
+from .role_safety import role_assignment_error
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
@@ -177,6 +178,9 @@ DISCORD_DNS_CACHE_SECONDS = 300
 DISCORD_REQUEST_TIMEOUT_SECONDS = 10
 MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
+# Manage Roles. Reaching the dashboard needs Manage Server; putting a role in
+# front of members needs the permission Discord itself requires for that.
+MANAGE_ROLES = 0x10000000
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
@@ -644,6 +648,39 @@ class WebServer:
             return False
         return info["owner"] or bool(info["permissions"] & MANAGE_GUILD)
 
+    def _has_permission(self, entry, guild_id, flag):
+        """Whether the session holds one specific permission in this guild.
+
+        `_can_manage` answers "may this person touch the dashboard at all",
+        which is Manage Server. Handing out roles is a narrower question, and
+        answering it with the broader permission is what let someone who
+        cannot assign a single role in Discord expose one through a panel.
+        """
+        info = entry.get("guilds", {}).get(str(guild_id))
+        if not info:
+            return False
+        return bool(info.get("owner")) or bool(int(info.get("permissions", 0)) & flag)
+
+    def _require_permission(self, entry, guild_id, flag, label):
+        if not self._has_permission(entry, guild_id, flag):
+            raise ApiError(403, f"You need {label} on that guild.", code="forbidden")
+
+    @staticmethod
+    def _actor_member(guild, entry):
+        """The dashboard user as a guild Member, when the bot can see them.
+
+        Role hierarchy is a position, and OAuth only reports a permission
+        bitfield - so the member object is the only place the configurer's own
+        rank can be read. None when they are not cached, and role_safety then
+        falls back to the permission checks alone.
+        """
+        try:
+            user_id = int(entry["user"]["id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        getter = getattr(guild, "get_member", None)
+        return getter(user_id) if callable(getter) else None
+
     async def _authorized_guild(self, request):
         sid, entry = await self._require_session(request)
         guild_id = request.match_info["guild_id"]
@@ -1102,7 +1139,9 @@ class WebServer:
             ],
             "roles": [
                 {"id": str(role.id), "name": role.name, "color": f"#{role.color.value:06X}",
-                 "assignable": role < guild.me.top_role and not role.managed,
+                 # Same rule the publish endpoint enforces, so the dashboard
+                 # cannot offer a role the API will then refuse.
+                 "assignable": role_assignment_error(role, guild) is None,
                  "manages_threads": role.permissions.manage_threads}
                 for role in sorted(guild.roles, key=lambda r: -r.position)
                 if not role.is_default()
@@ -1374,6 +1413,12 @@ class WebServer:
         title, description, role_ids, errors = validate_role_panel_input(
             body.get("title"), body.get("description"), body.get("role_ids")
         )
+        # Publishing a panel puts roles in front of every member, so it takes
+        # the permission Discord requires for handing roles out - not merely
+        # the Manage Server that opens the dashboard.
+        self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+
+        actor = self._actor_member(guild, entry)
         roles = []
         for role_id in role_ids:
             if not role_id.isdigit():
@@ -1381,8 +1426,10 @@ class WebServer:
             role = guild.get_role(int(role_id))
             if role is None:
                 errors.append(f"role_ids: {role_id} is not a role in this guild")
-            elif role.is_default() or role.managed or role >= guild.me.top_role:
-                errors.append(f"role_ids: @{role.name} cannot be assigned by NovaGuard")
+                continue
+            refusal = role_assignment_error(role, guild, actor)
+            if refusal:
+                errors.append(f"role_ids: @{role.name} cannot be assigned — {refusal}")
             else:
                 roles.append(role)
         if errors:
@@ -1732,6 +1779,14 @@ class WebServer:
         if "ticket_panel_channel" in changes:
             changes["ticket_panel_message"] = None
 
+        # Setting an autorole is handing a role to every member who joins,
+        # unattended and indefinitely, so it takes the permission Discord
+        # requires for handing roles out - checked before the role is even
+        # resolved, because whether the caller may do this at all does not
+        # depend on whether they named a role that exists.
+        if body.get("autorole") not in (None, "", 0) and "autorole" in body:
+            self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+
         for key in ROLE_KEYS:
             if key not in body:
                 continue
@@ -1742,8 +1797,15 @@ class WebServer:
             role = guild.get_role(int(value)) if str(value).isdigit() else None
             if role is None or role.is_default():
                 errors.append(f"{key}: role not found")
-            elif key == "autorole" and (role.managed or role >= guild.me.top_role):
-                errors.append(f"{key}: role must be below my top role and not managed")
+                continue
+            # A staff role as autorole would have made every new arrival staff,
+            # so it goes through the same gate as a role panel.
+            if key == "autorole":
+                refusal = role_assignment_error(role, guild, self._actor_member(guild, entry))
+            else:
+                refusal = None
+            if refusal:
+                errors.append(f"{key}: {refusal}")
             else:
                 changes[key] = role.id
 

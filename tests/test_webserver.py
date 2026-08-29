@@ -618,6 +618,46 @@ async def main():
                 and len(data.get("details", [])) == 3,
             )
 
+        # ── handing out roles takes Manage Roles, not merely Manage Server ──
+        #
+        # Reaching the dashboard is Manage Server. Publishing a role panel puts
+        # a role in front of every member and used to require nothing more, so
+        # someone who cannot assign a single role in Discord could expose one -
+        # an Administrator role included - through a panel instead.
+        limited_sid = "test-sid-manage-server-" + "y" * 8
+        limited = dict(entry)
+        limited["user"] = {"id": "2", "username": "OnlyManageServer", "avatar": None}
+        limited["guilds"] = {
+            str(TEST_GUILD_ID): {
+                "id": str(TEST_GUILD_ID), "name": "Test Guild", "icon": None,
+                "owner": False, "permissions": 0x20,  # Manage Server, no Manage Roles
+            }
+        }
+        db_save_session(limited_sid, limited)
+        limited_cookies = {"ng_session": limited_sid}
+
+        async with http.post(
+            f"{V1}/guilds/{TEST_GUILD_ID}/actions/role_panel_publish",
+            json={"title": "Pick a role", "description": "Self serve", "role_ids": ["1"]},
+            cookies=limited_cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "role panel publish refuses Manage Server without Manage Roles",
+                r.status == 403 and data.get("code") == "forbidden",
+            )
+
+        async with http.put(
+            f"{V1}/guilds/{TEST_GUILD_ID}/config",
+            json={"autorole": "1"},
+            cookies=limited_cookies,
+        ) as r:
+            data = await r.json()
+            await check(
+                "autorole refuses Manage Server without Manage Roles",
+                r.status == 403 and data.get("code") == "forbidden",
+            )
+
         async with http.post(
             f"{V1}/guilds/{TEST_GUILD_ID}/actions/giveaway_start",
             json={"duration": "later", "prize": "", "winners": 0},

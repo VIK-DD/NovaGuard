@@ -1,14 +1,18 @@
 """👋 Welcome category — colorful join/leave embeds and auto-role for newcomers."""
 
+import logging
 import random
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.role_safety import role_assignment_error
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond
+
+log = logging.getLogger(__name__)
 
 WELCOME_LINES = [
     "Great to have you here, {mention}! Make yourself at home. 🏡",
@@ -76,7 +80,18 @@ class Welcome(commands.Cog):
         autorole_id = settings.get("autorole")
         if autorole_id:
             role = member.guild.get_role(autorole_id)
-            if role and role < member.guild.me.top_role:
+            # Re-checked at join time, not only where it was configured. This
+            # runs unattended for every arrival, potentially years after the
+            # setting was saved, and a role's permissions can change in
+            # between. A saved autorole that has since become a staff role is
+            # silently skipped rather than granted.
+            refusal = role_assignment_error(role, member.guild) if role else "the role is gone"
+            if refusal:
+                if role is not None:
+                    log.warning(
+                        "Skipping autorole @%s in guild %s: %s", role.name, member.guild.id, refusal
+                    )
+            else:
                 try:
                     await member.add_roles(role, reason="Auto-role for new members")
                 except discord.HTTPException:
@@ -118,10 +133,17 @@ class Welcome(commands.Cog):
         autorole: discord.Role | None = None,
         goodbye_channel: discord.TextChannel | None = None,
     ):
-        if autorole and autorole >= interaction.guild.me.top_role:
+        refusal = (
+            role_assignment_error(autorole, interaction.guild, interaction.user)
+            if autorole
+            else None
+        )
+        if refusal:
             embed = make_embed(
-                "🔒 Role too high",
-                f"{autorole.mention} is above my top role — I cannot assign it. Move my role higher or pick another.",
+                "🔒 Cannot use that auto-role",
+                f"{autorole.mention} cannot be given out automatically because {refusal}.\n\n"
+                "Every member who joins would receive it, so it is held to the same "
+                "standard as a self-assign panel.",
                 color=Palette.DANGER,
             )
             brand_footer(embed)
