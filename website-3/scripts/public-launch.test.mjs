@@ -8,6 +8,7 @@ import {
 import {
   countdownBundleUsesLaunchDate,
   injectCountdownRedirect,
+  localizeFontImport,
 } from "./public-launch.mjs";
 
 describe("public launch configuration", () => {
@@ -40,5 +41,63 @@ describe("public launch configuration", () => {
     expect(() => injectCountdownRedirect("<html><body>No head</body></html>")).toThrow(
       "does not contain </head>",
     );
+  });
+});
+
+describe("localizeFontImport", () => {
+  // The real import the Coming Soon bundle ships with. The weights are what
+  // matter: a Google Fonts URL separates them with semicolons, so anything
+  // that stops at the first ";" cuts the URL in half.
+  const REAL_IMPORT =
+    '@import"https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap";';
+  const REST = ":root{color-scheme:dark;--background: #0a0a0a}body{margin:0}";
+  const FACES = '@font-face{font-family:Manrope;src:url("./manrope.woff2") format("woff2")}';
+
+  it("swaps the remote import for local faces and keeps the rest of the sheet", () => {
+    expect(localizeFontImport(REAL_IMPORT + REST, FACES)).toBe(FACES + REST);
+  });
+
+  it("consumes the whole URL even though its weights contain semicolons", () => {
+    // The bug this test exists for: `[^;]+;` matched only as far as "wght@400;"
+    // and left "500&family=...&display=swap\";" behind. The stray closing quote
+    // then opened a CSS string that swallowed every rule after it, so the page
+    // shipped with two @font-face rules and no layout at all.
+    const result = localizeFontImport(REAL_IMPORT + REST, FACES);
+
+    expect(result).not.toContain("&family=");
+    expect(result).not.toContain("display=swap");
+    expect(result).toContain(":root{color-scheme:dark");
+  });
+
+  it("leaves no unbalanced quote for the CSS parser to choke on", () => {
+    const quotes = (localizeFontImport(REAL_IMPORT + REST, FACES).match(/"/g) ?? []).length;
+
+    expect(quotes % 2).toBe(0);
+  });
+
+  it("handles single quotes and whitespace around the import", () => {
+    const single = "@import 'https://fonts.googleapis.com/css2?family=X:wght@1;2&display=swap' ;";
+
+    expect(localizeFontImport(single + REST, FACES)).toBe(FACES + REST);
+  });
+
+  it("takes the import wherever it sits, not only at the very start", () => {
+    const withCharset = '@charset "utf-8";' + REAL_IMPORT + REST;
+
+    expect(localizeFontImport(withCharset, FACES)).toBe('@charset "utf-8";' + FACES + REST);
+  });
+
+  it("refuses a sheet whose remote import it could not remove", () => {
+    // The url() form is not what the bundle ships, so it is not matched. Left
+    // unnoticed it would reach the CSP as a blocked request and drop the page
+    // to system fonts; silently returning the sheet unchanged is how a broken
+    // artifact shipped once already, so this fails the build instead.
+    const unquoted = "@import url(https://fonts.googleapis.com/css2?family=X&display=swap);";
+
+    expect(() => localizeFontImport(unquoted + REST, FACES)).toThrow("fonts.googleapis.com");
+  });
+
+  it("leaves a sheet that never referenced Google Fonts alone", () => {
+    expect(localizeFontImport(REST, FACES)).toBe(REST);
   });
 });

@@ -11,6 +11,7 @@ import {
 import {
   countdownBundleUsesLaunchDate,
   injectCountdownRedirect,
+  localizeFontImport,
 } from "./public-launch.mjs";
 
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
@@ -68,14 +69,7 @@ for (const asset of await readdir(comingSoonAssets)) {
   if (!asset.endsWith(".css")) continue;
   const path = `${comingSoonAssets}${asset}`;
   const css = await readFile(path, "utf8");
-  const localCss = css.replace(
-    /^@import["']https:\/\/fonts\.googleapis\.com\/[^;]+;/,
-    fontFaces,
-  );
-  if (localCss.includes("fonts.googleapis.com")) {
-    throw new Error(`soft-launch: remote Google Fonts import remains in ${asset}`);
-  }
-  await writeFile(path, localCss, "utf8");
+  await writeFile(path, localizeFontImport(css, fontFaces), "utf8");
 }
 
 const scriptAssets = (await readdir(comingSoonAssets)).filter((asset) => asset.endsWith(".js"));
