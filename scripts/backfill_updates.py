@@ -128,7 +128,8 @@ def discord_get(url, token):
     request = urllib.request.Request(
         url, headers={"Authorization": f"Bot {token}", "User-Agent": USER_AGENT}
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
+    # operator script; the URL is built from the constant DISCORD_API
+    with urllib.request.urlopen(request, timeout=20) as response:  # nosec B310
         return json.loads(response.read().decode("utf-8"))
 
 

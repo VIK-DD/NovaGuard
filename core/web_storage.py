@@ -350,15 +350,16 @@ def db_get_audit(
     # of making the client issue an empty request at the end of the trail.
     params.append(limit + 1)
     with _DB_LOCK, connect() as db:
-        rows = db.execute(
-            f"""
-            SELECT id, username, user_id, action, changes_json, created_at
-            FROM web_audit
-            WHERE {' AND '.join(clauses)}
-            ORDER BY id DESC LIMIT ?
-            """,
-            params,
-        ).fetchall()
+        # Every clause joined into WHERE is a module literal chosen above;
+        # every value, including the actor filter, is a bound parameter.
+        query = (
+            "SELECT id, username, user_id, action, changes_json, created_at "
+            "FROM web_audit "
+            # literal clauses, bound values
+            f"WHERE {' AND '.join(clauses)} "  # nosec B608
+            "ORDER BY id DESC LIMIT ?"
+        )
+        rows = db.execute(query, params).fetchall()
     has_more = len(rows) > limit
     entries = [
         {

@@ -442,7 +442,8 @@ def list_ticket_records(guild_id, *, open_only=False, limit=20):
     where = "guild_id = ? AND closed_at IS NULL" if open_only else "guild_id = ?"
     with _LOCK, connect() as connection:
         rows = connection.execute(
-            f"SELECT * FROM ticket_records WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            # `where` is one of two module-literal clauses; the values are bound
+            f"SELECT * FROM ticket_records WHERE {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608
             (str(guild_id), limit),
         ).fetchall()
     return [dict(row) for row in rows]

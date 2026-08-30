@@ -1,4 +1,9 @@
 .env
+# The atomic writers create these beside their target; a crash between
+# write and rename leaves one behind, and the ledger's carries deletion
+# records. The exact names below do not cover them.
+*.tmp
+.*.tmp
 .update_state.json
 .github_state.json
 .privacy_deletions.json

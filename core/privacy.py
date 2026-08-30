@@ -573,7 +573,8 @@ def erase_guild_data(guild_id):
             "role_panels",
         ):
             counts[table] = connection.execute(
-                f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
+                # table name iterates a module-literal tuple; guild_id is bound
+                f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)  # nosec B608
             ).rowcount
         if _table_exists(connection, "web_audit"):
             counts["dashboard_audit"] = connection.execute(

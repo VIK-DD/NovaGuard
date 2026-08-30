@@ -248,7 +248,8 @@ def _matching_values(connection, table, column, matches):
     return [
         row[0]
         for row in connection.execute(
-            f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL"
+            # table/column come from module-literal call sites
+            f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL"  # nosec B608
         )
         if matches(row[0])
     ]
@@ -258,7 +259,8 @@ def _delete_matches(connection, table, column, matches):
     removed = 0
     for value in _matching_values(connection, table, column, matches):
         removed += connection.execute(
-            f"DELETE FROM {table} WHERE {column} = ?", (value,)
+            # table/column come from module-literal call sites
+            f"DELETE FROM {table} WHERE {column} = ?", (value,)  # nosec B608
         ).rowcount
     return removed
 
@@ -270,7 +272,8 @@ def _null_matches(connection, table, column, matches, *, companion=None):
         if companion and _column_exists(connection, table, companion):
             assignments += f", {companion} = NULL"
         changed += connection.execute(
-            f"UPDATE {table} SET {assignments} WHERE {column} = ?", (value,)
+            # table/column come from module-literal call sites
+            f"UPDATE {table} SET {assignments} WHERE {column} = ?", (value,)  # nosec B608
         ).rowcount
     return changed
 
