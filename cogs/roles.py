@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.database import save_role_panel_record
-from core.role_safety import role_assignment_error
+from core.role_safety import bot_cannot_manage_reason, role_assignment_error
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond
 
@@ -106,6 +106,16 @@ class RoleButton(
         member = interaction.user
         already_held = role in getattr(member, "roles", ())
 
+        # Nothing can be done with a role NovaGuard cannot manage - Discord
+        # refuses the removal as readily as the grant - so say which it is
+        # rather than letting the call fail into a generic error.
+        blocked = bot_cannot_manage_reason(role, guild)
+        if blocked:
+            return await interaction.response.send_message(
+                f"I cannot manage that role anymore ({blocked}) — ask an admin to rebuild the panel.",
+                ephemeral=True,
+            )
+
         # Re-checked here, not only where the panel was published. A panel
         # outlives the state it was built from: a role that was harmless in
         # March can be granted Manage Roles in April, and this button would
@@ -113,8 +123,9 @@ class RoleButton(
         # pressing the button is not the one who configured the panel, and
         # holding no roles must not disqualify them from an ordinary one.
         #
-        # Removal is always allowed. Refusing to take a role back off someone
-        # would strand whoever already holds it.
+        # Removal stays allowed. Refusing to take a now-privileged role back
+        # off someone would strand them holding exactly the thing the check
+        # exists to keep them from having.
         refusal = role_assignment_error(role, guild)
         if refusal and not already_held:
             embed = make_embed(

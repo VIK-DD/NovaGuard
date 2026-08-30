@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.role_safety import (  # noqa: E402
     DANGEROUS_PERMISSION_NAMES,
+    bot_cannot_manage_reason,
     role_assignment_error,
     role_is_self_assignable,
     role_permission_risk,
@@ -177,6 +178,40 @@ class EscalationRegressionTests(unittest.TestCase):
         # click-time check is what catches this; the panel is unchanged.
         promoted = Role("Gamer", 10, manage_roles=True)
         self.assertIsNotNone(role_assignment_error(promoted, GUILD))
+
+
+class MechanicalVersusPolicyTests(unittest.TestCase):
+    """Two kinds of refusal, because a role panel must treat them differently.
+
+    A policy refusal - the role grew privileged permissions after the panel was
+    published - has to keep allowing *removal*, or whoever already holds it is
+    stranded with exactly the thing the check exists to prevent. A mechanical
+    one cannot: Discord refuses the removal as readily as the grant.
+    """
+
+    def test_a_now_privileged_role_is_still_mechanically_manageable(self):
+        promoted = Role("Gamer", 10, manage_roles=True)
+        self.assertIsNone(bot_cannot_manage_reason(promoted, GUILD))
+        self.assertIsNotNone(role_assignment_error(promoted, GUILD))
+
+    def test_a_role_above_the_bot_is_mechanically_blocked(self):
+        self.assertIsNotNone(bot_cannot_manage_reason(ABOVE_BOT, GUILD))
+
+    def test_managed_and_default_roles_are_mechanically_blocked(self):
+        self.assertIsNotNone(bot_cannot_manage_reason(BOOSTER, GUILD))
+        self.assertIsNotNone(bot_cannot_manage_reason(EVERYONE, GUILD))
+        self.assertIsNotNone(bot_cannot_manage_reason(None, GUILD))
+
+    def test_an_ordinary_role_is_blocked_by_neither(self):
+        self.assertIsNone(bot_cannot_manage_reason(ORDINARY, GUILD))
+        self.assertIsNone(role_assignment_error(ORDINARY, GUILD))
+
+    def test_every_mechanical_reason_is_also_an_assignment_refusal(self):
+        # role_assignment_error must remain the strictly wider check, or a
+        # caller that only asks it would let a mechanically impossible role
+        # through.
+        for role in (ABOVE_BOT, BOOSTER, EVERYONE, None):
+            self.assertIsNotNone(role_assignment_error(role, GUILD))
 
 
 if __name__ == "__main__":

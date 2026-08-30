@@ -96,13 +96,15 @@ def _actor_outranks(actor, role):
     return role < actor_top
 
 
-def role_assignment_error(role, guild, actor=None):
-    """Why this role must not be self-assignable here, or None when it may be.
+def bot_cannot_manage_reason(role, guild):
+    """Why NovaGuard cannot touch this role at all, or None when it can.
 
-    `actor` is whoever is *configuring* the panel or the autorole, not whoever
-    later presses the button. Pass it wherever it can be resolved to a Member;
-    at click time there is no configurer and the permission and hierarchy
-    checks below still stand on their own.
+    Kept separate from the policy checks because the two need different
+    answers at a role-panel button. A policy refusal - the role has since
+    grown privileged permissions - must still allow *removal*, or whoever
+    already holds it is stranded with it. A mechanical one cannot: if the role
+    moved above NovaGuard's top role, Discord will refuse the removal too, and
+    saying so plainly beats letting the call fail into a generic error.
     """
     if role is None:
         return "the role no longer exists"
@@ -115,6 +117,20 @@ def role_assignment_error(role, guild, actor=None):
     bot_top = getattr(me, "top_role", None)
     if bot_top is not None and role >= bot_top:
         return "it sits above NovaGuard's own top role"
+    return None
+
+
+def role_assignment_error(role, guild, actor=None):
+    """Why this role must not be self-assignable here, or None when it may be.
+
+    `actor` is whoever is *configuring* the panel or the autorole, not whoever
+    later presses the button. Pass it wherever it can be resolved to a Member;
+    at click time there is no configurer and the permission and hierarchy
+    checks below still stand on their own.
+    """
+    mechanical = bot_cannot_manage_reason(role, guild)
+    if mechanical:
+        return mechanical
 
     risky = role_permission_risk(role)
     if risky:
