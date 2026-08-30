@@ -73,15 +73,15 @@ rather than believed.
 | DB file perms | `chmod 600` on the SQLite files (owner-only) | `test_production_check.py` |
 | Archives at rest | AES-256-GCM, scrypt KDF, authenticated header, per-file salt+nonce | `test_secure_files.py` |
 | AuthN | Discord OAuth2, HttpOnly cookie, HMAC-signed state (double-submit) | `test_webserver.py`, `test_dashboard_auth.py` |
-| AuthZ — dashboard | `Manage Server` to read/write config; **`Manage Roles` additionally** to publish a role panel or set an autorole | `test_webserver.py` |
+| AuthZ — dashboard | `Manage Server` to read/write config; **`Manage Roles` additionally** to publish a role panel or set an autorole; a write re-checks permissions no more than 30s stale | `test_webserver.py` |
 | AuthZ — owner commands | Application owner or team, **plus** a scrypt-hashed admin key, in-memory unlocks, 5-try lockout | `test_admin_auth.py`, `test_admin_gate.py` |
 | AuthZ — command groups | Every configuration group enforces its permission at run time, nested subgroups included — `default_permissions` alone is only a default a server admin can override | `test_command_guards.py` |
 | Role assignment | A role carrying privileged permissions is never self-assignable; a configurer cannot expose a role above their own position; re-checked at click and join time | `test_role_safety.py` |
 | Input validation | Economy `Range`, web config validated, AI input capped, durations bounded so hostile input returns `None` rather than raising | `test_utils.py`, `test_levels_settings.py`, `test_economy_settings.py` |
 | Mentions | Global `allowed_mentions` blocks `@everyone`/role-ping injection; the invite no longer requests `mention_everyone` at all | `test_invite_permissions.py` |
-| CSRF | Origin check on mutations + SameSite + signed state (bot API); `__Host-` double-submit token (Worker) | `test_webserver.py`, `website-3/worker/index.test.js` |
+| CSRF | A mutation needs a valid `Origin` **or** a JSON content type, plus SameSite and the signed state (bot API); `__Host-` double-submit token (Worker) | `test_webserver.py`, `website-3/worker/index.test.js` |
 | CORS | Strict allow-list, never wildcard, credentials only for listed origins | `test_webserver.py` |
-| Rate limiting | Per-IP web buckets; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_webserver.py` |
+| Rate limiting | Per-IP web buckets; the Worker's login gate keyed per client, not route-wide; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_webserver.py`, `website-3/worker/index.test.js` |
 | AI cost | Input cap + per-user cooldown + global 30/min + 500/day ceiling | `test_ai_settings.py` |
 | Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny | `test_api_security_headers.py` |
 | Errors | Generic to users; full tracebacks only to the configured admin log channel, never to the channel the command came from | `test_error_digest.py` |
@@ -181,34 +181,38 @@ none of the three CSP rules can fire on a page we serve. See
 - **AI answer content** is model-generated; treated as untrusted display text
   (rendered in embeds, which never execute markup).
 
-Known and deliberately not fixed, from the 2026-08-30 review. Each is a real
-observation; none was judged worth the change it would cost today.
+All eight items this review recorded as "known and deliberately not fixed"
+have since been fixed — the list is kept below with what was done, because a
+security document that quietly deletes its own open items teaches the reader
+nothing about how it is maintained.
 
-- **No CSRF token on the bot API.** Mutations are guarded by the Origin check
-  plus `SameSite`, and a missing `Origin` header is allowed through — browsers
-  send it on the cross-origin requests that matter, so the practical gap is
-  small. The Worker has a proper `__Host-` double-submit token; the bot API
-  does not. Worth adding if `WEB_COOKIE_SAMESITE=None` is ever used in anger.
-- **`WEB_HOST` defaults to `0.0.0.0`.** With `WEB_ENABLED=true` and no firewall
-  the API is on every interface. It is authenticated, and `TRUST_PROXY` already
-  refuses to honour forwarded addresses unless the bind is loopback, but
-  `127.0.0.1` would be the safer default.
-- **Token key derivation is a single SHA-256**, not a KDF (`core/web_storage.py`).
-  Fine for a Discord client secret, weak if `WEB_TOKEN_KEY` is ever set to a
-  human-chosen passphrase. `core/secure_files.py` uses scrypt at `n=2**14`,
-  which is also below current guidance for passphrase input.
-- **Guild permissions are cached for 120s**, so a revoked Manage Server can
-  still act on the dashboard for up to two minutes.
-- **`/gamble` and `/slots` use `random`**, not `secrets`. The coins have no
-  real value; the outputs are nonetheless predictable in principle.
-- **The ticket close button** verifies neither that the clicker opened the
-  ticket nor that the thread is a tracked one. Access is controlled by private
-  thread membership, which is why this is acceptable rather than good.
-- **The Worker's login rate limiter uses one global key**, so an attacker can
-  exhaust it and lock everyone out of the pre-launch gate.
-- **The audit `actor` filter passes LIKE wildcards through unescaped** — an
-  authorized user can match more of their own guild's audit trail than they
-  typed. Untidy, not a boundary.
+| Was | Now |
+|-----|-----|
+| Mutations allowed a missing `Origin`, leaving a `text/plain` simple cross-origin POST unguarded | A mutation needs a valid `Origin` or a JSON content type; a wrong `Origin` is always refused (`test_webserver.py`) |
+| `WEB_HOST` defaulted to `0.0.0.0` | Defaults to `127.0.0.1`, matching the tunnel deployment the docs already describe |
+| OAuth token key was a single SHA-256 | scrypt, with the old derivations kept as read-only fallbacks so no one is logged out (`test_webserver_token_encryption.py`) |
+| Guild permissions cached 120s for reads *and* writes | Writes require a permission set no older than 30s; reads keep the long cache |
+| `/gamble`, `/slots` and crates drew from Mersenne Twister | `secrets.SystemRandom` |
+| The ticket close button archived whatever thread it was pressed in | Checks the thread is a tracked ticket and the clicker opened it or holds Manage Threads |
+| The Worker's login limiter used one route-wide key | Keyed per client on a hashed address; a missing address still lands in a capped bucket (`website-3/worker/index.test.js`) |
+| The audit `actor` filter passed LIKE wildcards unescaped | Escaped, with `ESCAPE` declared per clause (`test_audit_filter.py`) |
+
+What genuinely remains, and why:
+
+- **`core/secure_files.py` uses scrypt at `n=2**14`**, below current guidance
+  for passphrase input. Raising it is not a one-line change: the parameters
+  are not stored in the archive header, so a new cost factor makes every
+  existing backup undecryptable. That trade — a stronger KDF against a broken
+  restore path — is the wrong way round, and `BACKUP_ENCRYPTION_KEY` is
+  required to be at least 32 characters. Fixing it properly means a format
+  version that carries its own parameters.
+- **The token KDF salt is fixed**, not per-install. There is nowhere to keep a
+  random one: the key must be derivable from the environment alone at import,
+  with no stored state to read. The salt buys domain separation; the work
+  factor does the rest.
+- **A dashboard write can still use a permission set up to 30 seconds old.**
+  Closing that completely means an upstream call per write, which puts
+  Discord's availability in front of every save.
 
 ---
 

@@ -340,3 +340,22 @@ Optional filters:
 - Branch on `code`, not on `error` text — messages may change, codes are stable.
 - Cross-origin dashboards must be added to `WEB_CORS_ORIGIN`, and the same origin
   must send `Origin` on mutations (browsers do this automatically).
+
+### The mutation guard
+
+Every `PUT` and `POST` must satisfy one of two conditions, and one is enough:
+
+- a valid `Origin` — same-origin, or on the `WEB_CORS_ORIGIN` allow-list. This
+  is the browser path and needs nothing from you; browsers attach `Origin` to
+  every mutating request and a page cannot forge it.
+- a `Content-Type: application/json` request. This is the path for `curl`,
+  scripts and anything else that sends no `Origin`. It is proof of a different
+  kind: `application/json` is not a content type a cross-origin form can send
+  without a CORS preflight, so an attacker's page cannot produce it.
+
+An `Origin` that is present but not allowed is always refused; it never falls
+through to the content-type test. A request satisfying neither answers `403`
+with code `bad_origin`.
+
+Scripts calling a bodyless action (`POST .../actions/ticket_panel_publish`)
+should send `{}` with the JSON content type rather than an empty body.
