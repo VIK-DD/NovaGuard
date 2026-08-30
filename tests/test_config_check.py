@@ -26,10 +26,10 @@ HEALTHY = {
 }
 
 
-def findings_for(overrides=None, **kwargs):
+def findings_for(overrides=None):
     env = dict(HEALTHY)
     env.update(overrides or {})
-    return check_config(env, file_exists=kwargs.get("file_exists", lambda path: True))
+    return check_config(env)
 
 
 def names(findings, level=None):

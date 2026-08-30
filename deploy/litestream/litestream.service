@@ -7,6 +7,28 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# Litestream keeps a shadow WAL beside the database holding the same rows the
+# bot protects at 0600; without UMask it inherits systemd's 0022 default.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+# strict makes the whole filesystem read-only apart from /dev, /proc and /sys,
+# so the one directory litestream genuinely writes - the database and its
+# shadow WAL - is named explicitly. Keep this in step with NOVAGUARD_DB_PATH
+# in /etc/litestream.env.
+#
+# Deliberately no ProtectHome: the config, the database and the unit itself
+# all live under /home/ubuntu, so hiding it would leave litestream unable to
+# read its own configuration. ProtectSystem=strict already makes /home
+# read-only, and ReadWritePaths opens exactly the one directory back up.
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/NovaGuard/data
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+
 Type=simple
 User=ubuntu
 Group=ubuntu

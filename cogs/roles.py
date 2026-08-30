@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.database import save_role_panel_record
+from core.role_safety import bot_cannot_manage_reason, role_assignment_error
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond
 
@@ -89,7 +90,11 @@ class RoleButton(
             return
 
         now = time.monotonic()
-        if now - self._cooldown.get(interaction.user.id, 0.0) < self._COOLDOWN:
+        # `.get(...)` without a 0.0 default, for the reason in
+        # core/error_digest.py: a monotonic clock near zero is a freshly
+        # booted host, not a click that just happened.
+        last_click = self._cooldown.get(interaction.user.id)
+        if last_click is not None and now - last_click < self._COOLDOWN:
             return await interaction.response.send_message("⏳ Slow down a moment.", ephemeral=True)
         self._cooldown[interaction.user.id] = now
         if len(self._cooldown) > 4000:
@@ -101,14 +106,43 @@ class RoleButton(
             return await interaction.response.send_message(
                 "That role no longer exists — ask an admin to rebuild the panel.", ephemeral=True
             )
-        if role >= guild.me.top_role:
-            return await interaction.response.send_message(
-                "I cannot manage that role anymore (it moved above my top role).", ephemeral=True
-            )
 
         member = interaction.user
+        already_held = role in getattr(member, "roles", ())
+
+        # Nothing can be done with a role NovaGuard cannot manage - Discord
+        # refuses the removal as readily as the grant - so say which it is
+        # rather than letting the call fail into a generic error.
+        blocked = bot_cannot_manage_reason(role, guild)
+        if blocked:
+            return await interaction.response.send_message(
+                f"I cannot manage that role anymore ({blocked}) — ask an admin to rebuild the panel.",
+                ephemeral=True,
+            )
+
+        # Re-checked here, not only where the panel was published. A panel
+        # outlives the state it was built from: a role that was harmless in
+        # March can be granted Manage Roles in April, and this button would
+        # otherwise keep handing it out. No actor is passed - the person
+        # pressing the button is not the one who configured the panel, and
+        # holding no roles must not disqualify them from an ordinary one.
+        #
+        # Removal stays allowed. Refusing to take a now-privileged role back
+        # off someone would strand them holding exactly the thing the check
+        # exists to keep them from having.
+        refusal = role_assignment_error(role, guild)
+        if refusal and not already_held:
+            embed = make_embed(
+                "🔒 That role is not self-assignable",
+                f"NovaGuard will not hand out {role.mention} because {refusal}.\n\n"
+                "Ask a server manager to rebuild this panel.",
+                color=Palette.DANGER,
+            )
+            brand_footer(embed, "Role panel")
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
         try:
-            if role in member.roles:
+            if already_held:
                 await member.remove_roles(role, reason="Role panel: self-removed")
                 embed = make_embed("➖ Role removed", f"You no longer have {role.mention}.", color=Palette.ORANGE)
             else:
@@ -177,15 +211,20 @@ class Roles(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
+        # interaction.user is the configurer, so their own position is part of
+        # the check: Manage Roles lets you assign roles below yourself, and a
+        # panel must not become a way around that.
         blocked = [
-            role for role in roles
-            if role >= interaction.guild.me.top_role or role.managed or role.is_default()
+            (role, reason)
+            for role in roles
+            if (reason := role_assignment_error(role, interaction.guild, interaction.user))
         ]
         if blocked:
-            names = ", ".join(role.mention for role in blocked)
+            lines = "\n".join(f"• {role.mention} — {reason}" for role, reason in blocked)
             embed = make_embed(
                 "🔒 Cannot use these roles",
-                f"{names}\n\nRoles must be **below my top role** and not managed by an integration.",
+                f"{lines}\n\nA panel hands its roles to anyone who presses the button, "
+                "so staff roles and roles above your own position are never eligible.",
                 color=Palette.DANGER,
             )
             brand_footer(embed)

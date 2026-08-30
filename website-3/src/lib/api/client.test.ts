@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { ApiError, apiFetch } from "./client";
+import { ApiError, apiFetch, pathSegment } from "./client";
 
 const okJson = (data: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(data), {
@@ -85,5 +85,36 @@ describe("apiFetch", () => {
     const err = await apiFetch("/stats", z.object({})).catch((e: unknown) => e);
     expect((err as ApiError).code).toBe("internal_error");
     expect((err as ApiError).status).toBe(500);
+  });
+});
+
+describe("pathSegment", () => {
+  // guildId comes from the route and TanStack Router percent-DECODES a path
+  // param, so `..%2F..%2Fadmin` arrives as `../../admin`. Interpolated raw the
+  // browser collapses it and the authenticated request lands on a different
+  // API path entirely; a trailing `?` makes the rest of the template a query
+  // string, so the whole path becomes attacker-chosen.
+  it("stops a traversal segment from changing the path", () => {
+    expect(pathSegment("../../admin")).toBe("..%2F..%2Fadmin");
+    expect(new URL(`/api/v1/guilds/${pathSegment("../../admin")}/config`, "https://api.test").pathname).toBe(
+      "/api/v1/guilds/..%2F..%2Fadmin/config",
+    );
+  });
+
+  it("stops a segment from opening a query string", () => {
+    const url = new URL(
+      `/api/v1/guilds/${pathSegment("../../admin/shutdown?")}/config`,
+      "https://api.test",
+    );
+    expect(url.search).toBe("");
+    expect(url.pathname.startsWith("/api/v1/guilds/")).toBe(true);
+  });
+
+  it("leaves an ordinary snowflake alone", () => {
+    expect(pathSegment("1454829495021338842")).toBe("1454829495021338842");
+  });
+
+  it("accepts a number as readily as a string", () => {
+    expect(pathSegment(123)).toBe("123");
   });
 });

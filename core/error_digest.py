@@ -32,19 +32,33 @@ async def resolve_error_channel(bot, guild=None):
 
 
 async def send_error_digest(bot, title, error, context=None, interaction=None):
-    """Send one concise admin embed for serious errors, with short dedupe protection."""
+    """Send one concise admin embed for serious errors, with short dedupe protection.
+
+    The destination is deliberately held in its own name. It used to be called
+    `channel`, and the interaction block below then reused that name for the
+    channel the command was typed in - which silently redirected every slash
+    command traceback into whatever public channel the member was standing in.
+    Nothing here may rebind `destination`.
+    """
     guild = interaction.guild if interaction is not None else None
-    channel = await resolve_error_channel(bot, guild)
-    if channel is None:
+    destination = await resolve_error_channel(bot, guild)
+    if destination is None:
         return False
 
     loop = asyncio.get_running_loop()
     cache = getattr(bot, "_error_digest_cache", {})
     signature = f"{title}:{type(error).__name__}:{str(error)[:160]}:{context or ''}"
-    last_sent = cache.get(signature, 0)
-    if loop.time() - last_sent < DIGEST_DEDUP_SECONDS:
+    # `None`, not `0`, for "never sent". loop.time() is a monotonic clock
+    # counting from the machine's boot, so on a host that started a minute ago
+    # it reads about 60 - and `60 - 0 < 120` made every first digest look like
+    # a duplicate of one that never happened. The window it silently swallowed
+    # was the first DIGEST_DEDUP_SECONDS of uptime: precisely the minutes after
+    # a reboot or a bad deploy when an error most needs to be heard.
+    last_sent = cache.get(signature)
+    now = loop.time()
+    if last_sent is not None and now - last_sent < DIGEST_DEDUP_SECONDS:
         return False
-    cache[signature] = loop.time()
+    cache[signature] = now
     bot._error_digest_cache = cache
 
     embed = make_embed(
@@ -61,8 +75,10 @@ async def send_error_digest(bot, title, error, context=None, interaction=None):
     if interaction is not None:
         command_name = interaction.command.qualified_name if interaction.command else "unknown"
         guild_name = interaction.guild.name if interaction.guild else "DM / unknown"
-        channel = getattr(interaction, "channel", None)
-        channel_label = getattr(channel, "mention", None) or f"`{interaction.channel_id or 'unknown'}`"
+        source_channel = getattr(interaction, "channel", None)
+        channel_label = (
+            getattr(source_channel, "mention", None) or f"`{interaction.channel_id or 'unknown'}`"
+        )
         embed.add_field(
             name="Interaction",
             value=(
@@ -82,7 +98,7 @@ async def send_error_digest(bot, title, error, context=None, interaction=None):
     brand_footer(embed, "Error digest")
 
     try:
-        await asyncio.wait_for(channel.send(embed=embed), timeout=8)
+        await asyncio.wait_for(destination.send(embed=embed), timeout=8)
         return True
     except (discord.HTTPException, asyncio.TimeoutError):
         return False

@@ -1,6 +1,6 @@
 # NovaGuard — Security Audit & Hardening Reference
 
-_Last reviewed: 2026-08-26 · Scope: Discord bot, SQLite/JSON state, backups,
+_Last reviewed: 2026-08-30 (two passes) · Scope: Discord bot, SQLite/JSON state, backups,
 dashboard API, Astro website, Cloudflare Worker and dependency manifests._
 
 ## Verdict
@@ -12,6 +12,80 @@ the test suite covers the high-risk authorization, restore and edge-auth paths.
 Residual risk still includes deployment posture, provider configuration,
 credential handling, new dependency advisories and defects not represented by
 the tests. Re-run the checks below for every release.
+
+### What the 2026-08-30 review changed
+
+The previous revision of this table asserted controls that the code did not
+implement. That is worse than not claiming them, so the corrections are listed
+here rather than quietly folded into the rows above.
+
+- **Errors.** The table said "full tracebacks only to the admin log channel".
+  `send_error_digest` resolved the admin channel into a local named `channel`
+  and the interaction block then rebound that same name to
+  `interaction.channel`, so every slash-command traceback was published in the
+  public channel the member typed the command in. Fixed; `tests/test_error_digest.py`
+  now asserts the destination, which nothing did before.
+- **AuthZ.** "Privileged cogs gated" was true of the owner commands and untrue
+  of seven command groups, which carried `default_permissions` and no run-time
+  check. `default_permissions` is a default: a server administrator can
+  override it in Server Settings → Integrations. The groups now enforce their
+  own permission (`core/command_guards.py`).
+- **Role assignment.** Not previously a row at all, and the gap it hid was the
+  worst finding of the review: nothing that handed out a role ever looked at
+  what the role could *do*, so Manage Server alone was enough to make an
+  Administrator role self-assignable through a panel or an autorole. One rule
+  now governs all six paths (`core/role_safety.py`).
+- **Input validation.** `parse_duration` had no ceiling, so `/remind 99999999999w`
+  raised out of `timedelta` and reached the global error handler - which, before
+  the first item above, published a traceback in public.
+- **Least privilege.** The invite requested `mention_everyone`, which no code
+  path has ever used.
+
+The lesson worth keeping: every row below is now expected to name the test that
+holds it up. A control with no test is a claim, and this table has already been
+wrong once.
+
+### What the second, deeper pass found
+
+The first pass covered the web/auth layer, the cogs' permission model and the
+recovery path. A second pass went after the surfaces it had only skimmed —
+the GitHub integration, the changelog engine, the React dashboard, CI and
+deployment — with four reviewers working independently and every finding
+re-verified against the code before being accepted.
+
+The two that mattered most were both *injection into a path*:
+
+- **The GitHub token could be steered.** `GitHubAPI.get_json` formats its URL
+  as a string and aiohttp resolves dot segments through yarl, so
+  `/github username:../user` turned `/users/<name>` into `/user` and
+  `/users/<name>/repos` into `/user/repos` — the authenticated-user endpoints,
+  under the operator's `GITHUB_TOKEN`, which lists **private** repositories.
+  `/github` has no permission check and renders publicly, so any member could
+  run it. Every path segment is percent-encoded now, and the
+  repository-scoped commands accept only configured repositories.
+- **The dashboard sent guild ids into API paths unencoded.** TanStack Router
+  percent-decodes a path param, so `/dashboard/g/..%2F..%2Fadmin` arrived as
+  `../../admin` and the browser collapsed it — an authenticated, preflight-free
+  request to an attacker-chosen API path.
+
+And two cross-boundary mistakes:
+
+- **Giveaways were addressed by message id alone**, across a store shared by
+  every guild, so a manager in one server could end and repeatedly reroll a
+  giveaway running in another.
+- **`safeNext` checked its input and returned its output.** `/..//evil.example`
+  is not protocol-relative going in and is coming out, making the login
+  endpoint an open redirect on the site's own domain.
+
+The rest were denial-of-service and disclosure: unclamped text reaching
+Discord's embed limits (a 257-character `/poll` was enough to force an admin
+error digest), a `save_json_file` that shared one scratch filename between
+writers and left state world-readable, an AST cycle that could permanently
+stop the changelog engine, `/ghwatch` publishing the host's configuration to
+anyone, and autocomplete callbacks bypassing the group permission check
+because discord.py never runs `_check_can_run` for suggestions.
+
+Full detail is in the commit messages on `security/audit-fixes`.
 
 ## Threat model
 
@@ -27,26 +101,39 @@ JSON API for a web dashboard. The adversaries we design against:
 
 ## Findings & controls
 
-| Area | Control | Status |
-|------|---------|--------|
-| RCE / shell | No `eval`/`exec` or shell invocation; the bounded rclone call uses an argv list and fixed operation | ✅ guarded |
-| Deserialization | No `pickle`/`yaml.load`/`__import__` of untrusted data | ✅ none |
-| SQL injection | 100% parameterized queries (`?` placeholders) | ✅ none |
-| Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs | ✅ |
-| Tokens at rest | OAuth tokens Fernet-encrypted (key from client secret) | ✅ |
-| Session ids | Cookie holds a 256-bit id; DB stores only its SHA-256 hash | ✅ |
-| DB file perms | `chmod 600` on the SQLite files (owner-only) | ✅ |
-| AuthN | Discord OAuth2, HttpOnly cookie, HMAC-signed state (double-submit) | ✅ |
-| AuthZ | `Manage Server` required per guild; privileged cogs gated | ✅ |
-| Input validation | Economy `Range`, web config validated, AI input capped | ✅ |
-| Mentions | Global `allowed_mentions` blocks `@everyone`/role-ping injection | ✅ |
-| CSRF | Origin check on mutations + SameSite + signed state | ✅ |
-| CORS | Strict allow-list, never wildcard, credentials only for listed origins | ✅ |
-| Rate limiting | Per-IP web buckets, per-user command cooldowns, button anti-spam | ✅ |
-| AI cost | Input cap + per-user cooldown + global 30/min + 500/day ceiling | ✅ |
-| Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny | ✅ |
-| Errors | Generic to users; full tracebacks only to the admin log channel | ✅ |
-| Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, Actions pinned to SHA, Dependabot | ✅ |
+Every row names the test that holds it up, so a claim here can be checked
+rather than believed.
+
+| Area | Control | Held up by |
+|------|---------|------------|
+| RCE / shell | No `eval`/`exec` or shell invocation; the bounded rclone call uses an argv list and fixed operation | `bandit` in CI (`ci.yml`) |
+| Deserialization | No `pickle`/`yaml.load`/`__import__` of untrusted data | review |
+| SQL injection | 100% parameterized queries; the few f-string identifiers come from module constants, each annotated and re-verified | `bandit` in CI, `test_audit_filter.py` |
+| Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs | `test_config_check.py` |
+| Tokens at rest | OAuth tokens Fernet-encrypted (dedicated `WEB_TOKEN_KEY`, client secret as legacy read) | `test_webserver_token_encryption.py` |
+| Session ids | Cookie holds a 256-bit id; DB stores only its SHA-256 hash | `test_webserver.py` |
+| DB file perms | `chmod 600` on the SQLite files (owner-only) | `test_production_check.py` |
+| Archives at rest | AES-256-GCM, scrypt KDF, authenticated header, per-file salt+nonce | `test_secure_files.py` |
+| AuthN | Discord OAuth2, HttpOnly cookie, HMAC-signed state (double-submit) | `test_webserver.py`, `test_dashboard_auth.py` |
+| AuthZ — dashboard | `Manage Server` to read/write config; **`Manage Roles` additionally** to publish a role panel or set an autorole; a write re-checks permissions no more than 30s stale | `test_webserver.py` |
+| AuthZ — owner commands | Application owner or team, **plus** a scrypt-hashed admin key, in-memory unlocks, 5-try lockout | `test_admin_auth.py`, `test_admin_gate.py` |
+| AuthZ — command groups | Every configuration group enforces its permission at run time, nested subgroups included — `default_permissions` alone is only a default a server admin can override | `test_command_guards.py` |
+| Role assignment | A role carrying privileged permissions is never self-assignable; a configurer cannot expose a role above their own position; re-checked at click and join time | `test_role_safety.py` |
+| Input validation | Economy `Range`, web config validated, AI input capped, durations bounded so hostile input returns `None` rather than raising | `test_utils.py`, `test_levels_settings.py`, `test_economy_settings.py` |
+| Mentions | Global `allowed_mentions` blocks `@everyone`/role-ping injection; the invite no longer requests `mention_everyone` at all | `test_invite_permissions.py` |
+| CSRF | A mutation needs a valid `Origin` **or** a JSON content type, plus SameSite and the signed state (bot API); `__Host-` double-submit token (Worker) | `test_webserver.py`, `website-3/worker/index.test.js` |
+| CORS | Strict allow-list, never wildcard, credentials only for listed origins | `test_webserver.py` |
+| Rate limiting | Per-IP web buckets; the Worker's login gate keyed per client, not route-wide; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_webserver.py`, `website-3/worker/index.test.js` |
+| AI cost | Input cap + per-user cooldown + global 30/min + 500/day ceiling | `test_ai_settings.py` |
+| Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny | `test_api_security_headers.py` |
+| Errors | Generic to users; full tracebacks only to the configured admin log channel, never to the channel the command came from | `test_error_digest.py` |
+| Outbound requests | Every GitHub path segment is percent-encoded; repository commands accept only configured repositories | `test_github_api_safety.py` |
+| Cross-guild isolation | Giveaway end/reroll match on guild as well as message id; the dashboard scopes every guild lookup | `test_giveaway_scope.py` |
+| Embed limits | Member- and repository-supplied text is clamped, and free-text options declare a maximum length | `test_embed_limits.py` |
+| State files | Atomic writes with a private scratch file, owner-only mode, fsync; settings patches in one transaction | `test_storage_durability.py` |
+| Redirects | `safeNext` re-checks its normalized output, in the Worker and its client mirror | `website-3/worker/index.test.js` |
+| CI permissions | Both workflows declare `contents: read` rather than inheriting the repo default | `.github/workflows/ci.yml` |
+| Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, `npm audit`, Actions pinned to SHA, Dependabot | `.github/workflows/ci.yml` |
 
 ## Layer notes
 
@@ -141,6 +228,39 @@ none of the three CSP rules can fire on a page we serve. See
   periodically (see runbook).
 - **AI answer content** is model-generated; treated as untrusted display text
   (rendered in embeds, which never execute markup).
+
+All eight items this review recorded as "known and deliberately not fixed"
+have since been fixed — the list is kept below with what was done, because a
+security document that quietly deletes its own open items teaches the reader
+nothing about how it is maintained.
+
+| Was | Now |
+|-----|-----|
+| Mutations allowed a missing `Origin`, leaving a `text/plain` simple cross-origin POST unguarded | A mutation needs a valid `Origin` or a JSON content type; a wrong `Origin` is always refused (`test_webserver.py`) |
+| `WEB_HOST` defaulted to `0.0.0.0` | Defaults to `127.0.0.1`, matching the tunnel deployment the docs already describe |
+| OAuth token key was a single SHA-256 | scrypt, with the old derivations kept as read-only fallbacks so no one is logged out (`test_webserver_token_encryption.py`) |
+| Guild permissions cached 120s for reads *and* writes | Writes require a permission set no older than 30s; reads keep the long cache |
+| `/gamble`, `/slots` and crates drew from Mersenne Twister | `secrets.SystemRandom` |
+| The ticket close button archived whatever thread it was pressed in | Checks the thread is a tracked ticket and the clicker opened it or holds Manage Threads |
+| The Worker's login limiter used one route-wide key | Keyed per client on a hashed address; a missing address still lands in a capped bucket (`website-3/worker/index.test.js`) |
+| The audit `actor` filter passed LIKE wildcards unescaped | Escaped, with `ESCAPE` declared per clause (`test_audit_filter.py`) |
+
+What genuinely remains, and why:
+
+- **`core/secure_files.py` uses scrypt at `n=2**14`**, below current guidance
+  for passphrase input. Raising it is not a one-line change: the parameters
+  are not stored in the archive header, so a new cost factor makes every
+  existing backup undecryptable. That trade — a stronger KDF against a broken
+  restore path — is the wrong way round, and `BACKUP_ENCRYPTION_KEY` is
+  required to be at least 32 characters. Fixing it properly means a format
+  version that carries its own parameters.
+- **The token KDF salt is fixed**, not per-install. There is nowhere to keep a
+  random one: the key must be derivable from the environment alone at import,
+  with no stored state to read. The salt buys domain separation; the work
+  factor does the rest.
+- **A dashboard write can still use a permission set up to 30 seconds old.**
+  Closing that completely means an upstream call per write, which puts
+  Discord's availability in front of every save.
 
 ---
 

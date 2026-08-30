@@ -115,7 +115,12 @@ class System(commands.Cog):
         self.loop_lag_last_tick = None
         self.high_lag_streak = 0
         self.last_lag_alert_at = 0
-        self.last_reconnect_alert_at = 0
+        # None, not 0: time.monotonic() counts from the machine's boot, so a
+        # 0 sentinel makes the first HEALTH_ALERT_COOLDOWN_SECONDS of uptime
+        # look like a cooldown that is already running - and swallows the
+        # first reconnect alert after every restart, which is when a flaky
+        # gateway is most worth hearing about.
+        self.last_reconnect_alert_at = None
         self.last_presence_error_log_at = 0
         self.last_backup_stale_alert_at = 0
         self.last_backup_slot = None
@@ -576,7 +581,10 @@ class System(commands.Cog):
         await self.refresh_presence_mode()
         if getattr(self.bot, "startup_update_announced", False):
             now = time.monotonic()
-            if now - self.last_reconnect_alert_at >= HEALTH_ALERT_COOLDOWN_SECONDS:
+            if (
+                self.last_reconnect_alert_at is None
+                or now - self.last_reconnect_alert_at >= HEALTH_ALERT_COOLDOWN_SECONDS
+            ):
                 self.last_reconnect_alert_at = now
                 await send_error_digest(
                     self.bot,
@@ -658,6 +666,7 @@ class System(commands.Cog):
         await respond(interaction, embed, view=build_link_view(buttons))
 
     @app_commands.command(name="doctor", description="Deep health check for the bot, config and integrations")
+    @app_commands.checks.cooldown(1, 30.0)
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()

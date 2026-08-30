@@ -20,6 +20,13 @@ Important values that should stay in `.env`:
 - `GITHUB_PRIMARY_REPO`: the default repo used by `/repo`, `/dev`, `/health`, `/commits`, `/release`
 - `GITHUB_WATCH_REPOS`: comma-separated list of repos the watcher should monitor
 - `GITHUB_TOKEN`: optional, but strongly recommended for smoother GitHub API access.
+
+> **Scope it down.** NovaGuard only ever issues GET requests to the
+> GitHub API, so a fine-grained token with read-only access to the
+> repositories you watch — or a classic token with *no* scopes at all —
+> is enough. A classic `repo` token hands a long-lived write credential
+> for every repository you own to a bot process, which is far more than
+> it needs.
   Keep exactly one `GITHUB_TOKEN=` line in `.env`; a placeholder above the real
   token will be loaded first and GitHub will reject it as bad credentials.
 - `GITHUB_POLL_SECONDS`: how often the watcher checks GitHub

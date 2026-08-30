@@ -383,6 +383,7 @@ class VoiceHours(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="voicetop", description="Most time in voice this month")
+    @app_commands.checks.cooldown(1, 10.0)
     @app_commands.describe(month="How far back? 0 is this month, 1 is last month")
     @app_commands.guild_only()
     async def voicetop(

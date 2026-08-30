@@ -10,7 +10,12 @@ the wallet and the saving; this owns the rules, which is what makes them
 testable without a Discord connection or a database.
 """
 
-import random
+import secrets
+
+# Crates cost coins and pay out items, so the draw is a wager like the
+# economy games. The `rng` parameter below stays injectable for tests;
+# only the default changes.
+_rng = secrets.SystemRandom()
 from datetime import UTC, datetime, timedelta
 
 TROPHY = "trophy"
@@ -346,7 +351,7 @@ def open_crate(wallet, moment=None, rng=None) -> PurchaseResult:
         return PurchaseResult(False, error="poor", key=CRATE, spent=price - coins)
 
     moment = moment or now_utc()
-    rng = rng or random
+    rng = rng or _rng
     reward = rng.choices(CRATE_TABLE, weights=[row["weight"] for row in CRATE_TABLE], k=1)[0]
 
     wallet["coins"] = coins - price

@@ -197,7 +197,7 @@ class Fun(commands.Cog):
 
     @app_commands.command(name="8ball", description="Ask the magic 8-ball anything")
     @app_commands.describe(question="Your burning question")
-    async def eight_ball(self, interaction: discord.Interaction, question: str):
+    async def eight_ball(self, interaction: discord.Interaction, question: app_commands.Range[str, 1, 300]):
         bucket = random.choice((POSITIVE_ANSWERS, NEUTRAL_ANSWERS, NEGATIVE_ANSWERS))
         answer = random.choice(bucket)
         color = Palette.SUCCESS if bucket is POSITIVE_ANSWERS else Palette.WARNING if bucket is NEUTRAL_ANSWERS else Palette.DANGER

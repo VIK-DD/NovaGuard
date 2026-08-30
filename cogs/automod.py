@@ -10,6 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from core.command_guards import ManagerGroup
 from core.loop_guard import keep_running
 from core.automod_settings import is_automod_exempt, resolve_automod
 from core.storage import get_guild_settings, update_guild_settings
@@ -38,13 +39,13 @@ class AutoMod(commands.Cog):
     COLOR = Palette.ORANGE
     DESCRIPTION = "Auto-moderation: invite filter, anti-spam and blocked words."
 
-    automod = app_commands.Group(
+    automod = ManagerGroup(
         name="automod",
         description="Auto-moderation settings",
         default_permissions=discord.Permissions(manage_guild=True),
         guild_only=True,
     )
-    badword = app_commands.Group(
+    badword = ManagerGroup(
         name="badword",
         description="Blocked words list",
         parent=automod,
@@ -234,6 +235,11 @@ class AutoMod(commands.Cog):
         brand_footer(embed, "AutoMod")
         await respond(interaction, embed, ephemeral=True)
 
+    # discord.py's _invoke_autocomplete never calls _check_can_run, so a
+    # group's interaction_check does not run here. Without this, an
+    # Integrations override that opens the command to @everyone still
+    # leaks the suggestions even though the command itself is refused.
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def badword_autocomplete(self, interaction: discord.Interaction, current: str):
         config = get_automod_config(interaction.guild_id)
         current = current.lower()

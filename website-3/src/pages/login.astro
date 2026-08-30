@@ -69,10 +69,11 @@ import Base from "../layouts/Base.astro";
 </Base>
 
 <script>
-  // Mirrors safeNext() in worker/index.js. The worker re-checks this on POST,
-  // so a bad value could never redirect anyone off-site — but a `next` the
-  // worker would reject still lands in the DOM here, which is what a scanner
-  // sees and what a future refactor could start trusting. A backslash is the
+  // Mirrors safeNext() in worker/index.js, and both copies are load-bearing.
+  // This comment used to say the worker re-check meant a bad value "could
+  // never redirect anyone off-site"; that was false while both copies shared
+  // the same normalization bug, and the client pass was the only thing
+  // stopping it. Neither copy may be treated as the backstop for the other. A backslash is the
   // case a `//` check alone misses: URL parsing treats `/\evil.example` as a
   // protocol-relative link, so let the parser decide rather than the prefix.
   const params = new URLSearchParams(window.location.search);
@@ -82,7 +83,13 @@ import Base from "../layouts/Base.astro";
     try {
       const destination = new URL(value, "https://novaguard.invalid");
       if (destination.origin !== "https://novaguard.invalid") return "/home/";
-      return `${destination.pathname}${destination.search}${destination.hash}`;
+      const path = `${destination.pathname}${destination.search}${destination.hash}`;
+      // Re-check the normalized output: `/..//evil.example` passes the prefix
+      // test above and comes back out of the parser as `//evil.example`.
+      if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+        return "/home/";
+      }
+      return path;
     } catch {
       return "/home/";
     }

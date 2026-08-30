@@ -31,6 +31,7 @@ from core.backup_presenters import (
     deletion_ledger_text,
 )
 from cogs.admin import require_admin
+from core.command_guards import ManagerGroup
 from core.privacy import export_guild_data
 from core.restore_drill import run_restore_drill
 from core.storage import reset_guild_settings, update_guild_settings
@@ -279,7 +280,7 @@ class Setup(commands.Cog):
     COLOR = Palette.SUCCESS
     DESCRIPTION = "One-command onboarding and server configuration."
 
-    config = app_commands.Group(
+    config = ManagerGroup(
         name="config",
         description="Advanced NovaGuard configuration",
         default_permissions=discord.Permissions(manage_guild=True),

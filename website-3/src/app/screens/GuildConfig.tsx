@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useBlocker, useParams } from "@tanstack/react-router";
-import { ApiError, apiFetch } from "../../lib/api/client";
+import { ApiError, apiFetch, pathSegment } from "../../lib/api/client";
 import {
   GuildConfigSchema,
   DashboardActionSchema,
@@ -95,7 +95,7 @@ export default function GuildConfig() {
 
   const save = useMutation({
     mutationFn: (patch: SettingsPatch) =>
-      apiFetch(`/guilds/${guildId}/config`, GuildConfigSchema, {
+      apiFetch(`/guilds/${pathSegment(guildId)}/config`, GuildConfigSchema, {
         method: "PUT",
         body: JSON.stringify(patch),
       }),
@@ -115,7 +115,7 @@ export default function GuildConfig() {
 
   const publishTicketPanel = useMutation({
     mutationFn: () =>
-      apiFetch(`/guilds/${guildId}/actions/ticket_panel_publish`, DashboardActionSchema, {
+      apiFetch(`/guilds/${pathSegment(guildId)}/actions/ticket_panel_publish`, DashboardActionSchema, {
         method: "POST",
       }),
     onSuccess: (data) => {
@@ -140,7 +140,7 @@ export default function GuildConfig() {
 
   const publishRolePanel = useMutation({
     mutationFn: () =>
-      apiFetch(`/guilds/${guildId}/actions/role_panel_publish`, DashboardActionSchema, {
+      apiFetch(`/guilds/${pathSegment(guildId)}/actions/role_panel_publish`, DashboardActionSchema, {
         method: "POST",
         body: JSON.stringify({
           title: rolePanelTitle,
@@ -171,7 +171,7 @@ export default function GuildConfig() {
 
   const startGiveaway = useMutation({
     mutationFn: () =>
-      apiFetch(`/guilds/${guildId}/actions/giveaway_start`, DashboardActionSchema, {
+      apiFetch(`/guilds/${pathSegment(guildId)}/actions/giveaway_start`, DashboardActionSchema, {
         method: "POST",
         body: JSON.stringify({
           prize: giveawayPrize,
@@ -196,7 +196,7 @@ export default function GuildConfig() {
 
   const manageGiveaway = useMutation({
     mutationFn: ({ action, messageId }: { action: "end" | "reroll"; messageId: string }) =>
-      apiFetch(`/guilds/${guildId}/actions/giveaway_${action}`, DashboardActionSchema, {
+      apiFetch(`/guilds/${pathSegment(guildId)}/actions/giveaway_${pathSegment(action)}`, DashboardActionSchema, {
         method: "POST",
         body: JSON.stringify({ message_id: messageId }),
       }),

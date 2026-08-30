@@ -2,7 +2,7 @@
 
 from collections import Counter
 
-from .utils import first_line, format_github_time
+from .utils import EMBED_FIELD_VALUE_LIMIT, clamp, first_line, format_github_time
 
 
 def summarize_changed_files(files):
@@ -120,4 +120,10 @@ def extract_hot_files(commit_details):
         return "No file change data yet."
 
     top_files = counter.most_common(3)
-    return "\n".join(f"`{file_name}` touched {count}x" for file_name, count in top_files)
+    # File paths come from a watched repository, so their length is a
+    # contributor's choice. Three long ones overflow the 1024-character field
+    # and the whole card is refused by Discord.
+    return clamp(
+        "\n".join(f"`{clamp(file_name, 120)}` touched {count}x" for file_name, count in top_files),
+        EMBED_FIELD_VALUE_LIMIT,
+    )

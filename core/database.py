@@ -409,6 +409,21 @@ def close_ticket_record(thread_id, closed_by=None):
     return cursor.rowcount > 0
 
 
+def get_ticket_record(thread_id):
+    """One ticket by its thread, open or closed, or None when untracked.
+
+    The close button needs this. It fires on whatever thread it was pressed
+    in, so "is this actually a ticket, and whose" has to be answerable before
+    anything is archived.
+    """
+    init_database()
+    with _LOCK, connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM ticket_records WHERE thread_id = ?", (str(thread_id),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def open_ticket_for_member(guild_id, opener_id):
     init_database()
     with _LOCK, connect() as connection:
@@ -427,7 +442,8 @@ def list_ticket_records(guild_id, *, open_only=False, limit=20):
     where = "guild_id = ? AND closed_at IS NULL" if open_only else "guild_id = ?"
     with _LOCK, connect() as connection:
         rows = connection.execute(
-            f"SELECT * FROM ticket_records WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            # `where` is one of two module-literal clauses; the values are bound
+            f"SELECT * FROM ticket_records WHERE {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608
             (str(guild_id), limit),
         ).fetchall()
     return [dict(row) for row in rows]
@@ -585,8 +601,41 @@ def set_guild_setting(guild_id, key, value):
 
 
 def update_guild_settings_db(guild_id, **changes):
-    for key, value in changes.items():
-        set_guild_setting(guild_id, key, value)
+    """Apply a whole settings patch in one transaction.
+
+    The dashboard's config PUT builds a complete `changes` dict and hands it
+    over as a unit. Writing it key by key - each with its own connection and
+    its own transaction, as this used to - meant a failure part way through
+    (disk full, a lock held past the 30s timeout, the process killed) left a
+    prefix of the patch committed and the rest not. The cache is invalidated
+    once at the end, so a reader in between could also see a half-applied
+    configuration. One transaction removes both.
+    """
+    init_database()
+    guild_id = str(guild_id)
+    if not changes:
+        return get_guild_settings_db(guild_id)
+
+    now = utc_now()
+    with _LOCK, connect() as connection:
+        for key, value in changes.items():
+            if value is None:
+                connection.execute(
+                    "DELETE FROM guild_settings WHERE guild_id = ? AND key = ?",
+                    (guild_id, key),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO guild_settings (guild_id, key, value, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(guild_id, key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (guild_id, key, encode_value(value), now),
+                )
+        connection.commit()
     return get_guild_settings_db(guild_id)
 
 

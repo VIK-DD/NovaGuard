@@ -7,7 +7,14 @@ import discord
 from .github_insights import summarize_changed_files
 from .github_presenters import repo_to_urls
 from .theme import Palette, brand_footer
-from .utils import build_link_view, first_line, parse_github_datetime, truncate
+from .utils import (
+    EMBED_FIELD_VALUE_LIMIT,
+    build_link_view,
+    clamp,
+    first_line,
+    parse_github_datetime,
+    truncate,
+)
 
 
 _ACTION_STATES = {"opened": "Open", "reopened": "Open", "closed": "Closed"}
@@ -65,7 +72,13 @@ def build_commit_digest_embed(repo_name, branch_name, commits):
         ),
     )
     embed.add_field(name="Branch", value=f"`{branch_name}`", inline=True)
-    embed.add_field(name="By", value=", ".join(f"`{name}`" for name in authors[:4]), inline=True)
+    # A git author name is whatever the committer configured, so its length is
+    # a contributor's choice rather than GitHub's.
+    embed.add_field(
+        name="By",
+        value=clamp(", ".join(f"`{clamp(name, 60)}`" for name in authors[:4]), EMBED_FIELD_VALUE_LIMIT),
+        inline=True,
+    )
     embed.add_field(name="Repository", value=f"[{repo_name}]({urls['repo']})", inline=True)
     brand_footer(embed, "GitHub activity")
     return embed
@@ -231,8 +244,8 @@ def build_release_watcher_embed(repo_name, event):
     embed.add_field(
         name="Release Details",
         value=(
-            f"Tag: `{release.get('tag_name', 'untagged')}`\n"
-            f"Name: `{release.get('name') or release.get('tag_name', 'untagged')}`\n"
+            f"Tag: `{clamp(release.get('tag_name', 'untagged'), 100)}`\n"
+            f"Name: `{clamp(release.get('name') or release.get('tag_name', 'untagged'), 120)}`\n"
             f"Pre-release: `{('Yes' if release.get('prerelease') else 'No')}`"
         ),
         inline=False,

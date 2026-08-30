@@ -1,12 +1,18 @@
 """🎫 Tickets category — private support threads opened with one button."""
 
 import asyncio
+import time
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.database import close_ticket_record, create_ticket_record, open_ticket_for_member
+from core.database import (
+    close_ticket_record,
+    create_ticket_record,
+    get_ticket_record,
+    open_ticket_for_member,
+)
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
@@ -18,6 +24,38 @@ def role_can_manage_tickets(channel, role):
         return False
     permissions = channel.permissions_for(role)
     return bool(permissions.view_channel and permissions.manage_threads)
+
+
+def member_can_close_ticket(member, record, *, staff_role_id=None):
+    """Whether this member may close this ticket.
+
+    The opener always can - it is their thread, and a support ticket nobody
+    can end is worse than one closed early. Staff can, by the permission that
+    actually governs threads rather than by a role name: Manage Threads is
+    what the ticket panel already requires of the staff role, and an
+    administrator holds it implicitly.
+
+    `staff_role_id` is accepted so a guild that grants the staff role without
+    Manage Threads still works; it is checked in addition, never instead.
+    """
+    if record is None:
+        return False
+    if str(getattr(member, "id", "")) == str(record.get("opener_id")):
+        return True
+
+    permissions = getattr(member, "guild_permissions", None)
+    if permissions is not None and (
+        getattr(permissions, "administrator", False)
+        or getattr(permissions, "manage_threads", False)
+        or getattr(permissions, "manage_guild", False)
+    ):
+        return True
+
+    if staff_role_id:
+        role_ids = {str(role.id) for role in getattr(member, "roles", ())}
+        if str(staff_role_id) in role_ids:
+            return True
+    return False
 
 
 def build_ticket_panel():
@@ -57,6 +95,20 @@ class TicketOpenButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"ticket:open",
 ):
+    """The 🎫 button. One private thread per member, and not on demand.
+
+    Both guards below exist because this button creates a Discord thread AND
+    pings the staff role on every press. Without them a member could script
+    parallel clicks and get one thread and one staff ping per click - the
+    check-then-create pair has two awaits between them, so the "you already
+    have an open ticket" test is a TOCTOU that concurrency walks straight
+    through. The sibling buttons (giveaway entry, role panel) already carry a
+    cooldown; this one did not.
+    """
+
+    _cooldown: dict[int, float] = {}  # user_id -> last press
+    _COOLDOWN = 15.0
+
     def __init__(self):
         super().__init__(
             discord.ui.Button(
@@ -76,6 +128,17 @@ class TicketOpenButton(
         parent = interaction.channel
         if guild is None or not isinstance(parent, discord.TextChannel):
             return
+
+        now = time.monotonic()
+        last_press = self._cooldown.get(interaction.user.id)
+        if last_press is not None and now - last_press < self._COOLDOWN:
+            return await interaction.response.send_message(
+                "⏳ You just opened a ticket — give the staff a moment.", ephemeral=True
+            )
+        self._cooldown[interaction.user.id] = now
+        if len(self._cooldown) > 4000:
+            for user_id in [u for u, t in self._cooldown.items() if now - t > 300]:
+                self._cooldown.pop(user_id, None)
 
         settings = get_guild_settings(guild.id)
         staff_role_id = settings.get("ticket_staff_role")
@@ -172,6 +235,37 @@ class TicketCloseButton(
             return
 
         await defer_interaction(interaction, ephemeral=True)
+
+        # This button carries a fixed custom_id and fires on whatever thread it
+        # was pressed in, so it asked no questions before archiving and locking
+        # one. Membership of a private thread was the only thing standing in
+        # front of it - real protection, but not a check, and not one the code
+        # made. Two questions now, both cheap:
+        #
+        #   is this thread actually a ticket, and
+        #   is the person closing it the member who opened it, or staff?
+        record = await asyncio.to_thread(get_ticket_record, thread.id)
+        if record is None:
+            embed = make_embed(
+                "Not a ticket",
+                "This thread is not a NovaGuard ticket, so there is nothing to close here.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Ticket system")
+            return await respond(interaction, embed, ephemeral=True)
+
+        settings = await asyncio.to_thread(get_guild_settings, thread.guild.id)
+        if not member_can_close_ticket(
+            interaction.user, record, staff_role_id=settings.get("ticket_staff_role")
+        ):
+            embed = make_embed(
+                "That ticket is not yours to close",
+                "Only the member who opened this ticket, or staff, can close it.",
+                color=Palette.WARNING,
+            )
+            brand_footer(embed, "Ticket system")
+            return await respond(interaction, embed, ephemeral=True)
+
         embed = make_embed(
             "🔒 Ticket closed",
             f"Closed by {interaction.user.mention}. Thanks for reaching out!",

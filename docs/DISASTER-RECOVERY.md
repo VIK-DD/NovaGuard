@@ -58,14 +58,24 @@ sudo apt update && sudo apt install -y python3-venv ffmpeg openjdk-17-jre-headle
 
 ```bash
 cd /home/ubuntu && git clone https://github.com/VIK-DD/NovaGuard.git && cd NovaGuard
-python3 -m venv venv && venv/bin/pip install -r requirements.txt
+python3 -m venv venv && venv/bin/pip install --require-hashes -r requirements.lock
 ```
 
 ### 4. Data — Litestream first
 
 ```bash
-curl -L https://github.com/benbjohnson/litestream/releases/latest/download/litestream-linux-amd64.deb -o /tmp/litestream.deb
-sudo dpkg -i /tmp/litestream.deb
+# Pin the version and verify the download. `latest` installs whatever is at
+# that URL at the moment of a recovery, as root, with no signature check - and
+# /tmp/<fixed name> lets any local user pre-create the file and keep ownership
+# through root's `curl -o`, then swap the contents before dpkg reads them.
+LITESTREAM_VERSION=0.3.13
+LITESTREAM_SHA256=<paste the sha256 from the release page>
+workdir="$(mktemp -d)"
+curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-amd64.deb" \
+  -o "$workdir/litestream.deb"
+echo "${LITESTREAM_SHA256}  $workdir/litestream.deb" | sha256sum -c -
+sudo dpkg -i "$workdir/litestream.deb"
+rm -rf "$workdir"
 ```
 
 Recreate `/etc/litestream.env` (values from your password manager):

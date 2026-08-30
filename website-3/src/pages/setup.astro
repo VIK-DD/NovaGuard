@@ -146,7 +146,7 @@ const steps = [
 </Base>
 
 <script>
-  import { ApiError, apiFetch, inviteUrl } from "../lib/api/client";
+  import { ApiError, apiFetch, inviteUrl, pathSegment } from "../lib/api/client";
   import { GuildConfigSchema, GuildsSchema, type Guild } from "../lib/api/schemas";
   import { classifyGuilds, countRecommended } from "../data/setup";
 
@@ -229,7 +229,7 @@ const steps = [
   async function renderProgress(el: HTMLElement, guild: { id: string; name: string }) {
     const target = el.querySelector<HTMLElement>("[data-setup-progress-slot]") ?? el;
     try {
-      const config = await apiFetch(`/guilds/${guild.id}/config`, GuildConfigSchema);
+      const config = await apiFetch(`/guilds/${pathSegment(guild.id)}/config`, GuildConfigSchema);
       const { done, total, missing } = countRecommended(
         config.settings,
         config.github_watch_configured,
@@ -259,8 +259,19 @@ const steps = [
   }
 
   function escapeHtml(value: string): string {
-    return value.replace(/[&<>"]/g, (char) =>
-      char === "&" ? "&amp;" : char === "<" ? "&lt;" : char === ">" ? "&gt;" : "&quot;",
+    // Single quotes included: every call site here is a double-quoted
+    // attribute or a text node, but an escaper that only half-works is worse
+    // than none, because it reads as covered.
+    return value.replace(/[&<>"']/g, (char) =>
+      char === "&"
+        ? "&amp;"
+        : char === "<"
+          ? "&lt;"
+          : char === ">"
+            ? "&gt;"
+            : char === '"'
+              ? "&quot;"
+              : "&#39;",
     );
   }
 </script>

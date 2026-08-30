@@ -6,7 +6,13 @@ from datetime import UTC, datetime
 import discord
 
 from .theme import Palette, brand_footer, make_embed, progress_bar
-from .utils import format_timedelta, truncate
+from .utils import (
+    EMBED_DESCRIPTION_LIMIT,
+    EMBED_TITLE_LIMIT,
+    clamp,
+    format_timedelta,
+    truncate,
+)
 
 
 BADGE_LABELS = {
@@ -89,7 +95,10 @@ def build_reminder_too_far_embed():
 def build_reminder_set_embed(due_at, message):
     embed = make_embed(
         "⏰ Reminder set!",
-        f"I'll ping you {discord.utils.format_dt(due_at, 'R')} about:\n> {message}",
+        clamp(
+            f"I'll ping you {discord.utils.format_dt(due_at, 'R')} about:\n> {message}",
+            EMBED_DESCRIPTION_LIMIT,
+        ),
         color=Palette.SUCCESS,
     )
     brand_footer(embed, "Reminder saved")
@@ -128,10 +137,15 @@ def build_poll_embed(question, options, votes, author_name, closed=False):
         bar = progress_bar(count, total or 1, slots=12)
         lines.append(f"**{option}**\n{bar} `{count} vote(s) • {percent}%`")
 
-    title = ("🏁 " if closed else "📊 ") + question
+    # The question is a free-text command option, so Discord will accept up to
+    # 6000 characters of it. An embed title takes 256 - and discord.py does not
+    # check locally, so the overflow comes back as a 400 that reaches the
+    # global error handler and files an error digest. Any member could do that
+    # on demand with a 257-character poll.
+    title = clamp(("🏁 " if closed else "📊 ") + question, EMBED_TITLE_LIMIT)
     embed = make_embed(
         title,
-        "\n\n".join(lines),
+        clamp("\n\n".join(lines), EMBED_DESCRIPTION_LIMIT),
         color=Palette.SUCCESS if closed else Palette.INFO,
     )
     status = "Final results" if closed else "Vote by clicking a button below"
@@ -282,7 +296,10 @@ def build_timestamp_embed(moment):
 def build_choice_embed(choices, winner):
     embed = make_embed(
         "🎯 The wheel of fate has spoken",
-        f"Out of {', '.join(f'`{choice}`' for choice in choices)}…\n\n# 🏆 {winner}",
+        clamp(
+            f"Out of {', '.join(f'`{choice}`' for choice in choices)}…\n\n# 🏆 {winner}",
+            EMBED_DESCRIPTION_LIMIT,
+        ),
         color=Palette.FUN,
     )
     brand_footer(embed, "Destiny delivered")

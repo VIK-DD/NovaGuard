@@ -75,6 +75,7 @@ from .maintenance import (
     verify_preview_code,
 )
 from .release_versions import current_project_release, public_release_label
+from .role_safety import role_assignment_error
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
@@ -96,7 +97,13 @@ log = logging.getLogger("novaguard.web")
 # ── configuration ────────────────────────────────────────────────────
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
+# Loopback by default. The documented deployment puts Cloudflare Tunnel in
+# front, .env.example already sets 127.0.0.1, SETUP.md says to, and
+# TRUST_PROXY refuses to honour forwarded addresses on any other bind - so
+# 0.0.0.0 was a default that only ever took effect when someone deleted the
+# line, and then silently put an authenticated API on every interface.
+# Set WEB_HOST=0.0.0.0 explicitly if that is genuinely wanted.
+WEB_HOST = os.getenv("WEB_HOST", "127.0.0.1")
 WEB_PORT = int(os.getenv("WEB_PORT", "8300") or 8300)
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
@@ -173,10 +180,16 @@ STATE_COOKIE = "ng_state"
 SESSION_TTL = 7 * 24 * 3600
 STATE_TTL = 600
 GUILDS_CACHE_SECONDS = 120
+# How stale a permission set may be before a *write* is allowed on it. Reads
+# keep the full window above; a change to a guild's configuration does not.
+WRITE_PERMISSION_MAX_AGE = 30
 DISCORD_DNS_CACHE_SECONDS = 300
 DISCORD_REQUEST_TIMEOUT_SECONDS = 10
 MAX_BODY_BYTES = 64 * 1024
 MANAGE_GUILD = 0x20
+# Manage Roles. Reaching the dashboard needs Manage Server; putting a role in
+# front of members needs the permission Discord itself requires for that.
+MANAGE_ROLES = 0x10000000
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
@@ -436,21 +449,47 @@ class WebServer:
         return None
 
     def _check_origin(self, request):
-        """Defense-in-depth CSRF guard for mutating requests.
+        """CSRF guard for mutating requests.
 
-        Allows same-origin (Origin host matches Host) and allow-listed cross
-        origins; rejects everything else. Non-browser callers send no Origin
-        and are covered by the session cookie + SameSite.
+        Two ways to pass, and a request needs only one:
+
+        * a valid `Origin` - same-origin (its host matches `Host`) or on the
+          CORS allow-list. This is the browser path; browsers attach `Origin`
+          to every POST and PUT and a page cannot forge it.
+        * a JSON content type. This is the script path. It is proof of a
+          different kind: `application/json` is not one of the three content
+          types a cross-origin form may send without a CORS preflight, so an
+          attacker's page cannot produce it, while `curl` sets it trivially.
+
+        An `Origin` that is present and wrong is always refused - it never
+        falls through to the content-type test, or an attacker's page could
+        opt out of the check it just failed.
+
+        The previous version returned early when `Origin` was absent, which
+        left `POST` with `Content-Type: text/plain` and a JSON body unguarded:
+        a simple cross-origin request, no preflight, session cookie attached.
+        In practice browsers send `Origin` and the hole was narrow, but
+        docs/API.md already told clients they "must send Origin on mutations",
+        so the contract promised a check the code did not make.
         """
         origin = request.headers.get("Origin")
-        if not origin:
+        if origin:
+            host = request.headers.get("Host", "")
+            if origin.split("://", 1)[-1] == host:
+                return
+            if origin.rstrip("/") in CORS_ORIGINS:
+                return
+            raise ApiError(403, "Cross-origin request rejected.", code="bad_origin")
+
+        # No Origin. Only a request a cross-origin form could not have sent.
+        content_type = (request.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type == "application/json":
             return
-        host = request.headers.get("Host", "")
-        if origin.split("://", 1)[-1] == host:
-            return
-        if origin.rstrip("/") in CORS_ORIGINS:
-            return
-        raise ApiError(403, "Cross-origin request rejected.", code="bad_origin")
+        raise ApiError(
+            403,
+            "Mutating requests need an Origin header or a JSON content type.",
+            code="bad_origin",
+        )
 
     def _security_headers(self, request):
         headers = {
@@ -620,8 +659,22 @@ class WebServer:
             entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
             await asyncio.to_thread(db_touch_session, sid, entry)
 
-    async def _refresh_guilds(self, sid, entry):
-        if time.time() - entry.get("guilds_fetched_at", 0) < GUILDS_CACHE_SECONDS:
+    async def _refresh_guilds(self, sid, entry, *, max_age=GUILDS_CACHE_SECONDS):
+        """Refresh the session's guild list when the cached copy is too old.
+
+        Reads accept a two-minute-old permission set: that is what the cache
+        is for, and being wrong costs someone a settings page for a guild they
+        were just removed from. Writes ask for something much fresher - a
+        revoked Manage Server that can still change a guild's configuration
+        for two full minutes is a permission that was not really revoked.
+
+        A max-age rather than an unconditional refresh, deliberately. Forcing
+        an upstream call on every write would put Discord's availability and
+        rate limit in front of every save, and a burst of saves from one
+        dashboard page would each pay for it. Bounding the staleness gets
+        almost all of the benefit for one call per window.
+        """
+        if time.time() - entry.get("guilds_fetched_at", 0) < max_age:
             return
         await self._ensure_fresh_token(sid, entry)
         guilds = await self._discord_get("/users/@me/guilds", entry["access_token"])
@@ -644,12 +697,53 @@ class WebServer:
             return False
         return info["owner"] or bool(info["permissions"] & MANAGE_GUILD)
 
+    def _has_permission(self, entry, guild_id, flag):
+        """Whether the session holds one specific permission in this guild.
+
+        `_can_manage` answers "may this person touch the dashboard at all",
+        which is Manage Server. Handing out roles is a narrower question, and
+        answering it with the broader permission is what let someone who
+        cannot assign a single role in Discord expose one through a panel.
+        """
+        info = entry.get("guilds", {}).get(str(guild_id))
+        if not info:
+            return False
+        return bool(info.get("owner")) or bool(int(info.get("permissions", 0)) & flag)
+
+    def _require_permission(self, entry, guild_id, flag, label):
+        if not self._has_permission(entry, guild_id, flag):
+            raise ApiError(403, f"You need {label} on that guild.", code="forbidden")
+
+    @staticmethod
+    def _actor_member(guild, entry):
+        """The dashboard user as a guild Member, when the bot can see them.
+
+        Role hierarchy is a position, and OAuth only reports a permission
+        bitfield - so the member object is the only place the configurer's own
+        rank can be read. None when they are not cached, and role_safety then
+        falls back to the permission checks alone.
+        """
+        try:
+            user_id = int(entry["user"]["id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        getter = getattr(guild, "get_member", None)
+        return getter(user_id) if callable(getter) else None
+
     async def _authorized_guild(self, request):
         sid, entry = await self._require_session(request)
         guild_id = request.match_info["guild_id"]
         if not guild_id.isdigit():
             raise ApiError(400, "Invalid guild id.", code="bad_request")
-        await self._refresh_guilds(sid, entry)
+        # A write insists on a much fresher permission set than a read does,
+        # so a permission removed a minute ago is actually gone by the time
+        # someone tries to use it. Reads keep the long cache: they are the
+        # frequent ones, and a stale read shows a page rather than making a
+        # change.
+        mutating = request.method not in {"GET", "HEAD", "OPTIONS"}
+        await self._refresh_guilds(
+            sid, entry, max_age=WRITE_PERMISSION_MAX_AGE if mutating else GUILDS_CACHE_SECONDS
+        )
         if not self._can_manage(entry, guild_id):
             raise ApiError(403, "You need Manage Server on that guild.", code="forbidden")
         self._require_ready()
@@ -1102,7 +1196,9 @@ class WebServer:
             ],
             "roles": [
                 {"id": str(role.id), "name": role.name, "color": f"#{role.color.value:06X}",
-                 "assignable": role < guild.me.top_role and not role.managed,
+                 # Same rule the publish endpoint enforces, so the dashboard
+                 # cannot offer a role the API will then refuse.
+                 "assignable": role_assignment_error(role, guild) is None,
                  "manages_threads": role.permissions.manage_threads}
                 for role in sorted(guild.roles, key=lambda r: -r.position)
                 if not role.is_default()
@@ -1367,13 +1463,19 @@ class WebServer:
         try:
             body = await request.json()
         except Exception:
-            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request") from None
         if not isinstance(body, dict):
             raise ApiError(400, "Body must be a JSON object.", code="bad_request")
 
         title, description, role_ids, errors = validate_role_panel_input(
             body.get("title"), body.get("description"), body.get("role_ids")
         )
+        # Publishing a panel puts roles in front of every member, so it takes
+        # the permission Discord requires for handing roles out - not merely
+        # the Manage Server that opens the dashboard.
+        self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+
+        actor = self._actor_member(guild, entry)
         roles = []
         for role_id in role_ids:
             if not role_id.isdigit():
@@ -1381,8 +1483,10 @@ class WebServer:
             role = guild.get_role(int(role_id))
             if role is None:
                 errors.append(f"role_ids: {role_id} is not a role in this guild")
-            elif role.is_default() or role.managed or role >= guild.me.top_role:
-                errors.append(f"role_ids: @{role.name} cannot be assigned by NovaGuard")
+                continue
+            refusal = role_assignment_error(role, guild, actor)
+            if refusal:
+                errors.append(f"role_ids: @{role.name} cannot be assigned — {refusal}")
             else:
                 roles.append(role)
         if errors:
@@ -1464,7 +1568,7 @@ class WebServer:
         try:
             body = await request.json()
         except Exception:
-            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request") from None
         if not isinstance(body, dict):
             raise ApiError(400, "Body must be a JSON object.", code="bad_request")
         return body
@@ -1561,7 +1665,7 @@ class WebServer:
             raise ApiError(404, "No active giveaway with that id.", code="giveaway_not_found")
         try:
             result = await asyncio.wait_for(
-                self._giveaway_cog().finish_giveaway(message_id), timeout=15
+                self._giveaway_cog().finish_giveaway(message_id, guild_id=guild.id), timeout=15
             )
         except (asyncio.TimeoutError, OSError, TypeError, ValueError) as error:
             raise ApiError(
@@ -1587,7 +1691,7 @@ class WebServer:
             raise ApiError(404, "No ended giveaway with that id.", code="giveaway_not_found")
         try:
             result, winner_ids, announced = await asyncio.wait_for(
-                self._giveaway_cog().reroll_giveaway(message_id), timeout=15
+                self._giveaway_cog().reroll_giveaway(message_id, guild_id=guild.id), timeout=15
             )
         except (asyncio.TimeoutError, OSError, TypeError, ValueError) as error:
             raise ApiError(
@@ -1645,7 +1749,7 @@ class WebServer:
         try:
             limit = int(raw_limit)
         except (TypeError, ValueError):
-            raise ApiError(400, "Audit limit must be a number.", code="bad_request")
+            raise ApiError(400, "Audit limit must be a number.", code="bad_request") from None
         if limit < 1:
             raise ApiError(400, "Audit limit must be at least 1.", code="bad_request")
         limit = min(limit, 200)
@@ -1656,7 +1760,7 @@ class WebServer:
             try:
                 cursor = int(raw_cursor)
             except (TypeError, ValueError):
-                raise ApiError(400, "Audit cursor is invalid.", code="bad_request")
+                raise ApiError(400, "Audit cursor is invalid.", code="bad_request") from None
             if cursor < 1:
                 raise ApiError(400, "Audit cursor is invalid.", code="bad_request")
 
@@ -1678,7 +1782,7 @@ class WebServer:
             try:
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             except ValueError:
-                raise ApiError(400, f"Audit {name} date is invalid.", code="bad_request")
+                raise ApiError(400, f"Audit {name} date is invalid.", code="bad_request") from None
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=UTC)
             return parsed.astimezone(UTC).isoformat()
@@ -1708,7 +1812,7 @@ class WebServer:
         try:
             body = await request.json()
         except Exception:
-            raise ApiError(400, "Body must be valid JSON.", code="bad_request")
+            raise ApiError(400, "Body must be valid JSON.", code="bad_request") from None
         if not isinstance(body, dict):
             raise ApiError(400, "Body must be a JSON object.", code="bad_request")
 
@@ -1732,6 +1836,14 @@ class WebServer:
         if "ticket_panel_channel" in changes:
             changes["ticket_panel_message"] = None
 
+        # Setting an autorole is handing a role to every member who joins,
+        # unattended and indefinitely, so it takes the permission Discord
+        # requires for handing roles out - checked before the role is even
+        # resolved, because whether the caller may do this at all does not
+        # depend on whether they named a role that exists.
+        if body.get("autorole") not in (None, "", 0) and "autorole" in body:
+            self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+
         for key in ROLE_KEYS:
             if key not in body:
                 continue
@@ -1742,8 +1854,15 @@ class WebServer:
             role = guild.get_role(int(value)) if str(value).isdigit() else None
             if role is None or role.is_default():
                 errors.append(f"{key}: role not found")
-            elif key == "autorole" and (role.managed or role >= guild.me.top_role):
-                errors.append(f"{key}: role must be below my top role and not managed")
+                continue
+            # A staff role as autorole would have made every new arrival staff,
+            # so it goes through the same gate as a role panel.
+            if key == "autorole":
+                refusal = role_assignment_error(role, guild, self._actor_member(guild, entry))
+            else:
+                refusal = None
+            if refusal:
+                errors.append(f"{key}: {refusal}")
             else:
                 changes[key] = role.id
 

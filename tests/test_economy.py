@@ -210,7 +210,7 @@ class GambleTests(EconomyTestCase):
         # 0.47 is the win threshold; pick a value clearly on one side of it so
         # the test does not depend on the exact odds staying put.
         roll = 0.1 if wins else 0.9
-        with mock.patch.object(self.economy.random, "random", return_value=roll):
+        with mock.patch.object(self.economy._rng, "random", return_value=roll):
             await self.cog.gamble.callback(self.cog, interaction, amount)
         return interaction
 
@@ -250,7 +250,7 @@ class BetCapTests(EconomyTestCase):
         self.set_coins(ALICE, 10_000)
         interaction = FakeInteraction(FakeMember(ALICE))
 
-        with mock.patch.object(self.economy.random, "random", return_value=0.1):
+        with mock.patch.object(self.economy._rng, "random", return_value=0.1):
             await self.cog.gamble.callback(self.cog, interaction, 5_000)
 
         self.assertEqual(self.coins(ALICE), 10_000)
@@ -259,7 +259,7 @@ class BetCapTests(EconomyTestCase):
         self.set_coins(ALICE, 10_000)
         interaction = FakeInteraction(FakeMember(ALICE))
 
-        with mock.patch.object(self.economy.random, "random", return_value=0.1):
+        with mock.patch.object(self.economy._rng, "random", return_value=0.1):
             await self.cog.gamble.callback(self.cog, interaction, 500)
 
         self.assertEqual(self.coins(ALICE), 10_500)

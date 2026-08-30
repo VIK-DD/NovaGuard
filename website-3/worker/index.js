@@ -216,7 +216,18 @@ function safeNext(value) {
     // external redirect when it is passed to `new URL` below.
     const destination = new URL(value, SAFE_NEXT_ORIGIN);
     if (destination.origin !== SAFE_NEXT_ORIGIN) return "/dashboard/";
-    return `${destination.pathname}${destination.search}${destination.hash}`;
+    const path = `${destination.pathname}${destination.search}${destination.hash}`;
+    // Check the OUTPUT, not just the input. The guard above reads the string
+    // as it arrived; this reads what `new URL` made of it, and the two differ.
+    // `/..//evil.example` is not `//`-prefixed, but normalization pops the
+    // empty first segment and yields the pathname `//evil.example` - which the
+    // caller then feeds to `new URL(next, request.url)`, producing a
+    // protocol-relative redirect to another origin. `/./..//x` and
+    // `/a/../..//x` do the same.
+    if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+      return "/dashboard/";
+    }
+    return path;
   } catch {
     return "/dashboard/";
   }
@@ -659,7 +670,25 @@ async function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
-async function enforceLoginRateLimit(env) {
+// The bucket a login attempt counts against.
+//
+// A hash, not the address: the limiter only ever needs to tell clients apart,
+// never to know who they are, which keeps the original intent of not handling
+// raw IPs. Truncated to 32 hex characters because the key is an opaque label
+// and the full digest buys nothing.
+//
+// No usable address falls back to the shared bucket, so an attacker who could
+// strip the header lands in a capped bucket rather than an uncapped one.
+export async function loginRateLimitKey(request) {
+  const address =
+    request?.headers?.get("CF-Connecting-IP") ||
+    (request?.headers?.get("X-Forwarded-For") || "").split(",")[0].trim();
+  if (!address) return "password-gate";
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(`ng-login::${address}`));
+  return `pg:${base64UrlEncode(new Uint8Array(digest)).slice(0, 32)}`;
+}
+
+async function enforceLoginRateLimit(env, request) {
   const limiter = env.LOGIN_RATE_LIMITER;
   if (!limiter || typeof limiter.limit !== "function") {
     logWorkerEvent("error", "login_rate_limiter_missing");
@@ -670,9 +699,11 @@ async function enforceLoginRateLimit(env) {
   }
 
   try {
-    // No stable user identity exists before login. A route-wide key avoids
-    // processing IP addresses and caps password guesses per Cloudflare location.
-    const { success } = await limiter.limit({ key: "password-gate" });
+    // Keyed per client rather than route-wide. One shared key did cap guessing,
+    // but it also meant a single attacker spending ten attempts a minute locked
+    // every genuine visitor out of the gate - which turns a brute-force control
+    // into a denial-of-service lever, the wrong trade for a door.
+    const { success } = await limiter.limit({ key: await loginRateLimitKey(request) });
     if (success) return null;
 
     logWorkerEvent("warn", "auth_login_rate_limited");
@@ -718,7 +749,7 @@ async function handleLogin(request, env) {
 
   const password = String(form.get("password") || "");
   const next = safeNext(String(form.get("next") || "/dashboard/"));
-  const limited = await enforceLoginRateLimit(env);
+  const limited = await enforceLoginRateLimit(env, request);
   if (limited) return limited;
 
   if (!(await timingSafeEqual(password, env.AUTH_PASSWORD))) {
@@ -942,7 +973,12 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    // Single quotes too. Every current call site puts the value in a
+    // double-quoted attribute or a text node, so this changes nothing today -
+    // but a general-purpose escaper that silently fails inside a
+    // single-quoted attribute is a trap for whoever writes the next template.
+    .replace(/'/g, "&#39;");
 }
 
 async function serveMaintenancePage(request, env, state) {

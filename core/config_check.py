@@ -12,7 +12,6 @@ ever printed, never their values.
 """
 
 import os
-from pathlib import Path
 from urllib.parse import urlsplit
 
 CRITICAL = "CRITICAL"
@@ -74,13 +73,15 @@ def _exact_origin(value):
     )
 
 
-def check_config(env=None, *, file_exists=None):
+def check_config(env=None):
     """Inspect the environment and return findings worth printing.
 
-    ``file_exists`` is injected so path checks stay testable.
+    Every check here reads environment values only. There used to be a
+    `file_exists` parameter, documented as "injected so path checks stay
+    testable" - but no path check was ever written, so the seam it opened led
+    nowhere and the callable it built was never called.
     """
     env = os.environ if env is None else env
-    exists = file_exists if file_exists is not None else (lambda path: Path(path).expanduser().exists())
     findings = []
 
     if not _value(env, "TOKEN"):
@@ -194,7 +195,7 @@ def check_config(env=None, *, file_exists=None):
                     "must contain only exact HTTPS origins without wildcards, paths, queries or fragments.",
                 )
             )
-        web_host = _value(env, "WEB_HOST") or "0.0.0.0"
+        web_host = _value(env, "WEB_HOST") or "127.0.0.1"
         trust_proxy = _enabled(env, "WEB_TRUST_PROXY")
         if not trust_proxy:
             findings.append(

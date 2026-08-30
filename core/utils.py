@@ -11,6 +11,15 @@ log = logging.getLogger(__name__)
 
 DURATION_PATTERN = re.compile(r"(\d+)\s*([smhdw])", re.IGNORECASE)
 UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+# Ten years. Every caller clamps far below this (/timeout to 28 days, /remind
+# to 90), so this is not a policy - it is the point past which a number stops
+# being a duration a person typed and starts being an attempt to break the
+# parser. Refusing here hands callers the None they already handle, instead of
+# an exception out of timedelta.
+MAX_DURATION_SECONDS = 10 * 365 * 86400
+# Longer than any honest duration, and short enough that int() can never reach
+# CPython's 4300-digit string-conversion limit, which raises rather than parses.
+MAX_DURATION_TEXT = 100
 
 
 def parse_github_datetime(value):
@@ -36,6 +45,31 @@ def truncate(text, limit=240):
     return textwrap.shorten(" ".join(text.split()), width=limit, placeholder="...")
 
 
+# Discord's own embed limits. discord.py does not enforce them locally, so an
+# oversized value is only refused by the API - as a 400 that reaches the global
+# command error handler and files an error digest. Clamping is therefore not
+# cosmetic: without it any member who can put text in a command option, and
+# any GitHub contributor whose commit the watcher renders, can decide whether
+# the bot's own reply succeeds.
+EMBED_TITLE_LIMIT = 256
+EMBED_DESCRIPTION_LIMIT = 4096
+EMBED_FIELD_VALUE_LIMIT = 1024
+EMBED_FIELD_NAME_LIMIT = 256
+
+
+def clamp(text, limit):
+    """Hard-cut `text` to `limit` characters, marking the cut when one happens.
+
+    Unlike `truncate` this preserves newlines and does not collapse
+    whitespace, so it suits an assembled block - a list of lines, a code
+    block - where `truncate`'s word-shortening would destroy the shape.
+    """
+    value = "" if text is None else str(text)
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 1)] + "…"
+
+
 def first_line(text, fallback="No details available."):
     if not text:
         return fallback
@@ -44,11 +78,29 @@ def first_line(text, fallback="No details available."):
 
 
 def parse_duration(text):
-    """Parse strings like '10m', '1h30m', '2d' into a timedelta."""
-    matches = DURATION_PATTERN.findall(text or "")
+    """Parse strings like '10m', '1h30m', '2d' into a timedelta.
+
+    Returns None for anything that is not a usable duration, hostile input
+    included. `9999999999w` used to reach timedelta and raise OverflowError,
+    and a few thousand digits used to reach int() and raise ValueError; both
+    escaped to the global command error handler, which answers the member and
+    files an error digest. That turned a text box any member can type into
+    into a way to generate log traffic on demand.
+    """
+    text = text or ""
+    if len(text) > MAX_DURATION_TEXT:
+        return None
+    matches = DURATION_PATTERN.findall(text)
     if not matches:
         return None
-    total_seconds = sum(int(amount) * UNIT_SECONDS[unit.lower()] for amount, unit in matches)
+
+    total_seconds = 0
+    for amount, unit in matches:
+        total_seconds += int(amount) * UNIT_SECONDS[unit.lower()]
+        # Checked inside the loop: a sum of several enormous parts must not be
+        # allowed to build up before anyone looks at it.
+        if total_seconds > MAX_DURATION_SECONDS:
+            return None
     return timedelta(seconds=total_seconds) if total_seconds > 0 else None
 
 

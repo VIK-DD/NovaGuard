@@ -15,6 +15,12 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch:
 
+# The deploy job runs npm ci (dependency lifecycle scripts) and three repo
+# scripts alongside CLOUDFLARE_API_TOKEN. It publishes to Cloudflare, never
+# to git, so it needs no repository write at all.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

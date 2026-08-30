@@ -69,7 +69,8 @@ def _data_counts(connection: sqlite3.Connection) -> dict[str, int]:
     counts = {}
     for name in names:
         quoted_name = name.replace('"', '""')
-        counts[name] = connection.execute(f'SELECT COUNT(*) FROM "{quoted_name}"').fetchone()[0]
+        # table name comes from sqlite_master and is quote-doubled
+        counts[name] = connection.execute(f'SELECT COUNT(*) FROM "{quoted_name}"').fetchone()[0]  # nosec B608
     return counts
 
 
@@ -123,7 +124,8 @@ def _prepare_snapshot(source_db: Path, snapshot_db: Path, base_dir: Path) -> int
             )'''
         )
         target.execute(
-            f'INSERT INTO "{MARKER_TABLE}" (format_version, app, exported_at) VALUES (?, ?, ?)',
+            # MARKER_TABLE/FILES_TABLE are module constants
+            f'INSERT INTO "{MARKER_TABLE}" (format_version, app, exported_at) VALUES (?, ?, ?)',  # nosec B608
             (FORMAT_VERSION, "NovaGuard", datetime.now(UTC).isoformat()),
         )
 
@@ -135,7 +137,8 @@ def _prepare_snapshot(source_db: Path, snapshot_db: Path, base_dir: Path) -> int
             except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise HostMigrationError(f"Cannot include {relative}: {error}") from error
             target.execute(
-                f'INSERT INTO "{FILES_TABLE}" (path, content, sha256) VALUES (?, ?, ?)',
+                # FILES_TABLE is a module constant; values are bound
+                f'INSERT INTO "{FILES_TABLE}" (path, content, sha256) VALUES (?, ?, ?)',  # nosec B608
                 (relative, content, _sha256(content)),
             )
             count += 1
@@ -213,7 +216,8 @@ def _load_and_validate(sql_path: Path, staging_db: Path) -> tuple[dict, list[tup
             raise HostMigrationError(f"Invalid migration SQL: {error}") from error
 
         marker = connection.execute(
-            f'SELECT format_version, app, exported_at FROM "{MARKER_TABLE}" LIMIT 1'
+            # MARKER_TABLE is a module constant
+            f'SELECT format_version, app, exported_at FROM "{MARKER_TABLE}" LIMIT 1'  # nosec B608
         ).fetchone()
         if not marker or marker[1] != "NovaGuard":
             raise HostMigrationError("This is not a NovaGuard host migration file")
@@ -224,7 +228,8 @@ def _load_and_validate(sql_path: Path, staging_db: Path) -> tuple[dict, list[tup
 
         files: list[tuple[str, str]] = []
         for relative, content, expected_hash in connection.execute(
-            f'SELECT path, content, sha256 FROM "{FILES_TABLE}" ORDER BY path'
+            # FILES_TABLE is a module constant
+            f'SELECT path, content, sha256 FROM "{FILES_TABLE}" ORDER BY path'  # nosec B608
         ):
             if _sha256(content) != expected_hash:
                 raise HostMigrationError(f"Checksum mismatch for {relative}")

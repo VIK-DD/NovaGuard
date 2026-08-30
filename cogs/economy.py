@@ -2,7 +2,13 @@
 
 import asyncio
 import logging
-import random
+import secrets
+
+# A CSPRNG, not Mersenne Twister. The coins have no cash value, but /gamble
+# and /slots are wagers on an outcome and MT is reconstructable from a few
+# hundred observed draws - and a public leaderboard is a stream of
+# observations. Nothing here is hot enough for the cost to register.
+_rng = secrets.SystemRandom()
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
@@ -258,14 +264,14 @@ class Economy(commands.Cog):
                 brand_footer(embed, "Economy")
                 return await respond(interaction, embed, ephemeral=True)
 
-        earnings = random.randint(config["work_min"], config["work_max"])
+        earnings = _rng.randint(config["work_min"], config["work_max"])
         wallet["coins"] += earnings
         wallet["last_work"] = now.isoformat()
         await self._save(interaction.guild_id, interaction.user.id)
 
         embed = make_embed(
             "🔨 Shift complete",
-            f"{random.choice(WORK_FLAVORS)} and earned **{CURRENCY} {earnings}**!",
+            f"{_rng.choice(WORK_FLAVORS)} and earned **{CURRENCY} {earnings}**!",
             color=Palette.TEAL,
         )
         if cooldown < base_cooldown:
@@ -342,7 +348,7 @@ class Economy(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        if random.random() < 0.47:
+        if _rng.random() < 0.47:
             wallet["coins"] += amount
             embed = make_embed("🎉 You won!", f"# +{CURRENCY} {humanize_number(amount)}", color=Palette.SUCCESS)
         else:
@@ -379,7 +385,7 @@ class Economy(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
-        reels = [random.choice(SLOT_REELS) for _ in range(3)]
+        reels = [_rng.choice(SLOT_REELS) for _ in range(3)]
         display = " | ".join(reels)
 
         outcome = slot_outcome(reels, amount)
@@ -400,6 +406,7 @@ class Economy(commands.Cog):
         await respond(interaction, embed)
 
     @app_commands.command(name="richest", description="Top 10 richest members")
+    @app_commands.checks.cooldown(1, 10.0)
     @app_commands.guild_only()
     async def richest(self, interaction: discord.Interaction):
         if await self._settings_or_reject(interaction) is None:
