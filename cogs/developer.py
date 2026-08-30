@@ -10,7 +10,7 @@ from discord.ext import commands, tasks
 
 from core.loop_guard import keep_running
 from core.config import GITHUB_STATE_FILE, github_config
-from core.github_api import github_api
+from core.github_api import github_api, valid_login
 from core.github_commits import (
     branches_needing_a_read,
     merge_new_commits,
@@ -146,6 +146,58 @@ async def build_watcher_embed(repo_name, event):
         return build_release_watcher_embed(repo_name, event)
 
     return None, None
+
+
+def configured_repos():
+    """Every repository this instance is set up to talk about, lowercased."""
+    names = list(github_config.watch_repos or [])
+    if github_config.primary_repo:
+        names.append(github_config.primary_repo)
+    return {name.strip().strip("/").lower() for name in names if name}
+
+
+async def reject_repo(interaction, target_repo):
+    """Refuse a repository this instance was not configured for. True when refused.
+
+    The bot's GitHub session carries the host's token, and `/repos/{owner}/{name}`
+    answers for a private repository whenever that token can see one. Without
+    this, any member could name someone's private repo and have its commits,
+    release notes and health card rendered into a public channel under the
+    host's credentials. Public repositories are no safer to allow, because the
+    same request is what spends the host's rate limit.
+
+    The allow-list is the configured repos, which is what every one of these
+    commands already defaults to - naming one explicitly is a convenience, not
+    a separate feature.
+    """
+    allowed = configured_repos()
+    if target_repo and str(target_repo).strip().strip("/").lower() in allowed:
+        return False
+    listed = ", ".join(f"`{name}`" for name in sorted(allowed)) or "`none configured`"
+    embed = make_embed(
+        "🔒 Not a tracked repository",
+        "NovaGuard only reports on the repositories it is configured to watch, "
+        "because these lookups use the host's GitHub credentials.\n\n"
+        f"Tracked here: {listed}",
+        color=Palette.WARNING,
+    )
+    brand_footer(embed)
+    await respond(interaction, embed, ephemeral=True)
+    return True
+
+
+async def reject_login(interaction, username):
+    """Refuse anything that cannot be a real GitHub login. True when refused."""
+    if valid_login(username):
+        return False
+    embed = make_embed(
+        "🔍 Not a GitHub username",
+        "GitHub usernames are up to 39 letters, digits and hyphens.",
+        color=Palette.WARNING,
+    )
+    brand_footer(embed)
+    await respond(interaction, embed, ephemeral=True)
+    return True
 
 
 async def send_config_error(interaction, variable_name):
@@ -346,8 +398,9 @@ class Developer(commands.Cog):
         target_username = username or github_config.username
         if not target_username:
             return await send_config_error(interaction, "GITHUB_USERNAME")
-
         await defer_interaction(interaction)
+        if await reject_login(interaction, target_username):
+            return
         user, repos = await asyncio.gather(
             github_api.fetch_user(target_username),
             github_api.fetch_user_repos(target_username),
@@ -368,6 +421,8 @@ class Developer(commands.Cog):
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
         await defer_interaction(interaction)
+        if await reject_repo(interaction, target_repo):
+            return
         repo_data, languages, open_prs, open_issues, workflow_run, release = await asyncio.gather(
             github_api.fetch_repo(target_repo),
             github_api.fetch_repo_languages(target_repo),
@@ -433,6 +488,8 @@ class Developer(commands.Cog):
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
         await defer_interaction(interaction)
+        if await reject_repo(interaction, target_repo):
+            return
         repo_data, commits, workflow_run, release, open_prs, open_issues = await asyncio.gather(
             github_api.fetch_repo(target_repo),
             github_api.fetch_repo_commits(target_repo, per_page=8),
@@ -477,6 +534,8 @@ class Developer(commands.Cog):
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
         await defer_interaction(interaction)
+        if await reject_repo(interaction, target_repo):
+            return
         commits = await github_api.fetch_repo_commits(target_repo, per_page=count)
         if not commits:
             embed = make_embed("🔍 Not found", "No commits found for that repository.", color=Palette.DANGER)
@@ -509,6 +568,8 @@ class Developer(commands.Cog):
             return await send_config_error(interaction, "GITHUB_PRIMARY_REPO")
 
         await defer_interaction(interaction)
+        if await reject_repo(interaction, target_repo):
+            return
         release_data = await github_api.fetch_latest_release(target_repo)
         if not release_data:
             embed = make_embed("📦 No release yet", f"`{target_repo}` has no published release.", color=Palette.WARNING)
@@ -539,6 +600,14 @@ class Developer(commands.Cog):
         )
 
     @app_commands.command(name="ghwatch", description="GitHub watcher diagnostics")
+    # Answers with the host's own configuration - which repositories are
+    # watched (private names included), which channels the owner routes
+    # events to, the poll interval, whether a token is set. That is the
+    # operator's setup, not this guild's, so it takes Manage Server and is
+    # answered privately rather than posted for everyone to read.
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
     async def ghwatch(self, interaction: discord.Interaction):
         settings = get_guild_settings(interaction.guild_id)
         watch_channel_id = settings.get("github_event_channel") or github_config.event_channel_id
@@ -569,7 +638,7 @@ class Developer(commands.Cog):
             inline=False,
         )
         brand_footer(embed, "Watcher diagnostics")
-        await respond(interaction, embed)
+        await respond(interaction, embed, ephemeral=True)
 
 
 async def setup(bot):

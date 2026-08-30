@@ -1,10 +1,52 @@
 """Async GitHub REST client shared by the developer cog and the watcher."""
 
 import asyncio
+import re
+from urllib.parse import quote
 
 import aiohttp
 
 from .config import github_config
+
+# GitHub's own rules. A login is 1-39 characters of alphanumerics and single
+# hyphens; a repository name also allows dots and underscores. Anything else
+# cannot name something real, so refusing it costs nothing.
+GITHUB_LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+GITHUB_REPO_NAME = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+
+
+def valid_login(value):
+    """Whether this could be a real GitHub user or organisation name."""
+    return bool(value) and bool(GITHUB_LOGIN.match(str(value)))
+
+
+def valid_full_name(value):
+    """`owner/repo`, both halves valid, and nothing else."""
+    parts = str(value or "").split("/")
+    if len(parts) != 2:
+        return False
+    owner, repo = parts
+    return valid_login(owner) and bool(GITHUB_REPO_NAME.match(repo))
+
+
+def _segment(value):
+    """One path segment, percent-encoded so it cannot become several.
+
+    This is the load-bearing one. `get_json` builds its URL by formatting a
+    string and hands it to aiohttp, which resolves dot segments through yarl
+    exactly as a browser would. So an unencoded `../user` where a username
+    belongs turned `/users/<name>` into `/user` - the authenticated-user
+    endpoint - and `/users/<name>/repos` into `/user/repos`, which lists
+    private repositories under the host's own token. Quoting with `safe=""`
+    means `/` and `.` cannot travel out of the segment they were put in.
+    """
+    return quote(str(value), safe="")
+
+
+def _repo_path(full_name):
+    """`owner/repo` with each half quoted; the slash between them is structural."""
+    owner, _, repo = str(full_name or "").partition("/")
+    return f"{_segment(owner)}/{_segment(repo)}"
 
 
 class GitHubAPI:
@@ -75,7 +117,7 @@ class GitHubAPI:
             raise RuntimeError(f"GitHub API temporary network issue: {error}") from error
 
     async def fetch_user(self, username):
-        return await self.get_json(f"/users/{username}")
+        return await self.get_json(f"/users/{_segment(username)}")
 
     async def fetch_user_repos(self, username):
         repos = []
@@ -83,7 +125,7 @@ class GitHubAPI:
 
         while True:
             batch = await self.get_json(
-                f"/users/{username}/repos",
+                f"/users/{_segment(username)}/repos",
                 params={"per_page": 100, "sort": "updated", "page": page},
             )
             if not batch:
@@ -96,10 +138,10 @@ class GitHubAPI:
         return repos
 
     async def fetch_repo(self, full_name):
-        return await self.get_json(f"/repos/{full_name}")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}")
 
     async def fetch_repo_languages(self, full_name):
-        return await self.get_json(f"/repos/{full_name}/languages")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/languages")
 
     async def fetch_repo_branches(self, full_name, per_page=100):
         """Every branch with its head SHA.
@@ -108,10 +150,10 @@ class GitHubAPI:
         cannot be hiding new commits, so the watcher can skip reading it and
         a quiet repository costs one request rather than one per branch.
         """
-        return await self.get_json(f"/repos/{full_name}/branches", params={"per_page": per_page})
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/branches", params={"per_page": per_page})
 
     async def fetch_repo_events(self, full_name, per_page=10):
-        return await self.get_json(f"/repos/{full_name}/events", params={"per_page": per_page})
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/events", params={"per_page": per_page})
 
     async def fetch_pull_request(self, full_name, number):
         """The whole pull request, which the events feed does not include.
@@ -120,34 +162,34 @@ class GitHubAPI:
         title, body or state — so anything that wants to describe the pull
         request has to ask for it here.
         """
-        return await self.get_json(f"/repos/{full_name}/pulls/{number}")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/pulls/{_segment(number)}")
 
     async def fetch_repo_commits(self, full_name, per_page=8, sha=None):
         params = {"per_page": per_page}
         if sha:
             params["sha"] = sha
-        return await self.get_json(f"/repos/{full_name}/commits", params=params)
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/commits", params=params)
 
     async def fetch_commit_detail(self, full_name, sha):
-        return await self.get_json(f"/repos/{full_name}/commits/{sha}")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/commits/{_segment(sha)}")
 
     async def fetch_compare(self, full_name, base_sha, head_sha):
         """GitHub's public Events API push payloads no longer include a
         `commits` array (just `before`/`head` SHAs) — use compare to recover them."""
-        return await self.get_json(f"/repos/{full_name}/compare/{base_sha}...{head_sha}")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/compare/{_segment(base_sha)}...{_segment(head_sha)}")
 
     async def fetch_latest_workflow_run(self, full_name):
-        data = await self.get_json(f"/repos/{full_name}/actions/runs", params={"per_page": 1})
+        data = await self.get_json(f"/repos/{_repo_path(full_name)}/actions/runs", params={"per_page": 1})
         if not data:
             return None
         runs = data.get("workflow_runs", [])
         return runs[0] if runs else None
 
     async def fetch_branch(self, full_name, branch_name):
-        return await self.get_json(f"/repos/{full_name}/branches/{branch_name}")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/branches/{_segment(branch_name)}")
 
     async def fetch_latest_release(self, full_name):
-        return await self.get_json(f"/repos/{full_name}/releases/latest")
+        return await self.get_json(f"/repos/{_repo_path(full_name)}/releases/latest")
 
     async def count_open_pull_requests(self, full_name):
         total = 0
