@@ -97,7 +97,13 @@ log = logging.getLogger("novaguard.web")
 # ── configuration ────────────────────────────────────────────────────
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
+# Loopback by default. The documented deployment puts Cloudflare Tunnel in
+# front, .env.example already sets 127.0.0.1, SETUP.md says to, and
+# TRUST_PROXY refuses to honour forwarded addresses on any other bind - so
+# 0.0.0.0 was a default that only ever took effect when someone deleted the
+# line, and then silently put an authenticated API on every interface.
+# Set WEB_HOST=0.0.0.0 explicitly if that is genuinely wanted.
+WEB_HOST = os.getenv("WEB_HOST", "127.0.0.1")
 WEB_PORT = int(os.getenv("WEB_PORT", "8300") or 8300)
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
@@ -174,6 +180,9 @@ STATE_COOKIE = "ng_state"
 SESSION_TTL = 7 * 24 * 3600
 STATE_TTL = 600
 GUILDS_CACHE_SECONDS = 120
+# How stale a permission set may be before a *write* is allowed on it. Reads
+# keep the full window above; a change to a guild's configuration does not.
+WRITE_PERMISSION_MAX_AGE = 30
 DISCORD_DNS_CACHE_SECONDS = 300
 DISCORD_REQUEST_TIMEOUT_SECONDS = 10
 MAX_BODY_BYTES = 64 * 1024
@@ -440,21 +449,47 @@ class WebServer:
         return None
 
     def _check_origin(self, request):
-        """Defense-in-depth CSRF guard for mutating requests.
+        """CSRF guard for mutating requests.
 
-        Allows same-origin (Origin host matches Host) and allow-listed cross
-        origins; rejects everything else. Non-browser callers send no Origin
-        and are covered by the session cookie + SameSite.
+        Two ways to pass, and a request needs only one:
+
+        * a valid `Origin` - same-origin (its host matches `Host`) or on the
+          CORS allow-list. This is the browser path; browsers attach `Origin`
+          to every POST and PUT and a page cannot forge it.
+        * a JSON content type. This is the script path. It is proof of a
+          different kind: `application/json` is not one of the three content
+          types a cross-origin form may send without a CORS preflight, so an
+          attacker's page cannot produce it, while `curl` sets it trivially.
+
+        An `Origin` that is present and wrong is always refused - it never
+        falls through to the content-type test, or an attacker's page could
+        opt out of the check it just failed.
+
+        The previous version returned early when `Origin` was absent, which
+        left `POST` with `Content-Type: text/plain` and a JSON body unguarded:
+        a simple cross-origin request, no preflight, session cookie attached.
+        In practice browsers send `Origin` and the hole was narrow, but
+        docs/API.md already told clients they "must send Origin on mutations",
+        so the contract promised a check the code did not make.
         """
         origin = request.headers.get("Origin")
-        if not origin:
+        if origin:
+            host = request.headers.get("Host", "")
+            if origin.split("://", 1)[-1] == host:
+                return
+            if origin.rstrip("/") in CORS_ORIGINS:
+                return
+            raise ApiError(403, "Cross-origin request rejected.", code="bad_origin")
+
+        # No Origin. Only a request a cross-origin form could not have sent.
+        content_type = (request.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type == "application/json":
             return
-        host = request.headers.get("Host", "")
-        if origin.split("://", 1)[-1] == host:
-            return
-        if origin.rstrip("/") in CORS_ORIGINS:
-            return
-        raise ApiError(403, "Cross-origin request rejected.", code="bad_origin")
+        raise ApiError(
+            403,
+            "Mutating requests need an Origin header or a JSON content type.",
+            code="bad_origin",
+        )
 
     def _security_headers(self, request):
         headers = {
@@ -624,8 +659,22 @@ class WebServer:
             entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
             await asyncio.to_thread(db_touch_session, sid, entry)
 
-    async def _refresh_guilds(self, sid, entry):
-        if time.time() - entry.get("guilds_fetched_at", 0) < GUILDS_CACHE_SECONDS:
+    async def _refresh_guilds(self, sid, entry, *, max_age=GUILDS_CACHE_SECONDS):
+        """Refresh the session's guild list when the cached copy is too old.
+
+        Reads accept a two-minute-old permission set: that is what the cache
+        is for, and being wrong costs someone a settings page for a guild they
+        were just removed from. Writes ask for something much fresher - a
+        revoked Manage Server that can still change a guild's configuration
+        for two full minutes is a permission that was not really revoked.
+
+        A max-age rather than an unconditional refresh, deliberately. Forcing
+        an upstream call on every write would put Discord's availability and
+        rate limit in front of every save, and a burst of saves from one
+        dashboard page would each pay for it. Bounding the staleness gets
+        almost all of the benefit for one call per window.
+        """
+        if time.time() - entry.get("guilds_fetched_at", 0) < max_age:
             return
         await self._ensure_fresh_token(sid, entry)
         guilds = await self._discord_get("/users/@me/guilds", entry["access_token"])
@@ -686,7 +735,15 @@ class WebServer:
         guild_id = request.match_info["guild_id"]
         if not guild_id.isdigit():
             raise ApiError(400, "Invalid guild id.", code="bad_request")
-        await self._refresh_guilds(sid, entry)
+        # A write insists on a much fresher permission set than a read does,
+        # so a permission removed a minute ago is actually gone by the time
+        # someone tries to use it. Reads keep the long cache: they are the
+        # frequent ones, and a stale read shows a page rather than making a
+        # change.
+        mutating = request.method not in {"GET", "HEAD", "OPTIONS"}
+        await self._refresh_guilds(
+            sid, entry, max_age=WRITE_PERMISSION_MAX_AGE if mutating else GUILDS_CACHE_SECONDS
+        )
         if not self._can_manage(entry, guild_id):
             raise ApiError(403, "You need Manage Server on that guild.", code="forbidden")
         self._require_ready()

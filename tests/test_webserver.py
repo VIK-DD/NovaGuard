@@ -674,6 +674,7 @@ async def main():
         async with http.post(
             f"{V1}/guilds/{TEST_GUILD_ID}/actions/ticket_panel_publish",
             cookies=cookies,
+            json={},  # a bodyless action still has to satisfy the mutation guard
         ) as r:
             data = await r.json()
             await check(
@@ -838,8 +839,48 @@ async def main():
             )
         server.bot.ready = True
 
-        async with http.post(f"{V1}/auth/logout", cookies=cookies) as r:
-            await check("logout ok", r.status == 200)
+        # ── the CSRF guard on mutations ──────────────────────────────
+        #
+        # A mutation needs a valid Origin (what a browser always sends) or a
+        # JSON content type (which a cross-origin form cannot produce without
+        # a preflight). Neither used to be required, which left POST with
+        # text/plain and a JSON body as an unguarded simple request.
+        async with http.post(
+            f"{V1}/auth/logout",
+            cookies=cookies,
+            data="{}",
+            headers={"Content-Type": "text/plain"},
+        ) as r:
+            data = await r.json()
+            await check(
+                "mutation without Origin or a JSON type is refused",
+                r.status == 403 and data.get("code") == "bad_origin",
+            )
+
+        async with http.post(
+            f"{V1}/auth/logout",
+            cookies=cookies,
+            headers={"Origin": "https://evil.example"},
+        ) as r:
+            data = await r.json()
+            await check(
+                "a foreign Origin is refused even with a JSON type available",
+                r.status == 403 and data.get("code") == "bad_origin",
+            )
+
+        async with http.post(
+            f"{V1}/auth/logout",
+            cookies=cookies,
+            headers={"Origin": "http://localhost:5173"},
+        ) as r:
+            await check("an allow-listed Origin passes the mutation guard", r.status == 200)
+
+        # The session is gone now, so log back in for the script-client case.
+        db_save_session(SID, entry)
+        async with http.post(
+            f"{V1}/auth/logout", cookies=cookies, json={}
+        ) as r:
+            await check("a JSON content type passes without any Origin", r.status == 200)
         await check("session gone after logout", db_load_session(SID) is None)
 
     reset_guild_settings(TEST_GUILD_ID)

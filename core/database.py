@@ -409,6 +409,21 @@ def close_ticket_record(thread_id, closed_by=None):
     return cursor.rowcount > 0
 
 
+def get_ticket_record(thread_id):
+    """One ticket by its thread, open or closed, or None when untracked.
+
+    The close button needs this. It fires on whatever thread it was pressed
+    in, so "is this actually a ticket, and whose" has to be answerable before
+    anything is archived.
+    """
+    init_database()
+    with _LOCK, connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM ticket_records WHERE thread_id = ?", (str(thread_id),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def open_ticket_for_member(guild_id, opener_id):
     init_database()
     with _LOCK, connect() as connection:

@@ -195,7 +195,7 @@ def check_config(env=None):
                     "must contain only exact HTTPS origins without wildcards, paths, queries or fragments.",
                 )
             )
-        web_host = _value(env, "WEB_HOST") or "0.0.0.0"
+        web_host = _value(env, "WEB_HOST") or "127.0.0.1"
         trust_proxy = _enabled(env, "WEB_TRUST_PROXY")
         if not trust_proxy:
             findings.append(

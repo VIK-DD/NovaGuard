@@ -5,7 +5,7 @@ import {
   PUBLIC_LAUNCH_AT_MS,
   hasPublicLaunchPassed,
 } from "../launch-config.js";
-import worker from "./index.js";
+import worker, { loginRateLimitKey } from "./index.js";
 
 const env = {
   AUTH_PASSWORD: "test-password",
@@ -1137,5 +1137,52 @@ describe("automatic public launch", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("Location")).toBeNull();
     await expect(response.text()).resolves.toBe("/maintenance/");
+  });
+});
+
+describe("login rate-limit key", () => {
+  // The gate used one route-wide key, so ten attempts a minute from anyone
+  // locked out everyone. That caps brute force and hands over a denial of
+  // service in exchange, which is the wrong trade for a door.
+
+  const withIp = (ip) =>
+    new Request("https://novaguard.fun/api/auth/login", {
+      method: "POST",
+      headers: ip ? { "CF-Connecting-IP": ip } : {},
+    });
+
+  it("gives two different clients two different buckets", async () => {
+    const first = await loginRateLimitKey(withIp("203.0.113.7"));
+    const second = await loginRateLimitKey(withIp("198.51.100.9"));
+    expect(first).not.toBe(second);
+  });
+
+  it("gives the same client the same bucket every time", async () => {
+    const first = await loginRateLimitKey(withIp("203.0.113.7"));
+    const second = await loginRateLimitKey(withIp("203.0.113.7"));
+    expect(first).toBe(second);
+  });
+
+  it("never puts the address itself in the key", async () => {
+    // The limiter has to tell clients apart, not know who they are.
+    const key = await loginRateLimitKey(withIp("203.0.113.7"));
+    expect(key).not.toContain("203.0.113.7");
+    expect(key).toMatch(/^pg:[A-Za-z0-9_-]{1,32}$/);
+  });
+
+  it("falls back to the shared bucket when there is no address", async () => {
+    // Capped rather than uncapped: stripping the header must not be a way out
+    // of the limit.
+    expect(await loginRateLimitKey(withIp(null))).toBe("password-gate");
+  });
+
+  it("reads X-Forwarded-For when CF-Connecting-IP is absent", async () => {
+    const request = new Request("https://novaguard.fun/api/auth/login", {
+      method: "POST",
+      headers: { "X-Forwarded-For": "203.0.113.7, 70.41.3.18" },
+    });
+    expect(await loginRateLimitKey(request)).toBe(
+      await loginRateLimitKey(withIp("203.0.113.7")),
+    );
   });
 });

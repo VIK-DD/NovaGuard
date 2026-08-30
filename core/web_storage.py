@@ -33,27 +33,71 @@ SCHEMA_VERSION = 1
 _DB_LOCK = threading.Lock()
 
 
-def _cipher_from_secret(secret):
-    """Derive a domain-separated Fernet key without storing the raw secret."""
+# scrypt over a fixed, domain-separating salt. A per-key random salt would be
+# better, but there is nowhere to keep one: this key must be derivable from the
+# environment alone at import, with no stored state to consult. The fixed salt
+# therefore buys domain separation rather than per-install uniqueness, and the
+# work factor is what does the real work.
+#
+# 2**14 costs ~16 MB and tens of milliseconds, paid once per process at import
+# and never per request - so it is bounded by the smallest host this runs on
+# rather than by throughput.
+_KDF_SALT = b"novaguard-token-kdf-v2"
+_KDF_N = 2**14
+_KDF_R = 8
+_KDF_P = 1
+
+
+def _cipher_from_secret(secret, *, legacy=False):
+    """Derive a domain-separated Fernet key without storing the raw secret.
+
+    `legacy=True` reproduces the original single-SHA-256 derivation. One round
+    of SHA-256 is not a key-derivation function: it is fast by design, which is
+    exactly wrong for a value an operator might reasonably set to a passphrase
+    rather than to 32 random bytes. It survives only so tokens written by
+    earlier versions can still be read, and then rewritten under the new key.
+    """
     if Fernet is None or not secret:
         return None
-    digest = hashlib.sha256(("novaguard-token::" + secret).encode()).digest()
+    if legacy:
+        digest = hashlib.sha256(("novaguard-token::" + secret).encode()).digest()
+    else:
+        digest = hashlib.scrypt(
+            secret.encode("utf-8"),
+            salt=_KDF_SALT,
+            n=_KDF_N,
+            r=_KDF_R,
+            p=_KDF_P,
+            dklen=32,
+            maxmem=64 * 1024 * 1024,
+        )
     return Fernet(base64.urlsafe_b64encode(digest))
 
 
 def _build_ciphers():
-    """Prefer the dedicated key but retain read-only legacy compatibility."""
+    """The key used for writing, plus every older one still worth reading.
+
+    Changing a derivation would otherwise log the whole estate out at once:
+    existing rows are Fernet tokens under the old key, and a key that cannot
+    decrypt them makes every session look expired. Old derivations stay as
+    read-only fallbacks, and `db_touch_session` rewrites a row under the
+    current key the first time that session is used - so installs migrate
+    themselves as people browse, rather than in one flush.
+    """
     dedicated_secret = os.getenv("WEB_TOKEN_KEY", "").strip()
-    primary = _cipher_from_secret(dedicated_secret or CLIENT_SECRET)
-    legacy = None
+    active_secret = dedicated_secret or CLIENT_SECRET
+    primary = _cipher_from_secret(active_secret)
+
+    legacy = [_cipher_from_secret(active_secret, legacy=True)]
     if dedicated_secret and CLIENT_SECRET and dedicated_secret != CLIENT_SECRET:
-        # Earlier versions always used the Discord client secret. Keep it only
-        # for reading old rows; all subsequent writes use the dedicated key.
-        legacy = _cipher_from_secret(CLIENT_SECRET)
-    return primary, legacy
+        # Older still: before WEB_TOKEN_KEY existed the Discord client secret
+        # was always the key.
+        legacy.append(_cipher_from_secret(CLIENT_SECRET))
+        legacy.append(_cipher_from_secret(CLIENT_SECRET, legacy=True))
+    return primary, tuple(cipher for cipher in legacy if cipher is not None)
 
 
-_CIPHER, _LEGACY_CIPHER = _build_ciphers()
+_CIPHER, _LEGACY_CIPHERS = _build_ciphers()
 
 
 def _encrypt_token(value):
@@ -68,7 +112,7 @@ def _decrypt_token(value):
     if _CIPHER is None:
         return None
     token = value[len(TOKEN_PREFIX) :].encode("ascii")
-    for cipher in (_CIPHER, _LEGACY_CIPHER):
+    for cipher in (_CIPHER, *_LEGACY_CIPHERS):
         if cipher is None:
             continue
         try:
@@ -252,6 +296,16 @@ def db_add_audit(guild_id, user, action, changes, ip):
         )
 
 
+def _escape_like(value):
+    """Make a user-typed string match literally inside a LIKE pattern.
+
+    The backslash escape has to be declared per-clause with ESCAPE, because
+    SQLite has no default escape character - without it the backslashes added
+    here would themselves be matched as ordinary text.
+    """
+    return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def db_get_audit(
     guild_id,
     limit,
@@ -278,8 +332,13 @@ def db_get_audit(
         clauses.append("action = ?")
         params.append(action)
     if actor:
-        clauses.append("(username LIKE ? OR user_id = ?)")
-        params.extend((f"%{actor}%", actor))
+        # `%` and `_` are LIKE wildcards, so an unescaped filter of "%" matched
+        # the whole trail instead of the literal character someone typed. Only
+        # a reader already authorized for this guild's audit log could do it,
+        # which is why it was untidy rather than a boundary - but a filter that
+        # quietly means something other than what was typed is still wrong.
+        clauses.append("(username LIKE ? ESCAPE '\\' OR user_id = ?)")
+        params.extend((f"%{_escape_like(actor)}%", actor))
     if after:
         clauses.append("created_at >= ?")
         params.append(after)
