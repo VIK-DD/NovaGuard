@@ -1,6 +1,6 @@
 # NovaGuard — Security Audit & Hardening Reference
 
-_Last reviewed: 2026-08-30 · Scope: Discord bot, SQLite/JSON state, backups,
+_Last reviewed: 2026-08-30 (two passes) · Scope: Discord bot, SQLite/JSON state, backups,
 dashboard API, Astro website, Cloudflare Worker and dependency manifests._
 
 ## Verdict
@@ -45,6 +45,48 @@ The lesson worth keeping: every row below is now expected to name the test that
 holds it up. A control with no test is a claim, and this table has already been
 wrong once.
 
+### What the second, deeper pass found
+
+The first pass covered the web/auth layer, the cogs' permission model and the
+recovery path. A second pass went after the surfaces it had only skimmed —
+the GitHub integration, the changelog engine, the React dashboard, CI and
+deployment — with four reviewers working independently and every finding
+re-verified against the code before being accepted.
+
+The two that mattered most were both *injection into a path*:
+
+- **The GitHub token could be steered.** `GitHubAPI.get_json` formats its URL
+  as a string and aiohttp resolves dot segments through yarl, so
+  `/github username:../user` turned `/users/<name>` into `/user` and
+  `/users/<name>/repos` into `/user/repos` — the authenticated-user endpoints,
+  under the operator's `GITHUB_TOKEN`, which lists **private** repositories.
+  `/github` has no permission check and renders publicly, so any member could
+  run it. Every path segment is percent-encoded now, and the
+  repository-scoped commands accept only configured repositories.
+- **The dashboard sent guild ids into API paths unencoded.** TanStack Router
+  percent-decodes a path param, so `/dashboard/g/..%2F..%2Fadmin` arrived as
+  `../../admin` and the browser collapsed it — an authenticated, preflight-free
+  request to an attacker-chosen API path.
+
+And two cross-boundary mistakes:
+
+- **Giveaways were addressed by message id alone**, across a store shared by
+  every guild, so a manager in one server could end and repeatedly reroll a
+  giveaway running in another.
+- **`safeNext` checked its input and returned its output.** `/..//evil.example`
+  is not protocol-relative going in and is coming out, making the login
+  endpoint an open redirect on the site's own domain.
+
+The rest were denial-of-service and disclosure: unclamped text reaching
+Discord's embed limits (a 257-character `/poll` was enough to force an admin
+error digest), a `save_json_file` that shared one scratch filename between
+writers and left state world-readable, an AST cycle that could permanently
+stop the changelog engine, `/ghwatch` publishing the host's configuration to
+anyone, and autocomplete callbacks bypassing the group permission check
+because discord.py never runs `_check_can_run` for suggestions.
+
+Full detail is in the commit messages on `security/audit-fixes`.
+
 ## Threat model
 
 A self-hosted Discord bot on a home Raspberry Pi, exposing a small OAuth-gated
@@ -64,9 +106,9 @@ rather than believed.
 
 | Area | Control | Held up by |
 |------|---------|------------|
-| RCE / shell | No `eval`/`exec` or shell invocation; the bounded rclone call uses an argv list and fixed operation | review + `bandit` in CI |
+| RCE / shell | No `eval`/`exec` or shell invocation; the bounded rclone call uses an argv list and fixed operation | `bandit` in CI (`ci.yml`) |
 | Deserialization | No `pickle`/`yaml.load`/`__import__` of untrusted data | review |
-| SQL injection | 100% parameterized queries (`?` placeholders); the few f-string identifiers come from module constants | review + `bandit` |
+| SQL injection | 100% parameterized queries; the few f-string identifiers come from module constants, each annotated and re-verified | `bandit` in CI, `test_audit_filter.py` |
 | Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs | `test_config_check.py` |
 | Tokens at rest | OAuth tokens Fernet-encrypted (dedicated `WEB_TOKEN_KEY`, client secret as legacy read) | `test_webserver_token_encryption.py` |
 | Session ids | Cookie holds a 256-bit id; DB stores only its SHA-256 hash | `test_webserver.py` |
@@ -85,6 +127,12 @@ rather than believed.
 | AI cost | Input cap + per-user cooldown + global 30/min + 500/day ceiling | `test_ai_settings.py` |
 | Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny | `test_api_security_headers.py` |
 | Errors | Generic to users; full tracebacks only to the configured admin log channel, never to the channel the command came from | `test_error_digest.py` |
+| Outbound requests | Every GitHub path segment is percent-encoded; repository commands accept only configured repositories | `test_github_api_safety.py` |
+| Cross-guild isolation | Giveaway end/reroll match on guild as well as message id; the dashboard scopes every guild lookup | `test_giveaway_scope.py` |
+| Embed limits | Member- and repository-supplied text is clamped, and free-text options declare a maximum length | `test_embed_limits.py` |
+| State files | Atomic writes with a private scratch file, owner-only mode, fsync; settings patches in one transaction | `test_storage_durability.py` |
+| Redirects | `safeNext` re-checks its normalized output, in the Worker and its client mirror | `website-3/worker/index.test.js` |
+| CI permissions | Both workflows declare `contents: read` rather than inheriting the repo default | `.github/workflows/ci.yml` |
 | Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, `npm audit`, Actions pinned to SHA, Dependabot | `.github/workflows/ci.yml` |
 
 ## Layer notes
