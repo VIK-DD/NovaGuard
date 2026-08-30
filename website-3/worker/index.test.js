@@ -1186,3 +1186,37 @@ describe("login rate-limit key", () => {
     );
   });
 });
+
+describe("safeNext normalization", () => {
+  // The prefix guard reads the string as it arrived; `new URL` then rewrites
+  // it. `/..//evil.example` is not `//`-prefixed on the way in, but
+  // normalization pops the empty first segment and hands back the pathname
+  // `//evil.example` - which, resolved against the request URL, is a
+  // protocol-relative redirect to somebody else's origin.
+  const offSite = [
+    "/..//evil.example",
+    "/./..//evil.example",
+    "/a/../..//evil.example",
+    "//evil.example",
+    "/\\evil.example",
+  ];
+
+  for (const probe of offSite) {
+    it(`keeps ${probe} on this origin`, async () => {
+      const response = await worker.fetch(
+        formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: probe }),
+        env,
+      );
+      expect(response.status).toBe(303);
+      expect(new URL(response.headers.get("Location")).origin).toBe("https://novaguard.fun");
+    });
+  }
+
+  it("still honours an ordinary in-site destination", async () => {
+    const response = await worker.fetch(
+      formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: "/updates/2?page=2#top" }),
+      env,
+    );
+    expect(response.headers.get("Location")).toBe("https://novaguard.fun/updates/2?page=2#top");
+  });
+});

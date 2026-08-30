@@ -216,7 +216,18 @@ function safeNext(value) {
     // external redirect when it is passed to `new URL` below.
     const destination = new URL(value, SAFE_NEXT_ORIGIN);
     if (destination.origin !== SAFE_NEXT_ORIGIN) return "/dashboard/";
-    return `${destination.pathname}${destination.search}${destination.hash}`;
+    const path = `${destination.pathname}${destination.search}${destination.hash}`;
+    // Check the OUTPUT, not just the input. The guard above reads the string
+    // as it arrived; this reads what `new URL` made of it, and the two differ.
+    // `/..//evil.example` is not `//`-prefixed, but normalization pops the
+    // empty first segment and yields the pathname `//evil.example` - which the
+    // caller then feeds to `new URL(next, request.url)`, producing a
+    // protocol-relative redirect to another origin. `/./..//x` and
+    // `/a/../..//x` do the same.
+    if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+      return "/dashboard/";
+    }
+    return path;
   } catch {
     return "/dashboard/";
   }
