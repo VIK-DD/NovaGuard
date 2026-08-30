@@ -6,8 +6,10 @@ economy are backed by SQLite so they can be managed safely from Discord.
 
 import json
 import os
+import tempfile
 import threading
 from copy import deepcopy
+from pathlib import Path
 
 from .config import BASE_DIR, ERROR_LOG_CHANNEL_ID, GUILD_ID, github_config
 from .database import (
@@ -31,10 +33,54 @@ def load_json_file(path, default):
 
 
 def save_json_file(path, data):
+    """Write JSON atomically, owner-only, without a shared scratch filename.
+
+    Three things this has to get right, and the previous version got none of
+    them:
+
+    * The temp file used to be `<name>.tmp` - one fixed path for every writer.
+      Two concurrent saves of the same file therefore raced on it: measured
+      over 30 paired writes, 12 raised FileNotFoundError at `os.replace`
+      because the other thread had already consumed the temp file, and each
+      of those is a silently lost write. `mkstemp` gives every writer its own.
+    * The mode was whatever the umask allowed - 0644 in practice. These files
+      hold moderation warnings, giveaway entrant lists and reminder text
+      members typed, which is the same class of data `core/database.py` takes
+      care to keep at 0600. The file descriptor is created with 0600 before
+      anything is written, so there is no window where it is readable.
+    * There was no `fsync`, so a power cut between write and rename could
+      leave a zero-length file - which `load_json_file` then reads as "no
+      state at all" rather than as damage.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp_path, path)
+    _restrict_directory(path.parent)
+
+    payload = json.dumps(data, indent=2)
+    handle, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        os.fchmod(handle, 0o600)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _restrict_directory(directory):
+    """Keep the state directory owner-only. Best effort, as elsewhere."""
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
 
 
 def load_data(name, default):

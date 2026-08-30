@@ -600,8 +600,41 @@ def set_guild_setting(guild_id, key, value):
 
 
 def update_guild_settings_db(guild_id, **changes):
-    for key, value in changes.items():
-        set_guild_setting(guild_id, key, value)
+    """Apply a whole settings patch in one transaction.
+
+    The dashboard's config PUT builds a complete `changes` dict and hands it
+    over as a unit. Writing it key by key - each with its own connection and
+    its own transaction, as this used to - meant a failure part way through
+    (disk full, a lock held past the 30s timeout, the process killed) left a
+    prefix of the patch committed and the rest not. The cache is invalidated
+    once at the end, so a reader in between could also see a half-applied
+    configuration. One transaction removes both.
+    """
+    init_database()
+    guild_id = str(guild_id)
+    if not changes:
+        return get_guild_settings_db(guild_id)
+
+    now = utc_now()
+    with _LOCK, connect() as connection:
+        for key, value in changes.items():
+            if value is None:
+                connection.execute(
+                    "DELETE FROM guild_settings WHERE guild_id = ? AND key = ?",
+                    (guild_id, key),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO guild_settings (guild_id, key, value, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(guild_id, key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (guild_id, key, encode_value(value), now),
+                )
+        connection.commit()
     return get_guild_settings_db(guild_id)
 
 
