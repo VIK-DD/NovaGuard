@@ -48,10 +48,17 @@ async def send_error_digest(bot, title, error, context=None, interaction=None):
     loop = asyncio.get_running_loop()
     cache = getattr(bot, "_error_digest_cache", {})
     signature = f"{title}:{type(error).__name__}:{str(error)[:160]}:{context or ''}"
-    last_sent = cache.get(signature, 0)
-    if loop.time() - last_sent < DIGEST_DEDUP_SECONDS:
+    # `None`, not `0`, for "never sent". loop.time() is a monotonic clock
+    # counting from the machine's boot, so on a host that started a minute ago
+    # it reads about 60 - and `60 - 0 < 120` made every first digest look like
+    # a duplicate of one that never happened. The window it silently swallowed
+    # was the first DIGEST_DEDUP_SECONDS of uptime: precisely the minutes after
+    # a reboot or a bad deploy when an error most needs to be heard.
+    last_sent = cache.get(signature)
+    now = loop.time()
+    if last_sent is not None and now - last_sent < DIGEST_DEDUP_SECONDS:
         return False
-    cache[signature] = loop.time()
+    cache[signature] = now
     bot._error_digest_cache = cache
 
     embed = make_embed(

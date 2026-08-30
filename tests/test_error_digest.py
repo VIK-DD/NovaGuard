@@ -16,6 +16,7 @@ import asyncio
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -135,10 +136,76 @@ class DigestDestinationTests(unittest.TestCase):
         self.assertEqual(self.public_channel.sent, [])
 
 
+class FreshBootAsyncio:
+    """`asyncio` as seen by error_digest, with the clock of a booted machine.
+
+    loop.time() is monotonic from boot, so on a host that started a minute ago
+    it reads about 60 rather than the tens of thousands a long-running machine
+    reports. Everything else is delegated to the real module.
+    """
+
+    def __init__(self, uptime_seconds, real=asyncio):
+        self._uptime = uptime_seconds
+        self._real = real
+
+    def get_running_loop(self):
+        return SimpleNamespace(time=lambda: self._uptime)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+class FreshBootTests(unittest.TestCase):
+    """The first error after a reboot is the one that must not be swallowed.
+
+    The dedupe cache read `cache.get(signature, 0)`, and `0` is not a
+    plausible "never sent" value for a monotonic clock: on a machine up for
+    less than DIGEST_DEDUP_SECONDS, `now - 0` is below the window, so every
+    first digest was discarded as a duplicate of a message that never existed.
+    It went unnoticed because a developer's machine has hours of uptime; CI
+    runs on a VM that booted seconds ago, which is what caught it.
+    """
+
+    def setUp(self):
+        self.admin_channel = RecordingChannel("bot-errors")
+
+    def _send_with_uptime(self, uptime_seconds):
+        async def resolve(bot, guild=None):
+            return self.admin_channel
+
+        with (
+            mock.patch.object(error_digest, "resolve_error_channel", resolve),
+            mock.patch.object(error_digest, "asyncio", FreshBootAsyncio(uptime_seconds)),
+        ):
+            return asyncio.run(
+                error_digest.send_error_digest(
+                    FakeBot(), "Slash Command Error", _error_with_traceback()
+                )
+            )
+
+    def test_a_digest_sends_on_a_machine_that_just_booted(self):
+        self.assertTrue(self._send_with_uptime(30.0))
+        self.assertEqual(len(self.admin_channel.sent), 1)
+
+    def test_a_digest_sends_at_the_exact_edge_of_the_dedupe_window(self):
+        self.assertTrue(self._send_with_uptime(error_digest.DIGEST_DEDUP_SECONDS - 1))
+        self.assertEqual(len(self.admin_channel.sent), 1)
+
+    def test_a_digest_sends_one_second_into_uptime(self):
+        self.assertTrue(self._send_with_uptime(1.0))
+        self.assertEqual(len(self.admin_channel.sent), 1)
+
+    def test_a_digest_still_sends_on_a_long_running_host(self):
+        self.assertTrue(self._send_with_uptime(4_000_000.0))
+        self.assertEqual(len(self.admin_channel.sent), 1)
+
+
 class DigestDedupeTests(unittest.TestCase):
-    """The dedupe window survived the rename; it is what keeps a loop quiet."""
+    """The dedupe window still works; it is what keeps an error loop quiet."""
 
     def test_the_same_error_twice_in_a_row_sends_once(self):
+        # Deliberately runs on the real clock: whatever the host's uptime, the
+        # first call must send and the second must not.
         admin_channel = RecordingChannel("bot-errors")
 
         async def resolve(bot, guild=None):
@@ -160,6 +227,48 @@ class DigestDedupeTests(unittest.TestCase):
         self.assertTrue(first)
         self.assertFalse(second)
         self.assertEqual(len(admin_channel.sent), 1)
+
+
+class TheSameDefectElsewhereTests(unittest.TestCase):
+    """Three more places used 0 as "never happened" against a monotonic clock.
+
+    The shape is what matters, so these assert the sentinel rather than the
+    behaviour: a future edit that puts `0` back would restore a silent alert
+    blackout, and nothing else in the suite would notice.
+    """
+
+    def test_the_gateway_reconnect_alert_starts_from_a_real_sentinel(self):
+        # cogs/system.py held `last_reconnect_alert_at = 0` against a 900s
+        # cooldown, so the first reconnect alert was swallowed for fifteen
+        # minutes after every restart - exactly when a flaky gateway matters.
+        import inspect
+
+        from cogs import system as system_cog
+
+        source = inspect.getsource(system_cog.System.__init__)
+        self.assertIn("self.last_reconnect_alert_at = None", source)
+        self.assertNotIn("self.last_reconnect_alert_at = 0", source)
+
+    def test_the_button_cooldowns_do_not_default_to_zero(self):
+        # Two seconds, so the practical cost was one spurious "slow down" in
+        # the first moments of uptime - negligible, and the same wrong shape.
+        import inspect
+
+        from cogs import giveaways as giveaways_cog
+        from cogs import roles as roles_cog
+
+        for label, callback in (
+            ("role panel button", roles_cog.RoleButton.callback),
+            ("giveaway button", giveaways_cog.GiveawayButton.callback),
+        ):
+            with self.subTest(button=label):
+                source = inspect.getsource(callback)
+                self.assertIn("_cooldown.get(", source, f"{label} no longer has a cooldown")
+                self.assertNotIn(
+                    ", 0.0)",
+                    source,
+                    f"{label} still reads a fresh boot as a click that just happened",
+                )
 
 
 if __name__ == "__main__":

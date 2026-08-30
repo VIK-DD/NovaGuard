@@ -78,7 +78,11 @@ class GiveawayButton(
     async def callback(self, interaction: discord.Interaction):
         now = time.monotonic()
         key = (self.message_id, interaction.user.id)
-        if now - self._cooldown.get(key, 0.0) < self._COOLDOWN:
+        # `.get(...)` without a 0.0 default, for the reason in
+        # core/error_digest.py: a monotonic clock near zero is a freshly
+        # booted host, not a click that just happened.
+        last_click = self._cooldown.get(key)
+        if last_click is not None and now - last_click < self._COOLDOWN:
             return await interaction.response.send_message("⏳ Slow down a moment.", ephemeral=True)
         self._cooldown[key] = now
         if len(self._cooldown) > 4000:
