@@ -38,6 +38,22 @@ export function inviteUrl(): string {
   return `${API_BASE}/api/v1/invite`;
 }
 
+/**
+ * A path segment built from data, encoded so it cannot become several.
+ *
+ * `guildId` comes from the route (`/dashboard/g/$guildId`) and TanStack Router
+ * percent-DECODES a path param, so `..%2F..%2Fadmin` arrives as
+ * `../../admin`. Interpolated raw into `/guilds/${id}/config` the browser then
+ * collapses the dot segments and the authenticated request goes somewhere
+ * else entirely - and a trailing `?` turns the rest of the template into a
+ * query string, making the whole API path attacker-chosen. The requests carry
+ * `credentials: "include"` and no custom header, so no preflight stands in the
+ * way. moduleCatalog.ts already encodes; the API path builders did not.
+ */
+export function pathSegment(value: string | number): string {
+  return encodeURIComponent(String(value));
+}
+
 export async function apiFetch<T>(
   path: string,
   schema: ResponseParser<T>,

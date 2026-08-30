@@ -1,6 +1,7 @@
 """🎫 Tickets category — private support threads opened with one button."""
 
 import asyncio
+import time
 
 import discord
 from discord import app_commands
@@ -94,6 +95,20 @@ class TicketOpenButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"ticket:open",
 ):
+    """The 🎫 button. One private thread per member, and not on demand.
+
+    Both guards below exist because this button creates a Discord thread AND
+    pings the staff role on every press. Without them a member could script
+    parallel clicks and get one thread and one staff ping per click - the
+    check-then-create pair has two awaits between them, so the "you already
+    have an open ticket" test is a TOCTOU that concurrency walks straight
+    through. The sibling buttons (giveaway entry, role panel) already carry a
+    cooldown; this one did not.
+    """
+
+    _cooldown: dict[int, float] = {}  # user_id -> last press
+    _COOLDOWN = 15.0
+
     def __init__(self):
         super().__init__(
             discord.ui.Button(
@@ -113,6 +128,17 @@ class TicketOpenButton(
         parent = interaction.channel
         if guild is None or not isinstance(parent, discord.TextChannel):
             return
+
+        now = time.monotonic()
+        last_press = self._cooldown.get(interaction.user.id)
+        if last_press is not None and now - last_press < self._COOLDOWN:
+            return await interaction.response.send_message(
+                "⏳ You just opened a ticket — give the staff a moment.", ephemeral=True
+            )
+        self._cooldown[interaction.user.id] = now
+        if len(self._cooldown) > 4000:
+            for user_id in [u for u, t in self._cooldown.items() if now - t > 300]:
+                self._cooldown.pop(user_id, None)
 
         settings = get_guild_settings(guild.id)
         staff_role_id = settings.get("ticket_staff_role")

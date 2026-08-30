@@ -1,5 +1,5 @@
 import { infiniteQueryOptions, useInfiniteQuery } from "@tanstack/react-query";
-import { apiFetch } from "../../lib/api/client";
+import { apiFetch, pathSegment } from "../../lib/api/client";
 import { AuditSchema } from "../../lib/api/schemas";
 
 export interface AuditFilters {
@@ -16,7 +16,7 @@ function auditPath(guildId: string, filters: AuditFilters, cursor?: number) {
   if (filters.after) params.set("after", filters.after);
   if (filters.before) params.set("before", filters.before);
   if (cursor) params.set("cursor", String(cursor));
-  return `/guilds/${guildId}/audit?${params}`;
+  return `/guilds/${pathSegment(guildId)}/audit?${params}`;
 }
 
 export function useAudit(guildId: string, filters: AuditFilters = {}) {

@@ -387,9 +387,19 @@ class Giveaways(commands.Cog):
                 break
         return choices
 
+    # discord.py's _invoke_autocomplete never calls _check_can_run, so a
+    # group's interaction_check does not run here. Without this, an
+    # Integrations override that opens the command to @everyone still
+    # leaks the suggestions even though the command itself is refused.
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def active_giveaway_autocomplete(self, interaction: discord.Interaction, current: str):
         return await self._giveaway_choices(interaction, current, ended=False)
 
+    # discord.py's _invoke_autocomplete never calls _check_can_run, so a
+    # group's interaction_check does not run here. Without this, an
+    # Integrations override that opens the command to @everyone still
+    # leaks the suggestions even though the command itself is refused.
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def ended_giveaway_autocomplete(self, interaction: discord.Interaction, current: str):
         return await self._giveaway_choices(interaction, current, ended=True)
 

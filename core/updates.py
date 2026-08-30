@@ -192,7 +192,15 @@ def read_tracked_files():
     contents = {}
     for file_path in tracked_files():
         key = str(file_path.relative_to(BASE_DIR))
-        contents[key] = file_path.read_text(encoding="utf-8")
+        try:
+            contents[key] = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            # One unreadable tracked file used to raise out of here and take
+            # the whole changelog engine with it - every startup, every
+            # /updates preview - over a file whose contents only feed a
+            # fingerprint. A latin-1 byte in anything matching the website
+            # globs was enough.
+            log.warning("Skipping unreadable tracked file %s: %s", key, type(error).__name__)
     return contents
 
 
@@ -265,15 +273,31 @@ def extract_group_names(tree):
 
     resolved = {}
 
-    def resolve(group_var):
+    def resolve(group_var, seen=frozenset()):
+        """The full `/parent child` name for a group variable.
+
+        `seen` breaks cycles. The memo below is only written after the
+        recursive call returns, so it could never terminate a loop on its own:
+        `x = Group(name="x", parent=x)` - or any two groups naming each other -
+        recursed until RecursionError, which `extract_command_sources` does not
+        catch (it catches SyntaxError only). That escapes through
+        prepare_update_payload, so a one-token typo in any tracked file
+        permanently stops deploy announcements, /updates preview and the public
+        release feed, with no symptom pointing at the cause.
+
+        A cycle resolves to the group's own bare name: wrong, but local, and
+        the file it came from will not compile anyway.
+        """
         if group_var in resolved:
             return resolved[group_var]
         group = raw_groups.get(group_var)
         if not group:
             return group_var
+        if group_var in seen:
+            return group["name"]
         parent = group.get("parent")
         if parent and parent in raw_groups:
-            resolved[group_var] = f"{resolve(parent)} {group['name']}"
+            resolved[group_var] = f"{resolve(parent, seen | {group_var})} {group['name']}"
         else:
             resolved[group_var] = group["name"]
         return resolved[group_var]
@@ -301,7 +325,11 @@ def extract_command_sources(source):
         return {}
     try:
         tree = ast.parse(source)
-    except SyntaxError:
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        # A file this module cannot parse is a file with no commands to
+        # report, not a reason to take the whole changelog engine down with
+        # it. ast.parse raises ValueError on a null byte and RecursionError on
+        # a deeply nested expression.
         return {}
 
     group_names = extract_group_names(tree)

@@ -224,7 +224,15 @@ function GuildHero({ data }: { data: Dashboard }) {
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             {data.guild.icon ? (
-              <img src={data.guild.icon} alt="" className="h-12 w-12 rounded-full border border-line" />
+              // The hash, not a URL. GuildPicker and Shell both read this
+              // field as a Discord icon hash and build the CDN URL from it;
+              // this was the one place in the SPA where API text became a URL
+              // wholesale, and the schema puts no format on it.
+              <img
+                src={`https://cdn.discordapp.com/icons/${encodeURIComponent(data.guild.id)}/${encodeURIComponent(data.guild.icon)}.png?size=64`}
+                alt=""
+                className="h-12 w-12 rounded-full border border-line"
+              />
             ) : (
               <span className="font-display grid h-12 w-12 place-items-center rounded-full border border-line text-lg">
                 {data.guild.name.charAt(0).toUpperCase()}

@@ -235,6 +235,11 @@ class AutoMod(commands.Cog):
         brand_footer(embed, "AutoMod")
         await respond(interaction, embed, ephemeral=True)
 
+    # discord.py's _invoke_autocomplete never calls _check_can_run, so a
+    # group's interaction_check does not run here. Without this, an
+    # Integrations override that opens the command to @everyone still
+    # leaks the suggestions even though the command itself is refused.
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def badword_autocomplete(self, interaction: discord.Interaction, current: str):
         config = get_automod_config(interaction.guild_id)
         current = current.lower()

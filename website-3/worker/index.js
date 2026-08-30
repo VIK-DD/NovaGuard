@@ -973,7 +973,12 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    // Single quotes too. Every current call site puts the value in a
+    // double-quoted attribute or a text node, so this changes nothing today -
+    // but a general-purpose escaper that silently fails inside a
+    // single-quoted attribute is a trap for whoever writes the next template.
+    .replace(/'/g, "&#39;");
 }
 
 async function serveMaintenancePage(request, env, state) {
