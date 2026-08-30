@@ -197,14 +197,31 @@ class Giveaways(commands.Cog):
                 raise
         return entry
 
-    async def finish_giveaway(self, message_id):
+    async def finish_giveaway(self, message_id, *, guild_id=None):
         """End a giveaway by message id. Draws and saves under the store lock
         (re-reading the file so a racing button click is never lost), then does
         the slow Discord sends outside it. Returns the entry, or None when no
-        active giveaway matched."""
+        active giveaway matched.
+
+        `guild_id` scopes the lookup and every caller that has one passes it.
+        The store is one file for every guild the bot serves, and a message id
+        is public to anyone who can see the channel - so matching on the id
+        alone let a manager in one server end, and repeatedly reroll, a
+        giveaway running in another, with the result announced in the victim's
+        own channel. The dashboard path already scoped by guild
+        (`_giveaway_for_guild` in core/webserver.py); the slash commands did
+        not."""
         async with _STORE_LOCK:
             entries = await load_giveaways_async()
-            entry = next((g for g in entries if str(g["message_id"]) == str(message_id)), None)
+            entry = next(
+                (
+                    g
+                    for g in entries
+                    if str(g["message_id"]) == str(message_id)
+                    and (guild_id is None or str(g.get("guild_id")) == str(guild_id))
+                ),
+                None,
+            )
             if entry is None or entry.get("ended"):
                 return None
             entry["ended"] = True
@@ -230,21 +247,33 @@ class Giveaways(commands.Cog):
             pass
         return entry
 
-    async def reroll_giveaway(self, message_id):
-        """Draw and persist replacement winners, then announce in the original channel."""
+    async def reroll_giveaway(self, message_id, *, guild_id=None):
+        """Draw and persist replacement winners, then announce in the original channel.
+
+        Scoped by guild for the reason in `finish_giveaway`."""
         async with _STORE_LOCK:
             entries = await load_giveaways_async()
-            entry = next((g for g in entries if str(g["message_id"]) == str(message_id)), None)
+            entry = next(
+                (
+                    g
+                    for g in entries
+                    if str(g["message_id"]) == str(message_id)
+                    and (guild_id is None or str(g.get("guild_id")) == str(guild_id))
+                ),
+                None,
+            )
             if entry is None or not entry.get("ended"):
                 return None, None, False
             entrants = entry.get("entrants", [])
             if not entrants:
                 return entry, [], False
-            winner_ids = draw_winners(
-                entrants,
-                entry["winners"],
-                exclude=entry.get("winner_ids", []),
-            )
+            # Everyone already drawn, not merely the previous round. Replacing
+            # the exclusion each time meant repeated rerolls kept putting the
+            # same small pool back in play, so a determined roller could keep
+            # going until a chosen account came up.
+            already_won = list(dict.fromkeys(entry.get("past_winner_ids", []) + entry.get("winner_ids", [])))
+            winner_ids = draw_winners(entrants, entry["winners"], exclude=already_won)
+            entry["past_winner_ids"] = already_won
             entry["winner_ids"] = winner_ids
             await save_giveaways_async(entries)
 
@@ -369,7 +398,7 @@ class Giveaways(commands.Cog):
     @app_commands.autocomplete(message_id=active_giveaway_autocomplete)
     async def giveaway_end(self, interaction: discord.Interaction, message_id: str):
         await defer_interaction(interaction, ephemeral=True)
-        entry = await self.finish_giveaway(message_id.strip())
+        entry = await self.finish_giveaway(message_id.strip(), guild_id=interaction.guild_id)
         if entry is None:
             embed = make_embed("🔍 Not found", "No active giveaway with that message ID.", color=Palette.WARNING)
             brand_footer(embed)
@@ -384,7 +413,9 @@ class Giveaways(commands.Cog):
     @app_commands.autocomplete(message_id=ended_giveaway_autocomplete)
     async def giveaway_reroll(self, interaction: discord.Interaction, message_id: str):
         await defer_interaction(interaction, ephemeral=True)
-        entry, winner_ids, announced = await self.reroll_giveaway(message_id.strip())
+        entry, winner_ids, announced = await self.reroll_giveaway(
+            message_id.strip(), guild_id=interaction.guild_id
+        )
 
         if entry is None:
             embed = make_embed("🔍 Not found", "No **ended** giveaway with that message ID.", color=Palette.WARNING)

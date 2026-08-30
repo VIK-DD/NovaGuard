@@ -1665,7 +1665,7 @@ class WebServer:
             raise ApiError(404, "No active giveaway with that id.", code="giveaway_not_found")
         try:
             result = await asyncio.wait_for(
-                self._giveaway_cog().finish_giveaway(message_id), timeout=15
+                self._giveaway_cog().finish_giveaway(message_id, guild_id=guild.id), timeout=15
             )
         except (asyncio.TimeoutError, OSError, TypeError, ValueError) as error:
             raise ApiError(
@@ -1691,7 +1691,7 @@ class WebServer:
             raise ApiError(404, "No ended giveaway with that id.", code="giveaway_not_found")
         try:
             result, winner_ids, announced = await asyncio.wait_for(
-                self._giveaway_cog().reroll_giveaway(message_id), timeout=15
+                self._giveaway_cog().reroll_giveaway(message_id, guild_id=guild.id), timeout=15
             )
         except (asyncio.TimeoutError, OSError, TypeError, ValueError) as error:
             raise ApiError(
