@@ -15,6 +15,7 @@ from .github_insights import (
 )
 from .theme import Palette, pick_embed_color
 from .utils import (
+    clamp,
     build_link_view,
     first_line,
     format_github_time,
@@ -143,7 +144,7 @@ def build_repo_embed(repo, languages, open_prs, open_issues, workflow_run, relea
         name="⚙️ Automation",
         value=(
             f"CI: `{workflow_status_text(workflow_run)}`\n"
-            f"Release: `{release.get('tag_name', 'None') if release else 'None'}`\n"
+            f"Release: `{clamp(release.get('tag_name', 'None'), 100) if release else 'None'}`\n"
             f"Visibility: `{('Private' if repo.get('private') else 'Public')}`"
         ),
         inline=True,
@@ -258,7 +259,7 @@ def build_health_embed(repo, commits, workflow_run, release, branch_data, open_p
         value=(
             f"CI: `{workflow_status_text(workflow_run)}`\n"
             f"Branch protection: `{('On' if branch_data and branch_data.get('protected') else 'Off')}`\n"
-            f"Release: `{release.get('tag_name', 'None') if release else 'None'}`"
+            f"Release: `{clamp(release.get('tag_name', 'None'), 100) if release else 'None'}`"
         ),
         inline=False,
     )

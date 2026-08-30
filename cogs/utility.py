@@ -218,7 +218,7 @@ class Utility(commands.Cog):
     async def poll(
         self,
         interaction: discord.Interaction,
-        question: str,
+        question: app_commands.Range[str, 1, 200],
         option1: str,
         option2: str,
         option3: str | None = None,
@@ -232,7 +232,12 @@ class Utility(commands.Cog):
 
     @app_commands.command(name="remind", description="Set a reminder (e.g. 10m, 1h30m, 2d)")
     @app_commands.describe(duration="When? e.g. 10m, 1h30m, 2d", message="What should I remind you about?")
-    async def remind(self, interaction: discord.Interaction, duration: str, message: str):
+    async def remind(
+        self,
+        interaction: discord.Interaction,
+        duration: app_commands.Range[str, 1, 100],
+        message: app_commands.Range[str, 1, 500],
+    ):
         delta = parse_duration(duration)
         if not delta:
             return await respond(
@@ -341,7 +346,7 @@ class Utility(commands.Cog):
 
     @app_commands.command(name="choose", description="Can't decide? Let fate pick for you")
     @app_commands.describe(options="Options separated by commas, e.g. pizza, sushi, tacos")
-    async def choose(self, interaction: discord.Interaction, options: str):
+    async def choose(self, interaction: discord.Interaction, options: app_commands.Range[str, 1, 500]):
         choices = [item.strip() for item in options.split(",") if item.strip()]
         if len(choices) < 2:
             embed = make_embed("🤔 Give me options", "I need at least two options separated by commas.", color=Palette.WARNING)

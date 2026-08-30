@@ -45,6 +45,31 @@ def truncate(text, limit=240):
     return textwrap.shorten(" ".join(text.split()), width=limit, placeholder="...")
 
 
+# Discord's own embed limits. discord.py does not enforce them locally, so an
+# oversized value is only refused by the API - as a 400 that reaches the global
+# command error handler and files an error digest. Clamping is therefore not
+# cosmetic: without it any member who can put text in a command option, and
+# any GitHub contributor whose commit the watcher renders, can decide whether
+# the bot's own reply succeeds.
+EMBED_TITLE_LIMIT = 256
+EMBED_DESCRIPTION_LIMIT = 4096
+EMBED_FIELD_VALUE_LIMIT = 1024
+EMBED_FIELD_NAME_LIMIT = 256
+
+
+def clamp(text, limit):
+    """Hard-cut `text` to `limit` characters, marking the cut when one happens.
+
+    Unlike `truncate` this preserves newlines and does not collapse
+    whitespace, so it suits an assembled block - a list of lines, a code
+    block - where `truncate`'s word-shortening would destroy the shape.
+    """
+    value = "" if text is None else str(text)
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 1)] + "…"
+
+
 def first_line(text, fallback="No details available."):
     if not text:
         return fallback

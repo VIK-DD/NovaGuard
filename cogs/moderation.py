@@ -166,6 +166,13 @@ class Moderation(commands.Cog):
     @app_commands.checks.bot_has_permissions(moderate_members=True)
     @app_commands.guild_only()
     async def untimeout(self, interaction: discord.Interaction, member: discord.Member):
+        # /kick, /ban and /timeout all check this first. Discord enforces only
+        # the *bot's* position on a timeout call, not the actor's - so without
+        # it a junior moderator who cannot time someone out can still free
+        # them, undoing a senior's action.
+        if not can_act_on(interaction.user, member):
+            return await hierarchy_error(interaction)
+
         await defer_interaction(interaction)
         await member.timeout(None, reason=f"Timeout removed by {interaction.user}")
         embed = make_embed("🔊 Timeout removed", f"**{member.display_name}** can speak again.", color=Palette.SUCCESS)
@@ -197,8 +204,8 @@ class Moderation(commands.Cog):
         self,
         interaction: discord.Interaction,
         channel: discord.TextChannel,
-        title: str,
-        message: str,
+        title: app_commands.Range[str, 1, 200],
+        message: app_commands.Range[str, 1, 3000],
     ):
         await defer_interaction(interaction, ephemeral=True)
         embed = make_embed(f"📣 {title}", message.replace("\\n", "\n"), color=Palette.PRIMARY)
@@ -285,7 +292,12 @@ class Moderation(commands.Cog):
 
     @warn.command(name="add", description="Warn a member")
     @app_commands.describe(member="Who gets the warning?", reason="Why?")
-    async def warn_add(self, interaction: discord.Interaction, member: discord.Member, reason: str):
+    async def warn_add(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        reason: app_commands.Range[str, 1, 400],
+    ):
         warns = load_data("warns", {})
         guild_warns = warns.setdefault(str(interaction.guild_id), {})
         user_warns = guild_warns.setdefault(str(member.id), [])
