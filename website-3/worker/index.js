@@ -342,7 +342,7 @@ function retiredGateRedirect(request) {
   );
   headers.append(
     "Set-Cookie",
-    `${CSRF_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Lax`,
+    `${CSRF_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
   );
   return new Response(null, { status, headers });
 }

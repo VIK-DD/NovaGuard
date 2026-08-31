@@ -1350,7 +1350,9 @@ describe("automatic public launch", () => {
       expect(response.headers.get("Location"), path).toBe("https://novaguard.fun/home/");
       expect(response.headers.get("Cache-Control"), path).toBe("no-store");
       expect(response.headers.get("Set-Cookie"), path).toContain("ng_gate=;");
-      expect(response.headers.get("Set-Cookie"), path).toContain("__Host-ng_csrf=;");
+      expect(response.headers.get("Set-Cookie"), path).toContain(
+        "__Host-ng_csrf=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+      );
     }
   });
 
