@@ -8,7 +8,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.database import save_role_panel_record
-from core.role_safety import bot_cannot_manage_reason, role_assignment_error
+from core.role_safety import (
+    bot_cannot_manage_reason,
+    channel_visibility_grants,
+    guild_overwrite_index,
+    role_assignment_error,
+)
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond
 
@@ -214,10 +219,15 @@ class Roles(commands.Cog):
         # interaction.user is the configurer, so their own position is part of
         # the check: Manage Roles lets you assign roles below yourself, and a
         # panel must not become a way around that.
+        overwrite_index = await asyncio.to_thread(guild_overwrite_index, interaction.guild)
         blocked = [
             (role, reason)
             for role in roles
-            if (reason := role_assignment_error(role, interaction.guild, interaction.user))
+            if (
+                reason := role_assignment_error(
+                    role, interaction.guild, interaction.user, overwrite_index=overwrite_index
+                )
+            )
         ]
         if blocked:
             lines = "\n".join(f"• {role.mention} — {reason}" for role, reason in blocked)
@@ -230,7 +240,21 @@ class Roles(commands.Cog):
             brand_footer(embed)
             return await respond(interaction, embed, ephemeral=True)
 
+        # Allowed, but worth saying out loud. A role that opens a private
+        # channel is a normal panel entry; a role that opens one the configurer
+        # forgot about is how #staff-internal ends up readable by everybody.
+        unlocks = []
+        for role in roles:
+            for channel_label in channel_visibility_grants(role, interaction.guild, overwrite_index):
+                unlocks.append(f"{role.mention} → {channel_label}")
+
         embed, view = build_role_panel(title, description, roles)
+        if unlocks:
+            embed.add_field(
+                name="🔓 These roles open private channels",
+                value="\n".join(f"• {line}" for line in unlocks[:10])[:1024],
+                inline=False,
+            )
         message = await respond(interaction, embed, view=view)
         if message is None:
             try:

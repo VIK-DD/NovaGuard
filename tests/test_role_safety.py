@@ -21,7 +21,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.role_safety import (  # noqa: E402
     DANGEROUS_PERMISSION_NAMES,
+    UNKNOWN_ACTOR,
     bot_cannot_manage_reason,
+    channel_overwrite_risk,
+    channel_visibility_grants,
+    guild_overwrite_index,
     role_assignment_error,
     role_is_self_assignable,
     role_permission_risk,
@@ -39,7 +43,11 @@ class Permissions:
 
 
 class Role:
+    _next_id = 1000
+
     def __init__(self, name, position, *, managed=False, default=False, **permissions):
+        Role._next_id += 1
+        self.id = Role._next_id
         self.name = name
         self.position = position
         self.managed = managed
@@ -212,6 +220,158 @@ class MechanicalVersusPolicyTests(unittest.TestCase):
         # through.
         for role in (ABOVE_BOT, BOOSTER, EVERYONE, None):
             self.assertIsNotNone(role_assignment_error(role, GUILD))
+
+
+# ── channel permission overwrites ────────────────────────────────────
+#
+# `role.permissions` is the guild-wide bitfield. Discord also lets a *channel*
+# grant a permission to a role that the role does not hold server-wide, and
+# nothing in this project ever read one - so a role whose permissions integer
+# is 0 could be Manage Messages in #general and still be handed out by a panel.
+
+
+class Overwrite:
+    """discord.PermissionOverwrite: True, False, or None for "not set"."""
+
+    def __init__(self, **states):
+        self._states = states
+
+    def __getattr__(self, name):
+        return self._states.get(name)
+
+
+class Channel:
+    def __init__(self, name, overwrites):
+        self.name = name
+        self.overwrites = overwrites
+
+
+class GuildWithChannels(Guild):
+    def __init__(self, bot_top_role, channels, everyone=None, owner_id=999):
+        super().__init__(bot_top_role, owner_id=owner_id)
+        self.channels = channels
+        self.default_role = everyone if everyone is not None else Role("@everyone", 0, default=True)
+
+
+class ChannelOverwriteTests(unittest.TestCase):
+    """The escalation the guild-wide bitfield cannot see."""
+
+    def test_a_role_with_no_guild_permissions_is_refused_for_an_elevated_overwrite(self):
+        sneaky = Role("Helper", 15)  # permissions integer 0
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("general", {sneaky: Overwrite(manage_messages=True)})],
+            everyone=everyone,
+        )
+        self.assertEqual(role_permission_risk(sneaky), [])  # invisible guild-side
+        refusal = role_assignment_error(sneaky, guild)
+        self.assertIsNotNone(refusal)
+        self.assertIn("channel overwrites", refusal)
+        self.assertIn("#general:manage_messages", refusal)
+        self.assertFalse(role_is_self_assignable(sneaky, guild))
+
+    def test_visibility_alone_is_reported_but_never_refused(self):
+        # "Press this button for #valorant" is the feature, not an escalation.
+        hobby = Role("Valorant", 15)
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("valorant", {hobby: Overwrite(view_channel=True),
+                                  everyone: Overwrite(view_channel=False)})],
+            everyone=everyone,
+        )
+        self.assertIsNone(role_assignment_error(hobby, guild))
+        self.assertEqual(channel_visibility_grants(hobby, guild), ["#valorant"])
+
+    def test_a_permission_everyone_already_has_is_not_a_privilege(self):
+        role = Role("Chatty", 15)
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("open", {role: Overwrite(view_channel=True),
+                              everyone: Overwrite(view_channel=True)})],
+            everyone=everyone,
+        )
+        self.assertEqual(channel_visibility_grants(role, guild), [])
+        self.assertIsNone(role_assignment_error(role, guild))
+
+    def test_a_permission_everyone_holds_guild_wide_is_not_a_privilege(self):
+        role = Role("Chatty", 15)
+        everyone = Role("@everyone", 0, default=True, view_channel=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("open", {role: Overwrite(view_channel=True)})],
+            everyone=everyone,
+        )
+        self.assertEqual(channel_visibility_grants(role, guild), [])
+
+    def test_a_denied_overwrite_grants_nothing(self):
+        role = Role("Muted", 15)
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("general", {role: Overwrite(manage_messages=False, view_channel=False)})],
+            everyone=everyone,
+        )
+        self.assertEqual(channel_overwrite_risk(role, guild), [])
+        self.assertIsNone(role_assignment_error(role, guild))
+
+    def test_member_overwrites_are_not_role_grants(self):
+        # An overwrite naming one person is not something anyone can press a
+        # button to obtain, so it is not this module's business.
+        role = Role("Helper", 15)
+        person = Member(role, ident=4242)
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("general", {person: Overwrite(manage_messages=True)})],
+            everyone=everyone,
+        )
+        self.assertEqual(guild_overwrite_index(guild), {})
+
+    def test_a_category_overwrite_counts_like_any_other_channel(self):
+        role = Role("Helper", 15)
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("Staff Area", {role: Overwrite(manage_threads=True)})],
+            everyone=everyone,
+        )
+        self.assertIn("#Staff Area:manage_threads", channel_overwrite_risk(role, guild))
+
+    def test_a_guild_without_channels_still_answers(self):
+        # Test doubles and uncached guilds both look like this; it must not raise.
+        self.assertIsNone(role_assignment_error(ORDINARY, GUILD))
+        self.assertEqual(guild_overwrite_index(GUILD), {})
+
+    def test_the_index_is_reusable_across_roles(self):
+        one = Role("One", 15)
+        two = Role("Two", 16)
+        everyone = Role("@everyone", 0, default=True)
+        guild = GuildWithChannels(
+            BOT_TOP,
+            [Channel("general", {one: Overwrite(manage_webhooks=True),
+                                 two: Overwrite(view_channel=True)})],
+            everyone=everyone,
+        )
+        index = guild_overwrite_index(guild)
+        self.assertIsNotNone(role_assignment_error(one, guild, overwrite_index=index))
+        self.assertIsNone(role_assignment_error(two, guild, overwrite_index=index))
+
+
+class UnknownActorTests(unittest.TestCase):
+    """A configurer we could not resolve is not a configurer we may ignore."""
+
+    def test_an_unresolved_actor_is_refused_rather_than_skipped(self):
+        refusal = role_assignment_error(ORDINARY, GUILD, UNKNOWN_ACTOR)
+        self.assertIsNotNone(refusal)
+        self.assertIn("could not confirm", refusal)
+
+    def test_no_actor_at_all_still_means_no_hierarchy_question(self):
+        # The role-panel button: the presser is not the configurer, and asking
+        # about their position would refuse ordinary members an ordinary role.
+        self.assertIsNone(role_assignment_error(ORDINARY, GUILD, None))
 
 
 if __name__ == "__main__":

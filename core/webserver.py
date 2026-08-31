@@ -75,7 +75,12 @@ from .maintenance import (
     verify_preview_code,
 )
 from .release_versions import current_project_release, public_release_label
-from .role_safety import role_assignment_error
+from .role_safety import (
+    UNKNOWN_ACTOR,
+    channel_visibility_grants,
+    guild_overwrite_index,
+    role_assignment_error,
+)
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
@@ -715,20 +720,41 @@ class WebServer:
             raise ApiError(403, f"You need {label} on that guild.", code="forbidden")
 
     @staticmethod
-    def _actor_member(guild, entry):
-        """The dashboard user as a guild Member, when the bot can see them.
+    async def _actor_member(guild, entry):
+        """The dashboard user as a guild Member, for the hierarchy check.
 
         Role hierarchy is a position, and OAuth only reports a permission
         bitfield - so the member object is the only place the configurer's own
-        rank can be read. None when they are not cached, and role_safety then
-        falls back to the permission checks alone.
+        rank can be read.
+
+        Returns `role_safety.UNKNOWN_ACTOR`, never None, when they cannot be
+        resolved. Returning None said "no configurer applies here", which is
+        true at a role-panel button and false here, and `_actor_outranks`
+        answered it by skipping the check - so a cache miss silently removed
+        the hierarchy rule instead of enforcing it. One uncached member is
+        worth one API call before giving up on the question.
         """
         try:
             user_id = int(entry["user"]["id"])
         except (KeyError, TypeError, ValueError):
-            return None
+            return UNKNOWN_ACTOR
+
         getter = getattr(guild, "get_member", None)
-        return getter(user_id) if callable(getter) else None
+        member = getter(user_id) if callable(getter) else None
+        if member is not None:
+            return member
+
+        fetcher = getattr(guild, "fetch_member", None)
+        if not callable(fetcher):
+            return UNKNOWN_ACTOR
+        try:
+            fetched = await asyncio.wait_for(fetcher(user_id), timeout=5)
+        except Exception:
+            # Not in the guild any more, rate limited, or Discord is slow.
+            # Any of those means the same thing here: we do not know their rank.
+            log.info("Could not resolve dashboard actor %s in guild %s", user_id, guild.id)
+            return UNKNOWN_ACTOR
+        return fetched if fetched is not None else UNKNOWN_ACTOR
 
     async def _authorized_guild(self, request):
         sid, entry = await self._require_session(request)
@@ -1129,6 +1155,8 @@ class WebServer:
                     for item in shop.catalog()
                 ],
             }
+        # One pass over the guild's channels, reused for every role below.
+        overwrite_index = await asyncio.to_thread(guild_overwrite_index, guild)
         return {
             "guild": {
                 "id": str(guild.id),
@@ -1197,8 +1225,16 @@ class WebServer:
             "roles": [
                 {"id": str(role.id), "name": role.name, "color": f"#{role.color.value:06X}",
                  # Same rule the publish endpoint enforces, so the dashboard
-                 # cannot offer a role the API will then refuse.
-                 "assignable": role_assignment_error(role, guild) is None,
+                 # cannot offer a role the API will then refuse. The index is
+                 # built once for the whole guild rather than per role - see
+                 # role_safety.guild_overwrite_index for why that matters here.
+                 "assignable": role_assignment_error(
+                     role, guild, overwrite_index=overwrite_index
+                 ) is None,
+                 # Private channels this role opens. Not a refusal: the panel
+                 # is allowed to hand it out, but whoever publishes it should
+                 # see what comes with the role before they do.
+                 "unlocks": channel_visibility_grants(role, guild, overwrite_index),
                  "manages_threads": role.permissions.manage_threads}
                 for role in sorted(guild.roles, key=lambda r: -r.position)
                 if not role.is_default()
@@ -1475,8 +1511,10 @@ class WebServer:
         # the Manage Server that opens the dashboard.
         self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
 
-        actor = self._actor_member(guild, entry)
+        actor = await self._actor_member(guild, entry)
+        overwrite_index = await asyncio.to_thread(guild_overwrite_index, guild)
         roles = []
+        unlocks = []
         for role_id in role_ids:
             if not role_id.isdigit():
                 continue
@@ -1484,11 +1522,15 @@ class WebServer:
             if role is None:
                 errors.append(f"role_ids: {role_id} is not a role in this guild")
                 continue
-            refusal = role_assignment_error(role, guild, actor)
+            refusal = role_assignment_error(
+                role, guild, actor, overwrite_index=overwrite_index
+            )
             if refusal:
                 errors.append(f"role_ids: @{role.name} cannot be assigned — {refusal}")
             else:
                 roles.append(role)
+                for channel_label in channel_visibility_grants(role, guild, overwrite_index):
+                    unlocks.append(f"@{role.name} → {channel_label}")
         if errors:
             raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)
 
@@ -1553,6 +1595,11 @@ class WebServer:
             "action": "role_panel_publish",
             "message": f"Role panel {'published' if created else 'updated'} in #{channel.name}.",
             "channel_id": str(channel.id),
+            # Which private channels the published roles open. Empty for an
+            # ordinary panel; when it is not, the dashboard says so rather than
+            # letting the consequence be discovered by whoever reads the
+            # channel afterwards.
+            "unlocks": unlocks,
             "panel": {
                 "message_id": panel["message_id"],
                 "channel_id": panel["channel_id"],
@@ -1841,8 +1888,16 @@ class WebServer:
         # requires for handing roles out - checked before the role is even
         # resolved, because whether the caller may do this at all does not
         # depend on whether they named a role that exists.
-        if body.get("autorole") not in (None, "", 0) and "autorole" in body:
-            self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+        # `ticket_staff_role` is here for the same reason, one step removed:
+        # it does not hand the role to anybody, but it hands *that role's
+        # holders* every open ticket in the server, and the role it names must
+        # already carry Manage Threads to qualify. Deciding who gets that is a
+        # role decision, so it takes the role permission - `autorole` did and
+        # this did not, which was an asymmetry nobody chose.
+        for role_key in ("autorole", "ticket_staff_role"):
+            if role_key in body and body.get(role_key) not in (None, "", 0):
+                self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+                break
 
         for key in ROLE_KEYS:
             if key not in body:
@@ -1858,7 +1913,9 @@ class WebServer:
             # A staff role as autorole would have made every new arrival staff,
             # so it goes through the same gate as a role panel.
             if key == "autorole":
-                refusal = role_assignment_error(role, guild, self._actor_member(guild, entry))
+                refusal = role_assignment_error(
+                    role, guild, await self._actor_member(guild, entry)
+                )
             else:
                 refusal = None
             if refusal:
