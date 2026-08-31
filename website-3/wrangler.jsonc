@@ -4,14 +4,15 @@
   "main": "./worker/index.js",
   "compatibility_date": "2026-07-19",
   "preview_urls": false,
-  // GATE_SIGNING_KEY is listed as optional rather than required on purpose: an
-  // existing deployment must not start failing at deploy time for a key it has
-  // not set yet. The worker falls back to AUTH_PASSWORD and logs
-  // `gate_signing_key_missing` on every request until one is set with
+  // Both are required. GATE_SIGNING_KEY was optional so an existing install
+  // would not start failing at deploy time - but "optional" meant the worker
+  // fell back to signing cookies with AUTH_PASSWORD, which is the whole
+  // weakness the key exists to remove, and it did so behind a log line at 25%
+  // sampling. A deploy that fails loudly with one command to fix it is better
+  // than a deploy that succeeds and is quietly weaker than the code claims.
   //   wrangler secret put GATE_SIGNING_KEY     (32+ random bytes)
   "secrets": {
-    "required": ["AUTH_PASSWORD"],
-    "optional": ["GATE_SIGNING_KEY"]
+    "required": ["AUTH_PASSWORD", "GATE_SIGNING_KEY"]
   },
   // Ten password submissions per minute in each Cloudflare location while the
   // temporary launch gate is active. The endpoint retires automatically at
@@ -20,6 +21,19 @@
     {
       "name": "LOGIN_RATE_LIMITER",
       "namespace_id": "2026082601",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    // Its own namespace rather than sharing the login one. /api/preview is the
+    // second unauthenticated door, and each submission is proxied to the bot's
+    // API - so it needs a budget, but a shared budget would mean traffic at
+    // one door closes the other. That exact bug was fixed on the API side for
+    // this same pair of endpoints.
+    {
+      "name": "PREVIEW_RATE_LIMITER",
+      "namespace_id": "2026083101",
       "simple": {
         "limit": 10,
         "period": 60

@@ -143,18 +143,36 @@ function base64UrlDecode(value) {
 //
 // Set one with:  wrangler secret put GATE_SIGNING_KEY   (32+ random bytes)
 //
-// The fallback keeps an install without it working rather than locking
-// everyone out, but it is logged every time so it cannot be the quiet
-// permanent state. It is deliberately not folded into the launch gate's
-// retirement: handlePreview still signs cookies after public launch.
+// This used to fall back to AUTH_PASSWORD when unset, loudly. Loudly is not a
+// control: the warning went to logs sampled at 25%, the deploy stayed green,
+// and an install that never ran `wrangler secret put` kept the exact weakness
+// the key exists to remove - indefinitely, and invisibly to anyone reading the
+// code and concluding it was fixed. A control that only holds when an operator
+// remembers a manual step is a control that is off somewhere.
+//
+// So there is no fallback. The key is `required` in wrangler.jsonc, so a
+// deploy without it fails; if it is removed from a live worker, cookies stop
+// being issued and stop verifying rather than quietly becoming crackable. That
+// closes the gated site, which is the safe direction for a door - and after
+// public launch the gate is retired anyway, so the public site is unaffected.
 const MIN_SIGNING_KEY_LENGTH = 32;
 
 function signingSecret(env) {
   const dedicated = String(env.GATE_SIGNING_KEY || "").trim();
   if (dedicated.length >= MIN_SIGNING_KEY_LENGTH) return dedicated;
-  if (dedicated) logWorkerEvent("warn", "gate_signing_key_too_short");
-  else logWorkerEvent("warn", "gate_signing_key_missing");
-  return env.AUTH_PASSWORD;
+  if (dedicated) logWorkerEvent("error", "gate_signing_key_too_short");
+  else logWorkerEvent("error", "gate_signing_key_missing");
+  return null;
+}
+
+// The operator-facing failure. Deliberately says which secret is missing:
+// nobody but the operator can reach this, and a 503 with no cause is a
+// support ticket rather than a fix.
+function signingKeyUnavailable() {
+  return new Response(
+    "GATE_SIGNING_KEY is not configured. Set it with: wrangler secret put GATE_SIGNING_KEY",
+    { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "300" } },
+  );
 }
 
 async function importSigningKey(secret) {
@@ -699,11 +717,25 @@ export async function loginRateLimitKey(request) {
   return `pg:${base64UrlEncode(new Uint8Array(digest)).slice(0, 32)}`;
 }
 
-async function enforceLoginRateLimit(env, request) {
-  const limiter = env.LOGIN_RATE_LIMITER;
+// A JSON refusal, because the callers are fetch() not a browser navigation.
+// A redirect to the login page would arrive at the script as an opaque HTML
+// body, and the page would report "malformed status feed" for what is really
+// "you are not signed in".
+function gatedApiRejection() {
+  return new Response(JSON.stringify({ error: "not_authenticated" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
+// `events` is spelled out per call rather than derived from a prefix: these
+// names are an operational interface - what an operator greps for and alerts
+// on - and the login ones predate this helper. Generalising the code should
+// not quietly rename them.
+async function enforceRateLimit(limiter, request, { events, unavailable, exceeded }) {
   if (!limiter || typeof limiter.limit !== "function") {
-    logWorkerEvent("error", "login_rate_limiter_missing");
-    return new Response("Login is temporarily unavailable.", {
+    logWorkerEvent("error", events.missing);
+    return new Response(unavailable, {
       status: 503,
       headers: { "Cache-Control": "no-store", "Retry-After": "60" },
     });
@@ -717,18 +749,48 @@ async function enforceLoginRateLimit(env, request) {
     const { success } = await limiter.limit({ key: await loginRateLimitKey(request) });
     if (success) return null;
 
-    logWorkerEvent("warn", "auth_login_rate_limited");
-    return new Response("Too many login attempts. Try again in one minute.", {
+    logWorkerEvent("warn", events.limited);
+    return new Response(exceeded, {
       status: 429,
       headers: { "Cache-Control": "no-store", "Retry-After": "60" },
     });
   } catch (error) {
-    logWorkerEvent("error", "login_rate_limiter_failed", { error: errorMessage(error) });
-    return new Response("Login is temporarily unavailable.", {
+    logWorkerEvent("error", events.failed, { error: errorMessage(error) });
+    return new Response(unavailable, {
       status: 503,
       headers: { "Cache-Control": "no-store", "Retry-After": "60" },
     });
   }
+}
+
+async function enforceLoginRateLimit(env, request) {
+  return enforceRateLimit(env.LOGIN_RATE_LIMITER, request, {
+    events: {
+      missing: "login_rate_limiter_missing",
+      limited: "auth_login_rate_limited",
+      failed: "login_rate_limiter_failed",
+    },
+    unavailable: "Login is temporarily unavailable.",
+    exceeded: "Too many login attempts. Try again in one minute.",
+  });
+}
+
+// The preview code is 24 random bytes, so this is not about guessing it.
+// Every submission is proxied to the bot's own API, which made an
+// unauthenticated public endpoint into an unbounded amplifier pointed at the
+// thing the site depends on. Its own binding rather than the login one: two
+// public doors sharing a budget means traffic at one closes the other, which
+// is the bug that was fixed on the API side for exactly this pair.
+async function enforcePreviewRateLimit(env, request) {
+  return enforceRateLimit(env.PREVIEW_RATE_LIMITER, request, {
+    events: {
+      missing: "preview_rate_limiter_missing",
+      limited: "preview_rate_limited",
+      failed: "preview_rate_limiter_failed",
+    },
+    unavailable: "Preview is temporarily unavailable.",
+    exceeded: "Too many preview attempts. Try again in one minute.",
+  });
 }
 
 async function handleLogin(request, env) {
@@ -771,7 +833,10 @@ async function handleLogin(request, env) {
     return Response.redirect(url, 303);
   }
 
-  const session = await createSession(signingSecret(env));
+  const secret = signingSecret(env);
+  if (!secret) return signingKeyUnavailable();
+
+  const session = await createSession(secret);
   return new Response(null, {
     status: 303,
     headers: {
@@ -836,6 +901,9 @@ async function handlePreview(request, env) {
     return csrfRetry(request, "preview_csrf_rejected", "/preview/");
   }
 
+  const limited = await enforcePreviewRateLimit(env, request);
+  if (limited) return limited;
+
   const code = String(form.get("code") || "").trim();
   const apiBase = String(env.STATUS_API_BASE || DEFAULT_STATUS_API_BASE).replace(/\/+$/, "");
 
@@ -872,7 +940,10 @@ async function handlePreview(request, env) {
     });
   }
 
-  const session = await createPreviewSession(signingSecret(env), verified.since);
+  const previewSecret = signingSecret(env);
+  if (!previewSecret) return signingKeyUnavailable();
+
+  const session = await createPreviewSession(previewSecret, verified.since);
   return new Response(null, {
     status: 303,
     headers: {
@@ -1021,8 +1092,27 @@ async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const publiclyLaunched = hasPublicLaunchPassed();
 
-  if (url.pathname === "/api/status-snapshot") return handleStatusSnapshot(request, env, ctx);
-  if (url.pathname === "/api/updates-feed") return handleUpdatesFeed(request, env, ctx);
+  // The two JSON feeds behind /status and /updates. Both pages sit behind the
+  // pre-launch gate; answering the feeds here, ahead of every check, published
+  // the same contents to anyone who guessed the path - guild and member
+  // counts, uptime, version and phase, plus the whole changelog down to
+  // per-release diff stats. The gate was doing its job on the HTML and nothing
+  // was doing it on the data. After public launch they are public, exactly
+  // like the pages that read them.
+  //
+  // Ahead of the maintenance check on purpose: they are data endpoints, not
+  // pages, and returning an HTML maintenance notice to a fetch() would be a
+  // parse error rather than an answer. The maintenance page is standalone and
+  // reads neither.
+  if (url.pathname === "/api/status-snapshot" || url.pathname === "/api/updates-feed") {
+    const openToAll =
+      publiclyLaunched ||
+      (await isValidSession(readCookie(request, SESSION_COOKIE), signingSecret(env)));
+    if (!openToAll) return gatedApiRejection();
+    return url.pathname === "/api/status-snapshot"
+      ? handleStatusSnapshot(request, env, ctx)
+      : handleUpdatesFeed(request, env, ctx);
+  }
   if (url.pathname === "/api/auth/login") {
     return publiclyLaunched ? retiredGateRedirect(request) : handleLogin(request, env);
   }
