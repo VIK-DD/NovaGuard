@@ -38,6 +38,14 @@ async def hierarchy_error(interaction):
     await respond(interaction, embed, ephemeral=True)
 
 
+# How far /purge looks back when it is filtering by member, and the ceiling on
+# that. Discord's bulk delete only reaches 14 days regardless, and every
+# hundred messages scanned is another API page, so this trades a wider search
+# for a bounded one rather than promising to find every message ever.
+PURGE_SCAN_FACTOR = 5
+PURGE_MAX_SCAN = 500
+
+
 class Moderation(commands.Cog):
     """Moderation tools with polished feedback."""
 
@@ -74,10 +82,40 @@ class Moderation(commands.Cog):
             return await respond(interaction, embed, ephemeral=True)
 
         await defer_interaction(interaction, ephemeral=True)
-        deleted = await channel.purge(limit=amount, check=lambda m: user is None or m.author.id == user.id)
+
+        if user is None:
+            deleted = await channel.purge(limit=amount)
+            scanned_note = ""
+        else:
+            # `limit` is how many messages purge *examines*, not how many it
+            # removes. With a member filter that made "/purge amount:100
+            # user:@X" delete whatever few of their messages happened to be in
+            # the last hundred - and report a number the moderator read as
+            # "your hundred are gone". A destructive command has to mean what
+            # it says, so the count is now applied to the deletions and the
+            # scan window is widened to find them.
+            remaining = amount
+            def wanted(message):
+                nonlocal remaining
+                if remaining and message.author.id == user.id:
+                    remaining -= 1
+                    return True
+                return False
+
+            scan_limit = min(amount * PURGE_SCAN_FACTOR, PURGE_MAX_SCAN)
+            deleted = await channel.purge(limit=scan_limit, check=wanted)
+            scanned_note = (
+                f"\n-# Searched the last `{scan_limit}` messages in this channel."
+                if len(deleted) < amount
+                else ""
+            )
 
         target_note = f" from {user.mention}" if user else ""
-        embed = make_embed("🧹 Channel cleaned", f"Deleted `{len(deleted)}` message(s){target_note}.", color=Palette.SUCCESS)
+        embed = make_embed(
+            "🧹 Channel cleaned",
+            f"Deleted `{len(deleted)}` message(s){target_note}.{scanned_note}",
+            color=Palette.SUCCESS,
+        )
         brand_footer(embed, "Purge complete")
         await respond(interaction, embed, ephemeral=True)
 

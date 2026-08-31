@@ -22,6 +22,40 @@ log = logging.getLogger(__name__)
 
 INVITE_PATTERN = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
 SPAM_BUCKET_TTL_SECONDS = 300
+# Compiled blocked-word patterns, keyed by the word list they came from.
+#
+# These used to be rebuilt with re.compile inside the message loop: up to a
+# hundred patterns per message, per guild. The re module caches 512 compiled
+# patterns, so a handful of servers with full lists evicted each other's and
+# every message paid the compile again. Keyed on the tuple of words so a
+# /badword change produces a new key and the old entry simply falls out.
+_BADWORD_CACHE: dict[tuple[str, ...], list[re.Pattern[str]]] = {}
+_BADWORD_CACHE_LIMIT = 200
+
+
+def compile_badwords(words):
+    """Whole-word patterns for a guild's blocked list, compiled once.
+
+    `\\b` is an ASCII word boundary: it sits between a word character and a
+    non-word one, and Python's `\\w` under re.UNICODE counts accented letters as
+    word characters. That is right for "ăsta" but wrong at the edges - a
+    blocked word ending in a letter followed by an accented letter is not a
+    boundary at all, so `\\bcur\\b` never matched inside "curând". The lookarounds
+    below ask the question the filter actually means: not preceded or followed
+    by another letter or digit, in any alphabet.
+    """
+    key = tuple(words)
+    cached = _BADWORD_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if len(_BADWORD_CACHE) >= _BADWORD_CACHE_LIMIT:
+        _BADWORD_CACHE.clear()
+    compiled = [
+        re.compile(rf"(?<![^\W\d_]){re.escape(word)}(?![^\W\d_])", re.IGNORECASE | re.UNICODE)
+        for word in words
+    ]
+    _BADWORD_CACHE[key] = compiled
+    return compiled
 
 
 def get_automod_config(guild_id):
@@ -136,8 +170,8 @@ class AutoMod(commands.Cog):
             return await self.punish(message, "Invite link blocked", "posting invite links is not allowed here.")
 
         content_lower = message.content.lower()
-        for word in config["badwords"]:
-            if re.search(rf"\b{re.escape(word)}\b", content_lower):
+        for pattern in compile_badwords(config["badwords"]):
+            if pattern.search(content_lower):
                 return await self.punish(message, "Blocked word", "that word is on this server's blocked list.")
 
         if config["spam"]:

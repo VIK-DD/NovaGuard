@@ -1182,7 +1182,7 @@ class WebServer:
         get_cog = getattr(self.bot, "get_cog", None)
         ai_cog = get_cog("AI") if callable(get_cog) else None
         ai_status = (
-            ai_cog.status_payload()
+            ai_cog.status_payload(guild)
             if ai_cog is not None
             else {
                 "available": False,

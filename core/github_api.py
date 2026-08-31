@@ -43,6 +43,20 @@ def _segment(value):
     return quote(str(value), safe="")
 
 
+def _short_upstream_error(body):
+    """A little of GitHub's answer, not all of it.
+
+    The whole response body used to go into the exception message. Most call
+    sites only log it, but any that shows `str(error)` to a user - an embed, a
+    diagnostic command - would be publishing an upstream response verbatim
+    into a Discord channel. Whatever GitHub returns on a bad day is not
+    something this project gets to vouch for, so it is trimmed to something
+    that still identifies the failure and collapsed onto one line.
+    """
+    text = " ".join(str(body or "").split())
+    return text[:200] + ("…" if len(text) > 200 else "")
+
+
 def _repo_path(full_name):
     """`owner/repo` with each half quoted; the slash between them is structural."""
     owner, _, repo = str(full_name or "").partition("/")
@@ -88,7 +102,9 @@ class GitHubAPI:
                         raise RuntimeError(
                             "GitHub API rate limit reached. Add GITHUB_TOKEN or increase GITHUB_POLL_SECONDS."
                         )
-                    raise RuntimeError(f"GitHub API error {response.status}: {await response.text()}")
+                    raise RuntimeError(
+                        f"GitHub API error {response.status}: {_short_upstream_error(await response.text())}"
+                    )
                 return await response.json()
         except asyncio.TimeoutError as error:
             raise RuntimeError("GitHub API timed out") from error
@@ -109,7 +125,9 @@ class GitHubAPI:
                         raise RuntimeError(
                             "GitHub API rate limit reached. Add GITHUB_TOKEN or increase GITHUB_POLL_SECONDS."
                         )
-                    raise RuntimeError(f"GitHub API error {response.status}: {await response.text()}")
+                    raise RuntimeError(
+                        f"GitHub API error {response.status}: {_short_upstream_error(await response.text())}"
+                    )
                 return await response.json(), response.headers
         except asyncio.TimeoutError as error:
             raise RuntimeError("GitHub API timed out") from error
