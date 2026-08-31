@@ -81,6 +81,13 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: website-3
           command: deploy
+          # Keep the dedicated cookie-signing key recoverable from CI while
+          # ensuring Wrangler stores it as an encrypted Worker secret. The
+          # action masks the value and never writes it to the repository.
+          secrets: |
+            GATE_SIGNING_KEY
+        env:
+          GATE_SIGNING_KEY: ${{ secrets.GATE_SIGNING_KEY }}
 
       # Audited here rather than anywhere else, because this is the only
       # machine with both halves: a freshly built dist/, which is what lets
