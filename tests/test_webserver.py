@@ -39,12 +39,12 @@ from core.maintenance import (  # noqa: E402
 )
 from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
 from core.web_storage import (  # noqa: E402
-    _CIPHER,
     SESSION_IDLE_TTL,
     _hash_sid,
     db_load_session,
     db_ping,
     db_save_session,
+    token_cipher_ready,
 )
 from core.webserver import ApiError, WebServer, after_login_strands_user  # noqa: E402
 
@@ -445,7 +445,7 @@ async def main():
             ).fetchone()
         await check(
             "token encrypted at rest",
-            _CIPHER is not None
+            token_cipher_ready()
             and raw["access_token"].startswith("enc:")
             and "super-secret-access-token" not in raw["access_token"],
         )

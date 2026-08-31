@@ -85,7 +85,8 @@ from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
 from .web_storage import (
-    _CIPHER,
+    require_token_cipher,
+    token_cipher_ready,
     db_add_audit,
     db_delete_session,
     db_gc,
@@ -350,6 +351,16 @@ class WebServer:
             log.warning("Web API disabled (set WEB_ENABLED=true to serve the dashboard API).")
             return
         await asyncio.to_thread(init_web_tables)
+        # Before anything can write a token. This used to degrade quietly to
+        # plaintext behind a startup log line; encryption at rest either holds
+        # or the thing that depends on it does not start.
+        #
+        # Only when OAuth is configured, because only then does a session -
+        # and therefore a token to protect - ever exist. A status-page-only
+        # deployment serving /health and /stats has nothing at rest and must
+        # keep starting without credentials it does not use.
+        if self.oauth_ready:
+            await asyncio.to_thread(require_token_cipher)
         await asyncio.to_thread(db_gc)
         connector = aiohttp.TCPConnector(
             ttl_dns_cache=DISCORD_DNS_CACHE_SECONDS,
@@ -370,7 +381,7 @@ class WebServer:
         site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT)
         await site.start()
         oauth_note = "OAuth ready" if self.oauth_ready else "OAuth NOT configured (login disabled)"
-        crypto_note = "tokens encrypted" if _CIPHER else "tokens plaintext (install cryptography)"
+        crypto_note = "tokens encrypted" if token_cipher_ready() else "tokens NOT encrypted"
         log.info(
             f"Web API listening on {WEB_HOST}:{WEB_PORT}{API_PREFIX} • {oauth_note} • "
             f"sessions in SQLite • {crypto_note} • after login → {AFTER_LOGIN}"

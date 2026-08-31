@@ -131,5 +131,70 @@ class WebTokenEncryptionTests(unittest.TestCase):
             self.assertIsNone(web_storage._decrypt_token(encrypted))
 
 
+@unittest.skipIf(web_storage.Fernet is None, "cryptography is not installed")
+class InstallSaltTests(unittest.TestCase):
+    """The salt is this install's, not every install's."""
+
+    def test_the_salt_is_generated_once_and_then_reused(self):
+        first = web_storage._read_or_create_install_salt()
+        second = web_storage._read_or_create_install_salt()
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 16)
+
+    def test_the_stored_salt_is_not_the_shipped_constant(self):
+        # A constant compiled into the module means two installs sharing a
+        # WEB_TOKEN_KEY derive the same key, and precomputing against a weak
+        # one is worth doing once for everybody rather than once per install.
+        self.assertNotEqual(web_storage._read_or_create_install_salt(), web_storage._KDF_SALT)
+
+    def test_a_different_salt_derives_a_different_key(self):
+        secret = "dedicated-key-2026-xxxxxxxxxxxxxxxx"
+        mine = web_storage._cipher_from_secret(secret, salt=b"install-one-salt")
+        theirs = web_storage._cipher_from_secret(secret, salt=b"install-two-salt")
+        token = mine.encrypt(b"access-token")
+        with self.assertRaises(web_storage.InvalidToken):
+            theirs.decrypt(token)
+
+    def test_rows_written_under_the_old_shared_salt_still_read(self):
+        # The whole point of keeping legacy readers: changing the derivation
+        # must migrate installs as sessions are used, not log everyone out.
+        secret = "dedicated-key-2026-xxxxxxxxxxxxxxxx"
+        old_row = web_storage.TOKEN_PREFIX + (
+            web_storage._cipher_from_secret(secret).encrypt(b"old-token").decode("ascii")
+        )
+        with mock.patch.object(web_storage, "CLIENT_SECRET", secret):
+            primary, legacy = web_storage._build_ciphers(b"a-fresh-install-salt")
+        with (
+            mock.patch.object(web_storage, "_CIPHER", primary),
+            mock.patch.object(web_storage, "_LEGACY_CIPHERS", legacy),
+        ):
+            # Written under the old shared salt, read under the new one.
+            self.assertEqual(web_storage._decrypt_token(old_row), "old-token")
+            # ...and a fresh write uses the install's own key from now on.
+            fresh = web_storage._encrypt_token("new-token")
+            self.assertEqual(web_storage._decrypt_token(fresh), "new-token")
+            with self.assertRaises(web_storage.InvalidToken):
+                web_storage._cipher_from_secret(secret).decrypt(
+                    fresh[len(web_storage.TOKEN_PREFIX):].encode("ascii")
+                )
+
+
+class FailClosedTests(unittest.TestCase):
+    """No cipher, no dashboard. A log line is not a control."""
+
+    def test_startup_refuses_when_encryption_is_unavailable(self):
+        # _encrypt_token hands the value straight back when there is no cipher,
+        # so this used to mean Discord access and refresh tokens sitting in the
+        # database in clear text behind one warning at boot.
+        with mock.patch.object(web_storage, "token_cipher_ready", return_value=False):
+            with self.assertRaises(RuntimeError) as caught:
+                web_storage.require_token_cipher()
+        self.assertIn("clear text", str(caught.exception))
+
+    def test_startup_proceeds_when_encryption_is_available(self):
+        with mock.patch.object(web_storage, "token_cipher_ready", return_value=True):
+            self.assertIsNone(web_storage.require_token_cipher())
+
+
 if __name__ == "__main__":
     unittest.main()
