@@ -74,15 +74,31 @@ class Finding:
 
 
 def scan_text(text, location, *, start_line=1, added_only=False):
+    """Scan lines for credential shapes.
+
+    In `added_only` mode the text is a git diff and only added lines count. The
+    `+++ b/<path>` headers are tracked as they go past so EXCLUDED_PATHS means
+    the same thing here as in the working tree - without that, the scanner
+    reports its own test fixtures on every run, the job goes permanently red,
+    and a permanently red job is one somebody turns off.
+    """
     findings = []
+    current_path = None
     for offset, line in enumerate(text.splitlines()):
         if added_only:
-            if not line.startswith("+") or line.startswith("+++"):
+            if line.startswith("+++"):
+                target = line[4:].strip()
+                current_path = None if target == "/dev/null" else target.removeprefix("b/")
+                continue
+            if not line.startswith("+"):
+                continue
+            if current_path in EXCLUDED_PATHS:
                 continue
             line = line[1:]
         for kind, pattern in PATTERNS:
             if pattern.search(line):
-                findings.append(Finding(kind, location, start_line + offset, line))
+                where = f"{location}:{current_path}" if current_path else location
+                findings.append(Finding(kind, where, start_line + offset, line))
     return findings
 
 

@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.scan_secrets import (  # noqa: E402
+    scan_history,
     scan_text,
     scan_working_tree,
 )
@@ -31,7 +32,9 @@ FAKE = {
     "Google API key": "AIza" + "F" * 35,
     "Slack token": "xoxb-" + "1" * 12 + "-abcdef",
     "Cloudflare API token": "v1.0-" + "G" * 40,
-    "Private key block": "-----BEGIN OPENSSH PRIVATE KEY-----",
+    # Assembled rather than written out, like the rest: a literal header here
+    # is the one string in this file that any scanner would flag on sight.
+    "Private key block": "-----BEGIN " + "OPENSSH PRIVATE KEY" + "-----",
 }
 
 
@@ -100,6 +103,44 @@ class FalsePositiveTests(unittest.TestCase):
         # is to rotate the credential - deleting the line does not help, the
         # object stays reachable in every clone.
         findings = scan_working_tree()
+        self.assertEqual([str(f) for f in findings], [])
+
+
+class HistoryScopeTests(unittest.TestCase):
+    """Exclusions have to mean the same thing in a diff as in the tree."""
+
+    def test_an_excluded_path_is_excluded_in_history_too(self):
+        # Without this the scanner reports its own fixtures on every run, the
+        # job is permanently red, and a permanently red job gets switched off.
+        diff = (
+            "diff --git a/tests/test_scan_secrets.py b/tests/test_scan_secrets.py\n"
+            "+++ b/tests/test_scan_secrets.py\n"
+            f"+FAKE_TOKEN = \"{FAKE['GitHub personal access token']}\"\n"
+        )
+        self.assertEqual(scan_text(diff, "history", added_only=True), [])
+
+    def test_the_same_line_in_any_other_file_is_reported(self):
+        diff = (
+            "diff --git a/core/config.py b/core/config.py\n"
+            "+++ b/core/config.py\n"
+            f"+TOKEN = \"{FAKE['GitHub personal access token']}\"\n"
+        )
+        found = scan_text(diff, "history", added_only=True)
+        self.assertTrue(found)
+        self.assertIn("core/config.py", found[0].location)
+
+    def test_a_deleted_file_header_does_not_carry_the_previous_path(self):
+        diff = (
+            "+++ b/tests/test_scan_secrets.py\n"
+            "+++ /dev/null\n"
+            f"+TOKEN = \"{FAKE['Anthropic API key']}\"\n"
+        )
+        # /dev/null clears the path, so the line is scanned rather than
+        # inheriting the exclusion from the hunk above it.
+        self.assertTrue(scan_text(diff, "history", added_only=True))
+
+    def test_the_history_is_clean(self):
+        findings = scan_history()
         self.assertEqual([str(f) for f in findings], [])
 
 

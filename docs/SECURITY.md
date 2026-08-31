@@ -1,6 +1,6 @@
 # NovaGuard — Security Audit & Hardening Reference
 
-_Last reviewed: 2026-08-30 (two passes) · Scope: Discord bot, SQLite/JSON state, backups,
+_Last reviewed: 2026-08-31 (three passes, the third external) · Scope: Discord bot, SQLite/JSON state, backups,
 dashboard API, Astro website, Cloudflare Worker and dependency manifests._
 
 ## Verdict
@@ -87,6 +87,58 @@ because discord.py never runs `_check_can_run` for suggestions.
 
 Full detail is in the commit messages on `security/audit-fixes`.
 
+### What the 2026-08-31 external pass found
+
+An external white-box review over the whole tree. Nothing it found was
+critical, and the two earlier passes had already closed the classes that
+usually dominate such a report — no hardcoded secrets in 464 commits, no SQL
+or command injection, no XSS, no IDOR on the API. What was left is recorded
+here because the residue is the interesting part.
+
+The worst of it was a blind spot rather than a bug. `role_safety` asked what a
+role could do and answered with `role.permissions` — the guild-wide bitfield.
+Discord also grants permissions to roles *per channel*, and nothing in this
+project had ever read an overwrite: a role whose permissions integer is 0
+could carry Manage Messages or Manage Webhooks through one and still be
+publishable on a panel, settable as autorole, and reported to the dashboard as
+assignable. The rule this module exists to enforce simply did not apply on that
+path.
+
+Deliberately *not* refused, after looking at it properly: a role that only
+makes a private channel visible. "Press this for #valorant" is the feature, and
+refusing view_channel would break the common case to catch the rare one. It is
+reported instead, so whoever publishes a panel is told which channels come with
+the role and decides knowingly.
+
+Three findings were the same mistake in different places — a key doing two
+jobs. The OAuth state signer used `DISCORD_CLIENT_SECRET` as its HMAC key; the
+Worker used `AUTH_PASSWORD` to sign gate cookies, which made every cookie it
+issued an offline dictionary attack against that password; and the token
+cipher's scrypt salt was a constant shared by every install. This file already
+recorded the lesson once, when `WEB_TOKEN_KEY` was introduced so token
+encryption and OAuth credentials could rotate independently. It had not been
+applied anywhere else.
+
+Two were controls that only looked like controls. Token encryption at rest
+failed *open* — no `cryptography`, no cipher, and `_encrypt_token` returned the
+plaintext it was handed behind a single startup log line. And the CSP nonce was
+stamped onto every script element by an HTMLRewriter on the way out, so it
+certified "this is a script tag" rather than "we built this"; it is now a set
+of content hashes generated from the build.
+
+The rest were availability and operations: rate-limit buckets that collapsed
+every visitor into one when `WEB_TRUST_PROXY` was off (the shipped default,
+under the documented Cloudflare Tunnel deployment), `/health` and `/ready`
+opening SQLite on every unauthenticated request with no limit at all, a global
+AI budget one busy server could empty for every other, and — the one most
+likely to bite in practice — `os.environ.setdefault` in the dotenv loader,
+which meant pm2 re-injecting its captured environment beat the file, so
+rotating a secret in `.env` and running the documented `pm2 restart` left the
+old credential live with nothing to indicate it.
+
+The lesson from the last pass held up and is worth restating: every row in the
+table above names a test. The additions from this pass do too.
+
 ## Threat model
 
 A self-hosted Discord bot on a home Raspberry Pi, exposing a small OAuth-gated
@@ -109,8 +161,9 @@ rather than believed.
 | RCE / shell | No `eval`/`exec` or shell invocation; the bounded rclone call uses an argv list and fixed operation | `bandit` in CI (`ci.yml`) |
 | Deserialization | No `pickle`/`yaml.load`/`__import__` of untrusted data | review |
 | SQL injection | 100% parameterized queries; the few f-string identifiers come from module constants, each annotated and re-verified | `bandit` in CI, `test_audit_filter.py` |
-| Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs | `test_config_check.py` |
-| Tokens at rest | OAuth tokens Fernet-encrypted (dedicated `WEB_TOKEN_KEY`, client secret as legacy read) | `test_webserver_token_encryption.py` |
+| Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs; `.env` outranks an inherited environment so a rotation cannot silently fail under pm2 | `test_config_check.py` |
+| Committed credentials | Working tree and every commit scanned on each CI run, shape-based so it does not cry wolf on this tree's hashes | `test_scan_secrets.py`, `.github/workflows/ci.yml` |
+| Tokens at rest | OAuth tokens Fernet-encrypted (dedicated `WEB_TOKEN_KEY`, per-install scrypt salt, older derivations kept as read-only fallbacks); the dashboard **refuses to start** without a cipher rather than degrading to plaintext | `test_webserver_token_encryption.py` |
 | Session ids | Cookie holds a 256-bit id; DB stores only its SHA-256 hash | `test_webserver.py` |
 | DB file perms | `chmod 600` on the SQLite files (owner-only) | `test_production_check.py` |
 | Archives at rest | AES-256-GCM, scrypt KDF, authenticated header, per-file salt+nonce | `test_secure_files.py` |
@@ -118,14 +171,17 @@ rather than believed.
 | AuthZ — dashboard | `Manage Server` to read/write config; **`Manage Roles` additionally** to publish a role panel or set an autorole; a write re-checks permissions no more than 30s stale | `test_webserver.py` |
 | AuthZ — owner commands | Application owner or team, **plus** a scrypt-hashed admin key, in-memory unlocks, 5-try lockout | `test_admin_auth.py`, `test_admin_gate.py` |
 | AuthZ — command groups | Every configuration group enforces its permission at run time, nested subgroups included — `default_permissions` alone is only a default a server admin can override | `test_command_guards.py` |
-| Role assignment | A role carrying privileged permissions is never self-assignable; a configurer cannot expose a role above their own position; re-checked at click and join time | `test_role_safety.py` |
+| Role assignment | A role carrying privileged permissions is never self-assignable — **including permissions granted by a channel overwrite, which `role.permissions` does not show**; a configurer cannot expose a role above their own position, and an unresolvable configurer refuses rather than skipping the check; re-checked at click and join time | `test_role_safety.py` |
+| Role disclosure | Private channels a role opens are reported at publish time (`/rolepanel` field, `unlocks` in the API) rather than refused — opening a channel is what a panel is for | `test_role_safety.py` |
 | Input validation | Economy `Range`, web config validated, AI input capped, durations bounded so hostile input returns `None` rather than raising | `test_utils.py`, `test_levels_settings.py`, `test_economy_settings.py` |
 | Mentions | Global `allowed_mentions` blocks `@everyone`/role-ping injection; the invite no longer requests `mention_everyone` at all | `test_invite_permissions.py` |
 | CSRF | A mutation needs a valid `Origin` **or** a JSON content type, plus SameSite and the signed state (bot API); `__Host-` double-submit token (Worker) | `test_webserver.py`, `website-3/worker/index.test.js` |
 | CORS | Strict allow-list, never wildcard, credentials only for listed origins | `test_webserver.py` |
-| Rate limiting | Per-IP web buckets; the Worker's login gate keyed per client, not route-wide; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_webserver.py`, `website-3/worker/index.test.js` |
-| AI cost | Input cap + per-user cooldown + global 30/min + 500/day ceiling | `test_ai_settings.py` |
+| Rate limiting | Per-IP web buckets with separate scopes for auth, preview, read, write and health, and a hard ceiling on the bucket table; the Worker's login gate keyed per client, not route-wide; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_dashboard_auth.py`, `test_webserver.py`, `website-3/worker/index.test.js` |
+| AI cost | Input cap + per-user cooldown + global 30/min and 500/day + **per-guild 10/min and 100/day**, so one server cannot empty the pool; the reservation is refunded when the upstream call fails | `test_ai_settings.py` |
 | Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny | `test_api_security_headers.py` |
+| Website CSP | Inline scripts and styles named by SHA-256 generated from the build, not nonced on sight by a rewriter that could not tell ours from anyone's | `website-3/worker/index.test.js` |
+| Gate cookie signing | `GATE_SIGNING_KEY` signs gate and preview cookies, so a leaked cookie is not an offline oracle for the launch password | `website-3/worker/index.test.js` |
 | Errors | Generic to users; full tracebacks only to the configured admin log channel, never to the channel the command came from | `test_error_digest.py` |
 | Outbound requests | Every GitHub path segment is percent-encoded; repository commands accept only configured repositories | `test_github_api_safety.py` |
 | Cross-guild isolation | Giveaway end/reroll match on guild as well as message id; the dashboard scopes every guild lookup | `test_giveaway_scope.py` |
@@ -133,7 +189,9 @@ rather than believed.
 | State files | Atomic writes with a private scratch file, owner-only mode, fsync; settings patches in one transaction | `test_storage_durability.py` |
 | Redirects | `safeNext` re-checks its normalized output, in the Worker and its client mirror | `website-3/worker/index.test.js` |
 | CI permissions | Both workflows declare `contents: read` rather than inheriting the repo default | `.github/workflows/ci.yml` |
-| Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, `npm audit`, Actions pinned to SHA, Dependabot | `.github/workflows/ci.yml` |
+| Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, `npm audit` on PRs (`moderate`) and deploys (`high`), Actions pinned to SHA, Dependabot across pip, npm and actions | `.github/workflows/ci.yml` |
+| Least privilege — gateway | Intents built from `none()`: guilds, members, moderation, guild messages, message content, voice states. Nothing else is requested | review, `bot.py` |
+| Reviewability | `.gitattributes` normalises line endings, so a diff is the change rather than 82,000 invisible characters | `.gitattributes` |
 
 ## Layer notes
 
