@@ -139,7 +139,10 @@ jobs:
         run: |
           python -m pip install uv
           uv pip compile --universal --generate-hashes \
-            --python-version 3.11 -o /tmp/requirements.lock requirements.txt
+            --python-version 3.11 \
+            --custom-compile-command \
+            "uv pip compile --universal --generate-hashes --python-version 3.11 -o requirements.lock requirements.txt" \
+            -o /tmp/requirements.lock requirements.txt
           diff -u requirements.lock /tmp/requirements.lock
 
   website:
