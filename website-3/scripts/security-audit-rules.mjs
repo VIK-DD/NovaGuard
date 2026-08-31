@@ -164,6 +164,17 @@ export function auditResponse(response) {
     if (unsafe.length > 0) {
       add("csp-unsafe", "medium", `Policy allows ${unsafe.join(" and ")}.`);
     }
+    const hashBasedScriptPolicy =
+      /(?:^|;)\s*script-src\s+[^;]*'sha256-[^']+'/i.test(csp) &&
+      !/(?:^|;)\s*script-src\s+[^;]*'nonce-[^']+'/i.test(csp);
+    const cacheControl = headers["cache-control"] || "";
+    if (isHtml && hashBasedScriptPolicy && !/(?:^|,)\s*no-transform\s*(?:,|$)/i.test(cacheControl)) {
+      add(
+        "hash-csp-transformable",
+        "medium",
+        "HTML uses a hash-based script policy without Cache-Control: no-transform; an edge rewrite can invalidate its hashes.",
+      );
+    }
     if (isHtml && !headers["x-frame-options"] && !/(?:^|;)\s*frame-ancestors\s/i.test(csp)) {
       add("framing-unrestricted", "medium", "Neither X-Frame-Options nor frame-ancestors is set.");
     }

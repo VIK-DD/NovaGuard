@@ -152,6 +152,31 @@ describe("production observability", () => {
     expect(csp).not.toContain(digest);
   });
 
+  it("prevents edge transformations from invalidating the HTML hash manifest", async () => {
+    const htmlEnv = {
+      ...env,
+      ASSETS: {
+        fetch: async () =>
+          new Response("<!doctype html><p>NovaGuard</p>", {
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "public, max-age=300",
+            },
+          }),
+      },
+    };
+
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/privacy/"),
+      htmlEnv,
+    );
+
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=300, stale-while-revalidate=3600, no-transform",
+    );
+    expect(response.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
+  });
+
   it("keeps the hash manifest in step with the built pages", async () => {
     // A stale manifest blocks the site's own inline code, so this is the test
     // that has to fail if someone edits a script and forgets to rebuild.
@@ -573,7 +598,7 @@ describe("cross-site request forgery", () => {
     expect(page.headers.get("Set-Cookie")).toContain("Secure");
     expect(page.headers.get("Set-Cookie")).toContain("SameSite=Strict");
     // The body now differs per visitor, so it must not be held anywhere shared.
-    expect(page.headers.get("Cache-Control")).toBe("no-store");
+    expect(page.headers.get("Cache-Control")).toBe("no-store, no-transform");
   });
 
   it("keeps one token across renders so a second tab does not break the first", async () => {
@@ -1092,7 +1117,7 @@ describe("maintenance sync", () => {
     const response = await dashboardRequest(pageEnv);
 
     expect(response.status).toBe(503);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
     expect(response.headers.get("Retry-After")).toBe("120");
     await expect(response.text()).resolves.toContain("Music install");
   });

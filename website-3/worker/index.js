@@ -101,6 +101,19 @@ function hardenResponse(response) {
   }
   headers.set("Content-Security-Policy", contentSecurityPolicy());
 
+  // Cloudflare JavaScript Detections can otherwise transform an HTML response
+  // after this Worker has attached its hash-based CSP by injecting a dynamic
+  // inline bootstrap. Its contents change on every request, so no stable hash
+  // can authorise it. `no-transform` is Cloudflare's documented opt-out for
+  // that response mutation and keeps the bytes covered by our generated hash
+  // manifest identical to the bytes the browser receives.
+  if ((headers.get("Content-Type") || "").toLowerCase().includes("text/html")) {
+    const cacheControl = headers.get("Cache-Control") || "";
+    if (!/(?:^|,)\s*no-transform\s*(?:,|$)/i.test(cacheControl)) {
+      headers.set("Cache-Control", cacheControl ? `${cacheControl}, no-transform` : "no-transform");
+    }
+  }
+
   // Nothing rewrites the body any more, so the length the asset server gave us
   // is still correct and can stay.
   return new Response(response.body, {

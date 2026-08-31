@@ -133,6 +133,28 @@ describe("content security policy quality", () => {
     const csp = `${CLEAN_CSP} 'unsafe-eval'`;
     expect(rules(auditResponse(withHeader("content-security-policy", csp)))).toContain("csp-unsafe");
   });
+
+  it("flags transformable HTML protected only by script hashes", () => {
+    const base = clean();
+    base.headers["content-security-policy"] = CLEAN_CSP.replace(
+      "script-src 'self' 'nonce-abc123'",
+      "script-src 'self' 'sha256-YWJj'",
+    );
+    base.headers["cache-control"] = "public, max-age=300";
+
+    expect(rules(auditResponse(base))).toContain("hash-csp-transformable");
+  });
+
+  it("accepts hash-protected HTML that intermediaries may not transform", () => {
+    const base = clean();
+    base.headers["content-security-policy"] = CLEAN_CSP.replace(
+      "script-src 'self' 'nonce-abc123'",
+      "script-src 'self' 'sha256-YWJj'",
+    );
+    base.headers["cache-control"] = "public, max-age=300, no-transform";
+
+    expect(rules(auditResponse(base))).not.toContain("hash-csp-transformable");
+  });
 });
 
 describe("cross-origin exposure", () => {
