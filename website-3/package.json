@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "sync-updates": "node scripts/sync-updates-archive.mjs",
-    "build": "node scripts/sync-updates-archive.mjs && astro check && astro build && node scripts/inline-csp-hashes.mjs && node scripts/soft-launch.mjs",
+    "build": "node scripts/sync-updates-archive.mjs && astro check && astro build && node scripts/soft-launch.mjs && node scripts/inline-csp-hashes.mjs",
     "build:launch": "node scripts/sync-updates-archive.mjs && astro check && astro build && node scripts/inline-csp-hashes.mjs",
     "preview": "astro preview",
     "deploy": "npm run build && wrangler deploy",

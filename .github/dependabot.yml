@@ -34,8 +34,24 @@ updates:
           - "vite"
           - "@tailwindcss/*"
           - "tailwindcss"
+      # React requires react and react-dom to use the exact same version.
+      # Keep the runtime and its type packages in one review so Dependabot
+      # cannot silently leave the browser bundle on mismatched releases.
+      react-runtime:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
       dev-tooling:
         dependency-type: development
+    ignore:
+      # @astrojs/check 0.9.x currently supports TypeScript 5 and 6 only.
+      # Keep accepting compatible updates and remove this ceiling once the
+      # Astro checker publishes TypeScript 7 peer support.
+      - dependency-name: "typescript"
+        versions:
+          - ">=7.0.0"
 
   # GitHub Actions used in workflows (keeps the pinned SHAs current)
   - package-ecosystem: github-actions
