@@ -28,17 +28,46 @@ DEFAULT_STREAM_STATUSES = [
 DEFAULT_STREAM_STATUS_INTERVAL_SECONDS = 15
 
 
+# Names where .env disagreed with an inherited environment variable and won.
+# Empty in every ordinary start; non-empty means somebody edited .env and the
+# process was carrying a different value, which config_check reports.
+DOTENV_OVERRIDES: list[str] = []
+
+
 def load_dotenv_if_present():
+    """Load .env, and let it win over whatever the process inherited.
+
+    This used to be `os.environ.setdefault`, so an inherited variable beat the
+    file. That is the usual convention and it was the wrong one here, because
+    of how this bot is actually run: pm2 captures the environment at
+    `pm2 start` and re-injects that same copy on every `pm2 restart` unless it
+    is given `--update-env`. SETUP.md said to rotate a secret in .env and then
+    `pm2 restart`, which meant the rotation appeared to succeed and the process
+    kept using the old TOKEN, client secret or WEB_TOKEN_KEY - with no error,
+    no warning, and a compromised credential still live. A rotation that looks
+    like it worked is the worst possible failure for one.
+
+    So .env is the source of truth when it exists. It is the file SETUP.md
+    tells operators to edit and the one production_check checks the permissions
+    of; nothing else should quietly outrank it.
+    """
     env_file = BASE_DIR / ".env"
     if not env_file.exists():
         return
 
+    DOTENV_OVERRIDES.clear()
     for raw_line in env_file.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        existing = os.environ.get(key)
+        if existing is not None and existing != value:
+            # Recorded, never logged with the value attached: these are secrets.
+            DOTENV_OVERRIDES.append(key)
+        os.environ[key] = value
 
 
 load_dotenv_if_present()

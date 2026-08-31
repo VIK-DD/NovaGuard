@@ -164,10 +164,14 @@ python -m pip install -r requirements.txt
 <summary><b>3. Start with PM2</b></summary>
 
 ```bash
-pm2 start /home/pi/pythonbot/bot.py --name pythonbot --interpreter /home/pi/pythonbot/.venv/bin/python
+pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 ```
+
+The shipped `ecosystem.config.js` sets the crash-loop guard (`min_uptime`,
+`max_restarts`, backoff), a memory ceiling and log paths. After any `.env`
+change, restart with `pm2 restart NovaGuard --update-env`.
 </details>
 
 <details>

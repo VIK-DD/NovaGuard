@@ -270,7 +270,7 @@ What genuinely remains, and why:
 ```bash
 cd ~/pythonbot && git pull
 .venv/bin/pip install --require-hashes -r requirements.lock
-pm2 restart pythonbot
+pm2 restart NovaGuard --update-env
 ```
 Regenerate the lock only when you change `requirements.txt`:
 ```bash
