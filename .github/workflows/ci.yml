@@ -65,6 +65,27 @@ jobs:
           python -m pip install bandit
           bandit -q -r bot.py core cogs scripts tools --severity-level medium
 
+  # The history is clean today and nothing was keeping it that way. Its own
+  # job because it needs the full history, which the other jobs do not fetch.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      # Shape-based rather than entropy-based, and deliberately so: this tree
+      # is full of high-entropy strings that are not secrets (CSP hashes,
+      # --generate-hashes lines, Fernet fixtures). See scripts/scan_secrets.py.
+      - name: Scan the working tree and every commit for credentials
+        run: python scripts/scan_secrets.py --history
+
   # Proves the hash-locked lockfile installs reproducibly (what the Pi uses).
   locked-install:
     runs-on: ubuntu-latest
@@ -112,10 +133,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Lives here as well as in the deploy workflow, and at a lower threshold.
+      # Auditing only at deploy time meant a pull request could introduce a
+      # vulnerable dependency and go green; the finding then appeared on main,
+      # attached to whoever merged rather than whoever added it. `moderate`
+      # rather than `high` because this gate blocks a review, not a release.
+      - name: Dependency audit
+        run: npm audit --audit-level=moderate
+
       - name: Test suite
         run: npx vitest run
 
       # build:launch verifies the permanent public-root artifact independently
       # from the date-aware Coming Soon overlay used by production deploys.
+      # It also regenerates worker/inline-hashes.js, so a stale CSP manifest
+      # fails the worker test above rather than reaching production.
       - name: Type-check and build
         run: npm run build:launch
+
+      - name: Confirm the committed CSP hashes match the build
+        run: git diff --exit-code -- worker/inline-hashes.js
