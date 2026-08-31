@@ -3,6 +3,30 @@
 _Last reviewed: 2026-08-31 (three passes, the third external) · Scope: Discord bot, SQLite/JSON state, backups,
 dashboard API, Astro website, Cloudflare Worker and dependency manifests._
 
+## Reporting a vulnerability
+
+Email **support@novaguard.fun**. Please include what you found, how to
+reproduce it and what an attacker gets out of it; a proof of concept helps and
+is never required. Expect an acknowledgement within **72 hours** and an
+assessment within **7 days**. If you do not hear back, assume the mail was lost
+and send it again rather than assuming it was ignored.
+
+In scope: this repository, `novaguard.fun`, `api.novaguard.fun`, and the
+NovaGuard bot's behaviour on Discord.
+
+Out of scope: Discord, Cloudflare, Oracle, Backblaze, GitHub and Anthropic
+themselves - report those to their own programmes; denial of service by volume;
+findings from automated scanners with no demonstrated impact; and anything
+requiring access to an operator's own host or password manager.
+
+Please do not access, modify or retain data belonging to anyone else, and do
+not run tests that degrade the service for other users. Reports made in good
+faith under those terms will not be pursued, and every fix credits its reporter
+unless they ask otherwise.
+
+This document is the security reference for the project; the section above is
+the part addressed to people outside it.
+
 ## Verdict
 
 This document records implemented controls and checks; it is not a guarantee
@@ -162,34 +186,39 @@ rather than believed.
 | Deserialization | No `pickle`/`yaml.load`/`__import__` of untrusted data | review |
 | SQL injection | 100% parameterized queries; the few f-string identifiers come from module constants, each annotated and re-verified | `bandit` in CI, `test_audit_filter.py` |
 | Secrets | Env-only, `.env` git-ignored + untracked, no secrets in logs; `.env` outranks an inherited environment so a rotation cannot silently fail under pm2 | `test_config_check.py` |
-| Committed credentials | Working tree and every commit scanned on each CI run, shape-based so it does not cry wolf on this tree's hashes | `test_scan_secrets.py`, `.github/workflows/ci.yml` |
+| Committed credentials | Working tree and every commit scanned on each CI run, shape-based so it does not cry wolf on this tree's hashes — plus a rule keyed on the *name* beside the value, because NovaGuard's own keys (`WEB_TOKEN_KEY`, `GATE_SIGNING_KEY`, `BACKUP_ENCRYPTION_KEY`) are random bytes no shape rule can recognise | `test_scan_secrets.py`, `.github/workflows/ci.yml` |
 | Tokens at rest | OAuth tokens Fernet-encrypted (dedicated `WEB_TOKEN_KEY`, per-install scrypt salt, older derivations kept as read-only fallbacks); the dashboard **refuses to start** without a cipher rather than degrading to plaintext | `test_webserver_token_encryption.py` |
 | Session ids | Cookie holds a 256-bit id; DB stores only its SHA-256 hash | `test_webserver.py` |
 | DB file perms | `chmod 600` on the SQLite files (owner-only) | `test_production_check.py` |
-| Archives at rest | AES-256-GCM, scrypt KDF, authenticated header, per-file salt+nonce | `test_secure_files.py` |
+| Archives at rest | AES-256-GCM, scrypt KDF, authenticated header, per-file salt+nonce; the continuous Litestream replica — a fuller, fresher copy than either archive — is encrypted with `age` before upload, so the bucket holds ciphertext | `test_secure_files.py`, `deploy/litestream/litestream.yml` |
 | AuthN | Discord OAuth2, HttpOnly cookie, HMAC-signed state (double-submit) | `test_webserver.py`, `test_dashboard_auth.py` |
 | AuthZ — dashboard | `Manage Server` to read/write config; **`Manage Roles` additionally** to publish a role panel or set an autorole; a write re-checks permissions no more than 30s stale | `test_webserver.py` |
-| AuthZ — owner commands | Application owner or team, **plus** a scrypt-hashed admin key, in-memory unlocks, 5-try lockout | `test_admin_auth.py`, `test_admin_gate.py` |
+| AuthZ — owner commands | Application owner or team, **plus** a scrypt-hashed admin key, in-memory unlocks, 5-try lockout — and a lockout now pushes an alert to the admin channel rather than only filing a row somebody has to think to read | `test_admin_auth.py`, `test_admin_gate.py` |
 | AuthZ — command groups | Every configuration group enforces its permission at run time, nested subgroups included — `default_permissions` alone is only a default a server admin can override | `test_command_guards.py` |
-| Role assignment | A role carrying privileged permissions is never self-assignable — **including permissions granted by a channel overwrite, which `role.permissions` does not show**; a configurer cannot expose a role above their own position, and an unresolvable configurer refuses rather than skipping the check; re-checked at click and join time | `test_role_safety.py` |
+| Role assignment | A role carrying privileged permissions is never self-assignable — **including permissions granted by a channel overwrite, which `role.permissions` does not show**; a configurer cannot expose a role above their own position, and an unresolvable configurer refuses rather than skipping the check; re-checked at click and join time. All six paths go through it, `/clientrole` included — that one grants with no click from the member at all | `test_role_safety.py`, `test_client_role.py` |
 | Role disclosure | Private channels a role opens are reported at publish time (`/rolepanel` field, `unlocks` in the API) rather than refused — opening a channel is what a panel is for | `test_role_safety.py` |
 | Input validation | Economy `Range`, web config validated, AI input capped, durations bounded so hostile input returns `None` rather than raising | `test_utils.py`, `test_levels_settings.py`, `test_economy_settings.py` |
 | Mentions | Global `allowed_mentions` blocks `@everyone`/role-ping injection; the invite no longer requests `mention_everyone` at all | `test_invite_permissions.py` |
 | CSRF | A mutation needs a valid `Origin` **or** a JSON content type, plus SameSite and the signed state (bot API); `__Host-` double-submit token (Worker) | `test_webserver.py`, `website-3/worker/index.test.js` |
 | CORS | Strict allow-list, never wildcard, credentials only for listed origins | `test_webserver.py` |
-| Rate limiting | Per-IP web buckets with separate scopes for auth, preview, read, write and health, and a hard ceiling on the bucket table; the Worker's login gate keyed per client, not route-wide; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_dashboard_auth.py`, `test_webserver.py`, `website-3/worker/index.test.js` |
+| Client address | Behind a trusted proxy the address comes from `CF-Connecting-IP`, or the **last** `X-Forwarded-For` hop — the only one a proxy put there. Reading the first hop let a client pick its own rate-limit bucket and write any address it liked into the audit log | `test_dashboard_auth.py` |
+| Authorization freshness | A witnessed Manage Server change forces a permission refetch on that person's next request, whatever the cache says; the TTL is the fallback, not the mechanism | `test_dashboard_auth.py` |
+| Rate limiting | Per-IP web buckets with separate scopes for auth, preview, read, write and health, and a hard ceiling on the bucket table; **every** API route limits, logout included; the Worker's login and preview doors are keyed per client and hold separate budgets, so traffic at one cannot close the other; per-user cooldowns on every command that walks the store; button anti-spam | `test_command_cooldowns.py`, `test_dashboard_auth.py`, `test_webserver.py`, `website-3/worker/index.test.js` |
 | AI cost | Input cap + per-user cooldown + global 30/min and 500/day + **per-guild 10/min and 100/day**, so one server cannot empty the pool; the reservation is refunded when the upstream call fails | `test_ai_settings.py` |
-| Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny | `test_api_security_headers.py` |
+| Transport | HSTS on HTTPS, CSP (`default-src 'none'`), no-sniff, frame-deny, `Permissions-Policy` closing every browser feature | `test_api_security_headers.py` |
 | Website CSP | Inline scripts and styles named by SHA-256 generated from the build, not nonced on sight by a rewriter that could not tell ours from anyone's | `website-3/worker/index.test.js` |
-| Gate cookie signing | `GATE_SIGNING_KEY` signs gate and preview cookies, so a leaked cookie is not an offline oracle for the launch password | `website-3/worker/index.test.js` |
+| Gate cookie signing | `GATE_SIGNING_KEY` signs gate and preview cookies, so a leaked cookie is not an offline oracle for the launch password. **Required, not optional**: a deploy without it fails, and a live worker that loses it stops issuing and verifying cookies rather than falling back to the password | `website-3/worker/index.test.js`, `wrangler.jsonc` |
+| Pre-launch data | `/api/status-snapshot` and `/api/updates-feed` sit behind the same gate as the pages that render them; they used to answer everyone, ahead of every check | `website-3/worker/index.test.js` |
 | Errors | Generic to users; full tracebacks only to the configured admin log channel, never to the channel the command came from | `test_error_digest.py` |
-| Outbound requests | Every GitHub path segment is percent-encoded; repository commands accept only configured repositories | `test_github_api_safety.py` |
+| Outbound requests | Every GitHub path segment is percent-encoded — every method, verified one by one after two were found interpolating raw; repository commands accept only configured repositories | `test_github_api_safety.py` |
 | Cross-guild isolation | Giveaway end/reroll match on guild as well as message id; the dashboard scopes every guild lookup | `test_giveaway_scope.py` |
 | Embed limits | Member- and repository-supplied text is clamped, and free-text options declare a maximum length | `test_embed_limits.py` |
 | State files | Atomic writes with a private scratch file, owner-only mode, fsync; settings patches in one transaction | `test_storage_durability.py` |
 | Redirects | `safeNext` re-checks its normalized output, in the Worker and its client mirror | `website-3/worker/index.test.js` |
 | CI permissions | Both workflows declare `contents: read` rather than inheriting the repo default | `.github/workflows/ci.yml` |
-| Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, `npm audit` on PRs (`moderate`) and deploys (`high`), Actions pinned to SHA, Dependabot across pip, npm and actions | `.github/workflows/ci.yml` |
+| Supply chain | Version caps, hash-locked `requirements.lock`, `pip-audit`, `npm audit` on PRs (`moderate`) and deploys (`high`), Actions pinned to SHA, Dependabot across pip, npm and actions. CI regenerates the lock and fails if the committed one has drifted — Dependabot once raised a CVE floor in `requirements.txt` alone, and production kept installing the version below it | `.github/workflows/ci.yml` |
+| CI credentials | Every checkout sets `persist-credentials: false`, so the job token is not sitting in `.git/config` while `pip install` and `npm ci` run third-party install scripts | `.github/workflows/ci.yml`, `deploy-website.yml` |
+| Pre-merge build audit | The site's own security linter runs against the build in the pull request, not only against production twenty seconds after it went live | `.github/workflows/ci.yml` |
 | Least privilege — gateway | Intents built from `none()`: guilds, members, moderation, guild messages, message content, voice states. Nothing else is requested | review, `bot.py` |
 | Reviewability | `.gitattributes` normalises line endings, so a diff is the change rather than 82,000 invisible characters | `.gitattributes` |
 
@@ -316,9 +345,31 @@ What genuinely remains, and why:
   random one: the key must be derivable from the environment alone at import,
   with no stored state to read. The salt buys domain separation; the work
   factor does the rest.
-- **A dashboard write can still use a permission set up to 30 seconds old.**
-  Closing that completely means an upstream call per write, which puts
-  Discord's availability in front of every save.
+- **A dashboard write can still use a permission set up to 30 seconds old**
+  when nothing has been observed to change. The window is now closed for the
+  case that matters: the bot watches `on_member_update` on the gateway, and a
+  Manage Server change it witnesses forces a refetch on that person's next
+  request regardless of cache age (`core/webserver.py`, `_on_member_update`).
+  What remains is a revocation made while the bot was disconnected, which the
+  TTL still bounds. Removing the TTL entirely would put an upstream call - and
+  Discord's availability - in front of every save.
+- **Encryption at rest covers OAuth tokens, not the whole database.** Fernet
+  protects the access and refresh tokens in `web_sessions`; `user_json`,
+  `guilds_json`, the audit IP column and the ordinary feature tables (levels,
+  economy, tickets, role panels) are stored as written. What protects them is
+  file permissions - `chmod 600`, re-applied on every connection and checked by
+  `production_check` - plus the operator's disk encryption attestation, and, for
+  anything that leaves the host, envelope encryption: AES-256-GCM on the
+  archives and `age` on the Litestream replica.
+
+  This is a deliberate line, not an oversight. Encrypting the columns the bot
+  filters and sorts on means either decrypting the table to answer a query or
+  giving up the index - and the data behind that line is pseudonymous Discord
+  IDs and guild configuration, not credentials. The tokens are on the other
+  side of it because a token is a working key to someone's Discord account, and
+  because they are written and read whole, never queried. Moving the line means
+  a schema that separates queryable columns from an encrypted blob; it is worth
+  doing before the first table holding anything more sensitive than an ID.
 
 ---
 

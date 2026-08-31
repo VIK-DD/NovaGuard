@@ -91,6 +91,17 @@ LITESTREAM_ENDPOINT=s3.eu-central-003.backblazeb2.com
 LITESTREAM_REGION=eu-central-003
 LITESTREAM_ACCESS_KEY_ID=...
 LITESTREAM_SECRET_ACCESS_KEY=...
+# The replica is encrypted client-side, so the bucket alone cannot restore it.
+LITESTREAM_AGE_IDENTITY=/etc/litestream-age.key
+LITESTREAM_AGE_RECIPIENT=age1...
+```
+
+Restore the age identity from the password manager **before** the database —
+without it the replica is ciphertext and this step fails:
+
+```bash
+sudo install -m 600 /dev/null /etc/litestream-age.key
+sudo tee /etc/litestream-age.key >/dev/null   # paste the identity, then Ctrl-D
 ```
 
 Restore the database:
