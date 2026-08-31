@@ -311,5 +311,80 @@ class TokenRefreshTests(AuthTestCase):
         self.assertEqual(entry["access_token"], "a2")
 
 
+class StateKeySeparationTests(unittest.TestCase):
+    """The state signer must not be the OAuth credential itself."""
+
+    def test_the_state_key_is_derived_not_the_raw_client_secret(self):
+        # It used to be `CLIENT_SECRET.encode()`, which made every state token
+        # a (known message, MAC) pair under the credential that also talks to
+        # Discord's token endpoint. One secret, two unrelated jobs.
+        self.assertNotEqual(web._STATE_SECRET, web.CLIENT_SECRET.encode("utf-8"))
+        self.assertEqual(len(web._STATE_SECRET), 32)
+
+    def test_the_derivation_is_domain_separated(self):
+        # Same input material as the token cipher, different label, so one
+        # cannot be used to attack the other.
+        plain = hashlib.sha256(web.CLIENT_SECRET.encode("utf-8")).digest()
+        self.assertNotEqual(web._STATE_SECRET, plain)
+
+
+class RateLimitTests(AuthTestCase):
+    """Bounded per address, bounded in memory, and not shared between doors."""
+
+    def request_from(self, address):
+        request = FakeRequest()
+        request.remote = address
+        return request
+
+    def test_the_preview_door_no_longer_spends_the_login_budget(self):
+        # Both endpoints are public and unauthenticated. While they shared the
+        # "auth" bucket, anonymous traffic on the maintenance preview form was
+        # enough to close dashboard login for everyone on that address.
+        self.assertIn("preview", web.RATE_LIMITS)
+
+        request = self.request_from("203.0.113.10")
+        limit, _ = web.RATE_LIMITS["preview"]
+        for _ in range(limit):
+            self.server._rate_limit(request, "preview")
+        with self.assertRaises(web.ApiError):
+            self.server._rate_limit(request, "preview")
+
+        # The login door is untouched by that flood.
+        self.server._rate_limit(request, "auth")
+
+    def test_health_is_bounded_where_it_used_to_be_unlimited(self):
+        request = self.request_from("203.0.113.11")
+        limit, _ = web.RATE_LIMITS["health"]
+        for _ in range(limit):
+            self.server._rate_limit(request, "health")
+        with self.assertRaises(web.ApiError) as caught:
+            self.server._rate_limit(request, "health")
+        self.assertEqual(caught.exception.code, "rate_limited")
+
+    def test_a_flood_of_fresh_addresses_sheds_instead_of_growing_forever(self):
+        # The old cleanup only removed already-stale keys, so a burst from one
+        # IPv6 /64 could grow the table without bound inside a single window.
+        with mock.patch.object(web, "MAX_RATE_BUCKETS", 50):
+            for index in range(50):
+                self.server._rate_limit(self.request_from(f"2001:db8::{index:x}"), "read")
+            with self.assertRaises(web.ApiError) as caught:
+                self.server._rate_limit(self.request_from("2001:db8::ffff"), "read")
+        self.assertEqual(caught.exception.code, "rate_limited")
+        self.assertLessEqual(len(self.server.rate_buckets), 50)
+
+    def test_an_address_already_known_is_still_served_when_the_table_is_full(self):
+        # Shedding must fall on new arrivals, not on whoever is mid-session.
+        known = self.request_from("203.0.113.12")
+        self.server._rate_limit(known, "read")
+        with mock.patch.object(web, "MAX_RATE_BUCKETS", 1):
+            self.server._rate_limit(known, "read")
+
+    def test_stale_buckets_are_swept_rather_than_counted(self):
+        self.server._rate_limit(self.request_from("203.0.113.13"), "read")
+        self.assertEqual(len(self.server.rate_buckets), 1)
+        self.server._evict_stale_buckets(time.monotonic() + 601)
+        self.assertEqual(self.server.rate_buckets, {})
+
+
 if __name__ == "__main__":
     unittest.main()

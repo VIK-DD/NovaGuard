@@ -198,11 +198,16 @@ def check_config(env=None):
         web_host = _value(env, "WEB_HOST") or "127.0.0.1"
         trust_proxy = _enabled(env, "WEB_TRUST_PROXY")
         if not trust_proxy:
+            # Was a WARN, which undersold it. Off, `_client_ip` can only ever
+            # see the proxy: every visitor lands in the same rate-limit bucket,
+            # so ten requests a minute from anybody closes login for everybody,
+            # and every audit row records the tunnel instead of the person.
             findings.append(
                 Finding(
-                    WARN,
+                    CRITICAL,
                     "WEB_TRUST_PROXY",
-                    "off - behind Cloudflare, audit and rate limits will not use the real visitor IP.",
+                    "off - every visitor shares one rate-limit bucket and the audit trail "
+                    "records the proxy, not the person. Turn it on for any proxied deployment.",
                 )
             )
         elif web_host not in {"127.0.0.1", "::1", "localhost"}:

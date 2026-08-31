@@ -27,6 +27,20 @@ except ImportError:  # pragma: no cover - exercised only on minimal installs
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
 MAX_SESSIONS_PER_USER = 5
 AUDIT_KEEP_DAYS = 90
+# How long a session may sit untouched before it stops being a login.
+#
+# The absolute seven-day TTL in core.webserver answers "how old is this",
+# which is a different question. `last_seen_at` was already written on every
+# request and read on none of them, so a tab left open on a shared machine
+# stayed a valid login for seven calendar days. Twelve hours keeps a normal
+# working day (and a night's sleep between two of them) unbroken.
+SESSION_IDLE_TTL = 12 * 3600
+# How often loading a session refreshes its own last-seen stamp. Without this
+# the stamp only moved when a token or guild-list refresh happened to fire, so
+# somebody reading one page for hours could be idled out mid-use. Throttled
+# because this is a write on the read path, and once every five minutes per
+# session is enough to measure a twelve-hour window.
+SEEN_REFRESH_SECONDS = 300
 TOKEN_PREFIX = "enc:"
 SCHEMA_VERSION = 1
 
@@ -236,10 +250,30 @@ def db_load_session(sid):
         "expires_at": row["expires_at"],
         "last_seen_at": row["last_seen_at"],
     }
-    if entry["expires_at"] < time.time():
+    now = time.time()
+    if entry["expires_at"] < now:
         db_delete_session(sid)
         return None
+    # last_seen_at is 0 for rows written before this column meant anything;
+    # those are aged out by the absolute TTL alone rather than logged out on
+    # the spot by a rule that did not exist when they were created.
+    last_seen = entry.get("last_seen_at") or 0
+    if last_seen and now - last_seen > SESSION_IDLE_TTL:
+        db_delete_session(sid)
+        return None
+    if now - last_seen > SEEN_REFRESH_SECONDS:
+        db_mark_seen(sid, now)
+        entry["last_seen_at"] = now
     return entry
+
+
+def db_mark_seen(sid, moment=None):
+    """Stamp a session as used, without rewriting its tokens."""
+    with _DB_LOCK, connect() as db:
+        db.execute(
+            "UPDATE web_sessions SET last_seen_at = ? WHERE sid_hash = ?",
+            (moment or time.time(), _hash_sid(sid)),
+        )
 
 
 def db_delete_session(sid):

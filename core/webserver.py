@@ -198,9 +198,25 @@ MANAGE_ROLES = 0x10000000
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
+    # The maintenance preview used to count against "auth". Both are public and
+    # unauthenticated, so anonymous traffic on one spent the other's budget -
+    # and ten requests a minute against the preview form was enough to close
+    # dashboard login for everybody sharing that address.
+    "preview": (10, 60),
     "read": (120, 60),
     "write": (30, 60),
+    # /health and /ready had no limit at all, and each one opens SQLite, runs
+    # two PRAGMAs and chmods three files. Generous enough for any monitor,
+    # bounded enough that it cannot be used to sit on the database.
+    "health": (600, 60),
 }
+
+# A hard ceiling on distinct rate-limit buckets. The opportunistic sweep below
+# only removes keys that are already stale, so a burst from many addresses -
+# one IPv6 /64 is enough - could grow the dict without bound inside a single
+# window. Past this, requests from unseen addresses are shed rather than
+# allowed to consume memory on a host that has little of it.
+MAX_RATE_BUCKETS = 20_000
 
 CHANNEL_KEYS = (
     "welcome_channel",
@@ -219,10 +235,26 @@ NATIVE_MANAGER_CHANNEL_KEYS = (
 CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
 
-# HMAC key for signing OAuth state tokens. Reuses the client secret so it needs
-# no extra configuration; a per-process random fallback keeps things sane when
-# OAuth is not configured (login is disabled in that case anyway).
-_STATE_SECRET = (CLIENT_SECRET or secrets.token_urlsafe(32)).encode("utf-8")
+# HMAC key for signing OAuth state tokens.
+#
+# Derived rather than reused. The previous version handed CLIENT_SECRET to
+# hmac.new() directly, which made every state token a (known message, MAC) pair
+# under the OAuth credential itself - the same key doing two unrelated jobs.
+# core/web_storage.py already learned this lesson for token encryption and grew
+# WEB_TOKEN_KEY plus a domain-separating KDF; the state signer never did.
+#
+# One SHA-256 over a labelled input is enough here, unlike there: the input is
+# a machine-generated 32+ byte secret, not something an operator might set to a
+# passphrase, so there is nothing for a work factor to protect. What it buys is
+# separation - this digest cannot be used to decrypt a stored token, and a
+# leaked state token says nothing about either secret.
+#
+# A per-process random fallback keeps things sane when OAuth is not configured
+# (login is disabled in that case anyway).
+_STATE_KEY_MATERIAL = os.getenv("WEB_TOKEN_KEY", "").strip() or CLIENT_SECRET
+_STATE_SECRET = hashlib.sha256(
+    b"novaguard-oauth-state-v1|" + (_STATE_KEY_MATERIAL or secrets.token_urlsafe(32)).encode("utf-8")
+).digest()
 
 
 def count_visible_commands(tree):
@@ -430,21 +462,44 @@ class WebServer:
                     return forwarded_ip
         return self._normalized_ip(request.remote) or "?"
 
+    def _evict_stale_buckets(self, now):
+        """Drop buckets nothing has touched inside the longest window."""
+        for key in [
+            key for key, bucket in self.rate_buckets.items()
+            if not bucket or now - bucket[-1] > 600
+        ]:
+            self.rate_buckets.pop(key, None)
+
     def _rate_limit(self, request, scope):
         limit, window = RATE_LIMITS[scope]
         key = (self._client_ip(request), scope)
-        bucket = self.rate_buckets.setdefault(key, deque())
         now = time.monotonic()
+
+        bucket = self.rate_buckets.get(key)
+        if bucket is None:
+            # A new address. Sweep first, and if the table is still full,
+            # refuse rather than let an address flood grow the dict: shedding
+            # load beats being killed by the OOM reaper mid-request.
+            if len(self.rate_buckets) >= MAX_RATE_BUCKETS:
+                self._evict_stale_buckets(now)
+                if len(self.rate_buckets) >= MAX_RATE_BUCKETS:
+                    log.warning("Rate-limit table full (%d buckets); shedding new clients.",
+                                len(self.rate_buckets))
+                    raise ApiError(
+                        429, "Server is shedding load — try again shortly.",
+                        code="rate_limited", retry_after=5,
+                    )
+            bucket = self.rate_buckets.setdefault(key, deque())
+
         while bucket and now - bucket[0] > window:
             bucket.popleft()
         if len(bucket) >= limit:
             retry = int(window - (now - bucket[0])) + 1
             raise ApiError(429, "Too many requests — slow down.", code="rate_limited", retry_after=retry)
         bucket.append(now)
-        # opportunistic cleanup so the dict cannot grow forever
+        # opportunistic cleanup so the dict does not carry yesterday's callers
         if len(self.rate_buckets) > 2048:
-            for k in [k for k, b in self.rate_buckets.items() if not b or now - b[-1] > 600]:
-                self.rate_buckets.pop(k, None)
+            self._evict_stale_buckets(now)
 
     def _allowed_origin(self, request):
         """Return the request Origin only if it is on the configured allow-list."""
@@ -860,7 +915,7 @@ class WebServer:
         response = web.HTTPFound(AFTER_LOGIN)
         response.set_cookie(SESSION_COOKIE, sid, max_age=SESSION_TTL, httponly=True,
                             samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
-        response.del_cookie(STATE_COOKIE)
+        response.del_cookie(STATE_COOKIE, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         raise response
 
     async def handle_logout(self, request):
@@ -889,7 +944,11 @@ class WebServer:
             await asyncio.to_thread(db_delete_session, sid)
             self._session_locks.pop(sid, None)
         response = web.json_response({"ok": True})
-        response.del_cookie(SESSION_COOKIE)
+        # Same attributes the login cookie was set with. A clearing cookie that
+        # differs on Secure or SameSite is not guaranteed to replace the one it
+        # is meant to remove, which leaves an orphan in the browser long after
+        # the session behind it is gone.
+        response.del_cookie(SESSION_COOKIE, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         return response
 
     # ── public endpoints ─────────────────────────────────────────────
@@ -919,18 +978,23 @@ class WebServer:
         }
 
     async def handle_health(self, request):
+        self._rate_limit(request, "health")
         payload = await self._health_payload()
         return web.json_response(payload, status=200 if payload["db_ok"] else 503)
 
     async def handle_ready(self, request):
+        self._rate_limit(request, "health")
         payload = await self._health_payload()
         return web.json_response(payload, status=200 if payload["ok"] else 503)
 
     async def handle_maintenance_preview(self, request):
-        # "auth" is 10 requests per 60 s, keyed on the visitor's real address —
-        # _client_ip reads CF-Connecting-IP, so the proxy in front of the site
-        # does not merge every visitor into one bucket.
-        self._rate_limit(request, "auth")
+        # Its own bucket, not "auth". Both are public and unauthenticated, so
+        # sharing one meant anonymous traffic here could spend the login
+        # budget — a denial-of-service lever pointed at the dashboard door.
+        # Keyed on the visitor's real address: _client_ip reads
+        # CF-Connecting-IP, so the proxy in front does not merge every visitor
+        # into one bucket (WEB_TRUST_PROXY must be on for that; see .env.example).
+        self._rate_limit(request, "preview")
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
@@ -947,6 +1011,7 @@ class WebServer:
         return web.json_response({"ok": True, "since": since})
 
     async def handle_invite(self, request):
+        self._rate_limit(request, "read")
         if not CLIENT_ID:
             raise ApiError(503, "Client id not configured.", code="oauth_unavailable")
         params = {
@@ -971,6 +1036,7 @@ class WebServer:
         purely so the invite ends somewhere that belongs to us instead of on
         Discord's own confirmation screen.
         """
+        self._rate_limit(request, "read")
         raise web.HTTPFound(AFTER_INVITE)
 
     async def handle_stats(self, request):
