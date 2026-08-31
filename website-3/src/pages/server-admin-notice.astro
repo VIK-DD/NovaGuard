@@ -3,6 +3,7 @@ import Base from "../layouts/Base.astro";
 import Footer from "../components/Footer.astro";
 import Nav from "../components/Nav.astro";
 import { LEGAL_OPERATOR } from "../data/legal";
+import { buildMemberNotice, MEMBER_NOTICE_FEATURES } from "../data/serverAdminNotice";
 
 const featureNotices = [
   {
@@ -23,15 +24,7 @@ const featureNotices = [
   },
 ] as const;
 
-const memberNotice = `## NovaGuard privacy notice
-
-This server uses NovaGuard for the optional features listed below. We enable only the features needed for this community and limit staff-only channels to authorized moderators.
-
-**Enabled here:** [replace this with your enabled features]
-**What this may process:** Discord IDs and the data needed for the enabled feature. Server Logs can repost edited or deleted message excerpts in a private log channel. Levels, economy and voice statistics keep their own feature records. When /ask is enabled, the question is sent to Anthropic for an AI response.
-**Your controls:** use /privacy export to receive your NovaGuard records, or /privacy delete to request their erasure. For a community-specific question or moderation appeal, contact this server's moderators first.
-**NovaGuard policy:** https://novaguard.fun/privacy
-**Contact:** ${LEGAL_OPERATOR.privacyEmail}`;
+const memberNotice = buildMemberNotice([], LEGAL_OPERATOR.privacyEmail);
 ---
 
 <Base
@@ -78,25 +71,66 @@ This server uses NovaGuard for the optional features listed below. We enable onl
     </section>
 
     <section class="mt-16 border-t border-line pt-8">
-      <p class="text-xs tracking-[0.2em] text-primary uppercase">Copy and adapt</p>
-      <div class="mt-4 flex flex-wrap items-end justify-between gap-4">
+      <p class="text-xs tracking-[0.2em] text-primary uppercase">Build and publish</p>
+      <div class="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 class="font-display text-2xl">Member-facing notice</h2>
           <p class="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
-            Replace the bracketed line with the modules you actually enabled, then post this in a
-            visible rules, onboarding or privacy channel.
+            Select the modules enabled on your server. The finished notice updates instantly and is
+            ready to post in a visible rules, onboarding or privacy channel.
           </p>
         </div>
+      </div>
+
+      <fieldset class="mt-6">
+        <legend class="text-sm font-semibold text-ink">Optional modules enabled on this server</legend>
+        <p class="mt-1 text-xs leading-relaxed text-ink-faint">
+          Your choices stay in this browser tab and are not sent to or stored by NovaGuard.
+        </p>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          {
+            MEMBER_NOTICE_FEATURES.map((feature) => (
+              <label class="ng-pressable flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border border-line bg-card px-4 py-3 text-sm transition-colors hover:border-line-strong">
+                <input
+                  type="checkbox"
+                  value={feature.id}
+                  data-member-notice-feature
+                  class="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                />
+                <span class="font-medium text-ink">{feature.label}</span>
+              </label>
+            ))
+          }
+        </div>
+      </fieldset>
+
+      <div class="mt-5 flex flex-wrap gap-3">
+        <button
+          type="button"
+          data-select-all-notice-features
+          class="ng-pressable inline-flex h-10 items-center justify-center rounded-[6px] border border-line bg-card px-4 text-sm font-medium text-ink transition-colors hover:border-line-strong"
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          data-clear-notice-features
+          class="ng-pressable inline-flex h-10 items-center justify-center rounded-[6px] border border-line bg-card px-4 text-sm font-medium text-ink transition-colors hover:border-line-strong"
+        >
+          Clear
+        </button>
         <button
           type="button"
           data-copy-member-notice
-          class="ng-pressable inline-flex h-10 items-center justify-center rounded-[6px] border border-line bg-card px-4 text-sm font-medium text-ink transition-colors hover:border-line-strong"
+          class="ng-pressable inline-flex h-10 items-center justify-center rounded-[6px] bg-primary px-4 text-sm font-semibold text-primary-ink transition-opacity hover:opacity-90"
         >
-          Copy notice
+          Copy finished notice
         </button>
       </div>
       <pre
         data-member-notice
+        data-privacy-email={LEGAL_OPERATOR.privacyEmail}
+        aria-live="polite"
         class="mt-5 overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-bg-subtle p-5 font-mono text-xs leading-6 text-ink-muted sm:text-sm"
       >{memberNotice}</pre>
       <p data-copy-member-notice-status class="mt-3 text-sm text-ink-faint" role="status" aria-live="polite"></p>
@@ -146,15 +180,49 @@ This server uses NovaGuard for the optional features listed below. We enable onl
 </Base>
 
 <script>
+  import { buildMemberNotice } from "../data/serverAdminNotice";
+
   const button = document.querySelector<HTMLButtonElement>("[data-copy-member-notice]");
+  const selectAllButton = document.querySelector<HTMLButtonElement>("[data-select-all-notice-features]");
+  const clearButton = document.querySelector<HTMLButtonElement>("[data-clear-notice-features]");
   const notice = document.querySelector<HTMLElement>("[data-member-notice]");
   const status = document.querySelector<HTMLElement>("[data-copy-member-notice-status]");
+  const featureInputs = Array.from(
+    document.querySelectorAll<HTMLInputElement>("[data-member-notice-feature]"),
+  );
+
+  const refreshNotice = () => {
+    if (!notice) return;
+    const selectedFeatureIds = featureInputs
+      .filter((input) => input.checked)
+      .map((input) => input.value);
+    notice.textContent = buildMemberNotice(
+      selectedFeatureIds,
+      notice.dataset.privacyEmail ?? "support@novaguard.fun",
+    );
+  };
+
+  featureInputs.forEach((input) => input.addEventListener("change", refreshNotice));
+
+  selectAllButton?.addEventListener("click", () => {
+    featureInputs.forEach((input) => {
+      input.checked = true;
+    });
+    refreshNotice();
+  });
+
+  clearButton?.addEventListener("click", () => {
+    featureInputs.forEach((input) => {
+      input.checked = false;
+    });
+    refreshNotice();
+  });
 
   button?.addEventListener("click", async () => {
     if (!notice || !status) return;
     try {
       await navigator.clipboard.writeText(notice.textContent?.trim() ?? "");
-      status.textContent = "Notice copied. Replace the enabled-features line before posting it.";
+      status.textContent = "Finished notice copied. Review your selections, then post it for members.";
     } catch {
       status.textContent = "Copy is unavailable in this browser. Select the notice above and copy it manually.";
     }

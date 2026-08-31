@@ -21,8 +21,7 @@ export const INLINE_SCRIPT_HASHES = [
   "sha256-oZiDBYCnKxZ4d8LuC+XQlapjZJs3UGzz00Q1D/kyBX0=",
   "sha256-rMll8fQ85/q5CTgEafnUVe8Tydn2B81sjEi9iZ+IE6U=",
   "sha256-whf74ZTGRvRF1yBo1JPJBxEPBJdqiHR3lEb91E4TKCA=",
-  "sha256-xBWm0Mw9/DB8UoPnyMb2JvXhQ709rcMkyOhe8LmMr6A=",
-  "sha256-z2Ft7b6/Vvkob9pngbqi4kH2g7panTJf8/2/gerYR6k="
+  "sha256-xBWm0Mw9/DB8UoPnyMb2JvXhQ709rcMkyOhe8LmMr6A="
 ];
 
 export const INLINE_STYLE_HASHES = [
