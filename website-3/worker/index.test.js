@@ -6,6 +6,9 @@ import {
   hasPublicLaunchPassed,
 } from "../launch-config.js";
 import worker, { loginRateLimitKey } from "./index.js";
+import { INLINE_SCRIPT_HASHES, INLINE_STYLE_HASHES } from "./inline-hashes.js";
+import { collectInlineHashes } from "../scripts/inline-csp-hashes.mjs";
+import { createHash } from "node:crypto";
 
 const env = {
   AUTH_PASSWORD: "test-password",
@@ -104,44 +107,38 @@ describe("production observability", () => {
     expect(csp).not.toContain("unsafe-eval");
   });
 
-  it("gives every document script and style the CSP nonce", async () => {
-    const elements = new Map();
-    class HtmlRewriterDouble {
-      handlers = [];
-
-      on(selector, handler) {
-        this.handlers.push([selector, handler]);
-        return this;
-      }
-
-      transform(response) {
-        for (const [selector, handler] of this.handlers) {
-          const attributes = new Map();
-          handler.element({ setAttribute: (name, value) => attributes.set(name, value) });
-          elements.set(selector, attributes);
-        }
-        return response;
-      }
-    }
-    vi.stubGlobal("HTMLRewriter", HtmlRewriterDouble);
-    const htmlEnv = {
-      ...env,
-      ASSETS: {
-        fetch: async () =>
-          new Response("<style>body{}</style><script>window.ready=true</script>", {
-            headers: { "Content-Type": "text/html; charset=utf-8" },
-          }),
-      },
-    };
-
-    const response = await worker.fetch(new Request("https://novaguard.fun/"), htmlEnv);
+  it("names the build's own inline scripts by hash, and nothing else", async () => {
+    // The nonce this replaced was stamped onto every script and style element
+    // by an HTMLRewriter, so it certified "this is a script tag" rather than
+    // "we built this". Anything that reached the HTML first was signed by the
+    // header meant to stop it.
+    const response = await worker.fetch(new Request("https://novaguard.fun/"), env);
     const csp = response.headers.get("Content-Security-Policy");
-    const nonce = csp.match(/'nonce-([^']+)'/)?.[1];
 
-    expect(nonce).toBeTruthy();
-    expect(elements.get("script")?.get("nonce")).toBe(nonce);
-    expect(elements.get("style")?.get("nonce")).toBe(nonce);
-    expect(response.headers.get("Content-Length")).toBeNull();
+    expect(csp).not.toContain("nonce-");
+    expect(INLINE_SCRIPT_HASHES.length).toBeGreaterThan(0);
+    for (const hash of INLINE_SCRIPT_HASHES) expect(csp).toContain(`'${hash}'`);
+    for (const hash of INLINE_STYLE_HASHES) expect(csp).toContain(`'${hash}'`);
+  });
+
+  it("does not permit a script it did not build", async () => {
+    const injected = "alert(document.cookie)";
+    const digest = createHash("sha256").update(injected, "utf8").digest("base64");
+
+    const response = await worker.fetch(new Request("https://novaguard.fun/"), env);
+    const csp = response.headers.get("Content-Security-Policy");
+
+    expect(csp).not.toContain(digest);
+  });
+
+  it("keeps the hash manifest in step with the built pages", async () => {
+    // A stale manifest blocks the site's own inline code, so this is the test
+    // that has to fail if someone edits a script and forgets to rebuild.
+    const built = await collectInlineHashes(new URL("../dist", import.meta.url).pathname);
+    if (built.pages === 0) return; // no dist/ in this checkout; CI builds first
+
+    expect(built.script).toEqual(INLINE_SCRIPT_HASHES);
+    expect(built.style).toEqual(INLINE_STYLE_HASHES);
   });
 
   it("emits structured upstream failures without secrets", async () => {
@@ -1027,6 +1024,87 @@ describe("maintenance sync", () => {
     const body = await (await dashboardRequest(pageEnv)).text();
 
     expect(body).toContain('<p class="message"></p>');
+  });
+});
+
+describe("gate cookie signing key", () => {
+  // AUTH_PASSWORD used to be the HMAC key as well as the password. Every
+  // cookie the worker issued was then a (known message, MAC) pair under a
+  // human-chosen password, and HMAC-SHA256 has no work factor - one leaked
+  // cookie is an offline dictionary attack at whatever speed the attacker's
+  // hardware runs.
+  const DEDICATED = "P4unRLGiE6mV9wq2Zt7XbKsA0YcNhJ3F";
+
+  // Same shared-clock discipline as "maintenance sync" above, and for the same
+  // reason: the worker caches the maintenance answer in module scope, so a test
+  // whose clock sits *earlier* than the cached fetchedAt reads that answer as
+  // fresh and inherits it. Start after the range that block reaches and stay
+  // before PUBLIC_LAUNCH_AT, since these tests are about the pre-launch gate.
+  let clock = Date.parse("2026-08-25T00:00:00Z");
+
+  beforeEach(() => {
+    clock += 6 * 60 * 60 * 1000;
+    vi.setSystemTime(clock);
+  });
+
+  async function loginCookie(withEnv) {
+    const response = await worker.fetch(
+      formPost("/api/auth/login", { password: withEnv.AUTH_PASSWORD, next: "/dashboard/" }),
+      withEnv,
+    );
+    return (response.headers.get("Set-Cookie") || "").split(";")[0];
+  }
+
+  it("signs with the dedicated key when one is configured", async () => {
+    const signed = { ...env, GATE_SIGNING_KEY: DEDICATED };
+    const cookie = await loginCookie(signed);
+    expect(cookie).toMatch(/^ng_gate=/);
+
+    // The same cookie must not verify under the password alone.
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      env,
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toContain("/login/");
+  });
+
+  it("a cookie signed with the dedicated key is accepted by it", async () => {
+    const signed = { ...env, GATE_SIGNING_KEY: DEDICATED };
+    const cookie = await loginCookie(signed);
+
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      signed,
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("falls back to the password loudly rather than locking the site out", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const cookie = await loginCookie(env);
+      const response = await worker.fetch(
+        new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+        env,
+      );
+      expect(response.status).toBe(200);
+      const events = warn.mock.calls.map((call) => String(call[0]));
+      expect(events.some((line) => line.includes("gate_signing_key_missing"))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("refuses a key too short to be worth having", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await loginCookie({ ...env, GATE_SIGNING_KEY: "short" });
+      const events = warn.mock.calls.map((call) => String(call[0]));
+      expect(events.some((line) => line.includes("gate_signing_key_too_short"))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
