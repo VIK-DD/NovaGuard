@@ -4,7 +4,7 @@
 discord.py>=2.7.1,<3
 # 3.14.3 fixes CVE-2026-69244 plus the websocket issues fixed in 3.14.2.
 aiohttp>=3.14.3,<4
-anthropic>=1.0.0,<2
+anthropic>=1.2.0,<2
 # Floor is 50.0: earlier releases carry CVE-2026-69247, and the old <50
 # ceiling pinned us to exactly the vulnerable 49.x. Used for Fernet
 # encryption of OAuth tokens at rest in core/web_storage.py.
