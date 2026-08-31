@@ -35,6 +35,13 @@ FAKE = {
     # Assembled rather than written out, like the rest: a literal header here
     # is the one string in this file that any scanner would flag on sight.
     "Private key block": "-----BEGIN " + "OPENSSH PRIVATE KEY" + "-----",
+    "npm access token": "npm_" + "A" * 36,
+    "PyPI API token": "pypi-AgEIcHlwaS5vcmc" + "B" * 50,
+    "Slack webhook": "https://hooks.slack.com/services/T0000000/B0000000/" + "c" * 24,
+    "Stripe secret key": "sk_live_" + "D" * 24,
+    "SendGrid API key": "SG." + "E" * 22 + "." + "F" * 43,
+    "JSON Web Token": "eyJ" + "a" * 20 + ".eyJ" + "b" * 20 + "." + "c" * 43,
+    "Database URL with credentials": "postgresql://novaguard:" + "s3cretpw" * 2 + "@db.internal/ng",
 }
 
 
@@ -66,6 +73,60 @@ class DetectionTests(unittest.TestCase):
 
         adding = f"+++ b/.env\n+TOKEN={FAKE['Anthropic API key']}\n"
         self.assertTrue(scan_text(adding, "history", added_only=True))
+
+
+class OwnSecretTests(unittest.TestCase):
+    """The keys with no vendor prefix - the ones worth the most.
+
+    `WEB_TOKEN_KEY` decrypts every OAuth token at rest, `BACKUP_ENCRYPTION_KEY`
+    every archive. Both are random bytes, so no shape rule can recognise them
+    and the scanner was blind to exactly the secrets that matter most here.
+    What *is* recognisable is the name sitting next to the value.
+    """
+
+    def test_a_filled_in_env_line_is_caught(self):
+        for name in (
+            "TOKEN",
+            "WEB_TOKEN_KEY",
+            "GATE_SIGNING_KEY",
+            "BACKUP_ENCRYPTION_KEY",
+            "LITESTREAM_SECRET_ACCESS_KEY",
+            "DISCORD_CLIENT_SECRET",
+        ):
+            with self.subTest(name=name):
+                line = f"{name}=8Jq2Vn5rTb9wKd3mXz7pLc4hRf6yGs1A"
+                found = scan_text(line, "fixture")
+                self.assertTrue(found, f"{name} with a real-looking value was missed")
+
+    def test_the_blank_and_placeholder_forms_are_not_credentials(self):
+        # .env.example must stay scannable without an exclusion, or the
+        # exclusion becomes the hiding place.
+        for line in (
+            "WEB_TOKEN_KEY=",
+            "TOKEN=your_discord_bot_token_here",
+            "BACKUP_ENCRYPTION_KEY=change-me-to-32-random-bytes-abc",
+            "GATE_SIGNING_KEY=<32 random bytes, base64url>",
+            "AUTH_PASSWORD=xxxxxxxxxxxxxxxxxxxxxxxx",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(scan_text(line, "fixture"), [])
+
+    def test_documentation_and_code_that_names_a_secret_are_not_hits(self):
+        # These forms appear all over the tree. If they flagged, the job would
+        # be red on every run and someone would switch it off.
+        for line in (
+            'WEB_TOKEN_KEY=$(openssl rand -base64 32)',
+            'key = os.getenv("WEB_TOKEN_KEY", "")',
+            "GATE_SIGNING_KEY: ${{ secrets.GATE_SIGNING_KEY }}",
+            'wrangler secret put GATE_SIGNING_KEY   # 32+ random bytes',
+            'ANTHROPIC_API_KEY=sk-ant-your-key-here',
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(scan_text(line, "fixture"), [])
+
+    def test_the_finding_still_never_prints_the_value(self):
+        found = scan_text("WEB_TOKEN_KEY=8Jq2Vn5rTb9wKd3mXz7pLc4hRf6yGs1A", "fixture")
+        self.assertNotIn("8Jq2Vn5r", str(found[0]))
 
 
 class FalsePositiveTests(unittest.TestCase):

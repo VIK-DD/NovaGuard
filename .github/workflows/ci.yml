@@ -25,6 +25,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # checkout leaves the job's GITHUB_TOKEN in .git/config by default,
+          # and every job below then runs `pip install` or `npm ci` - install
+          # scripts from hundreds of third-party packages, any one of which can
+          # read a file. Nothing here pushes, so nothing here needs the token
+          # to survive the checkout step.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -74,6 +81,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -92,6 +100,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # checkout leaves the job's GITHUB_TOKEN in .git/config by default,
+          # and every job below then runs `pip install` or `npm ci` - install
+          # scripts from hundreds of third-party packages, any one of which can
+          # read a file. Nothing here pushes, so nothing here needs the token
+          # to survive the checkout step.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -113,6 +128,20 @@ jobs:
           python -m pip install pip-audit
           pip-audit -r requirements.lock
 
+      # A lock that has drifted below requirements.txt's own floors installs a
+      # version the project has already rejected. It happened: Dependabot
+      # raised the cryptography floor to 50.0.1 for a CVE and changed only
+      # requirements.txt, so production kept installing 50.0.0 - and unlike
+      # `npm ci`, `pip install --require-hashes` never checks the two agree.
+      # Same shape as the CSP manifest check in the website job below:
+      # regenerate, and fail if the committed file is not what comes out.
+      - name: Confirm requirements.lock is in step with requirements.txt
+        run: |
+          python -m pip install uv
+          uv pip compile --universal --generate-hashes \
+            --python-version 3.11 -o /tmp/requirements.lock requirements.txt
+          diff -u requirements.lock /tmp/requirements.lock
+
   website:
     runs-on: ubuntu-latest
     defaults:
@@ -122,6 +151,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -153,3 +184,11 @@ jobs:
 
       - name: Confirm the committed CSP hashes match the build
         run: git diff --exit-code -- worker/inline-hashes.js
+
+      # The project's own security linter, run against the build being
+      # reviewed. It used to run only in deploy-website.yml, twenty seconds
+      # *after* the new version went live - so a secret baked into a bundle
+      # was reported about a release already serving traffic. The live half
+      # still runs there; this is the half that can gate a merge.
+      - name: Security audit (build output)
+        run: npm run security:audit:build

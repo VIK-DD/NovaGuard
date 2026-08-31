@@ -14,7 +14,8 @@
     "sbom": "npm sbom --sbom-format cyclonedx --omit dev --package-lock-only",
     "test": "vitest run",
     "test:watch": "vitest",
-    "csp-hashes": "node scripts/inline-csp-hashes.mjs"
+    "csp-hashes": "node scripts/inline-csp-hashes.mjs",
+    "security:audit:build": "node scripts/security-audit.mjs --build-only"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.10",
