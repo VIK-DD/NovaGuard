@@ -8,8 +8,15 @@ import { INLINE_SCRIPT_HASHES, INLINE_STYLE_HASHES } from "./inline-hashes.js";
 // cookie on api.novaguard.fun. They live on different hosts today, but a
 // future `Domain=.novaguard.fun` on either would make them clobber each other.
 const SESSION_COOKIE = "ng_gate";
+// Attributes live beside the name, and both the cookie and its expiry are
+// built from them - because they drifted once already. The CSRF token was
+// issued HttpOnly and expired without it, and a passive scan of `/` and
+// `/login/` reported exactly that: an empty value is still a Set-Cookie header
+// saying what it says. HttpOnly is back, and this is what stops the next one.
+const SESSION_COOKIE_ATTRS = "Path=/; HttpOnly; Secure; SameSite=Lax";
 const SESSION_TTL_SECONDS = 60 * 60 * 2;
 const PREVIEW_COOKIE = "ng_preview";
+const PREVIEW_COOKIE_ATTRS = "Path=/; HttpOnly; Secure; SameSite=Lax";
 const PREVIEW_TTL_SECONDS = 60 * 60 * 12;
 // The `__Host-` prefix is load-bearing here, not decoration. The check below is
 // a double-submit comparison, so it is only worth anything while this origin is
@@ -19,6 +26,12 @@ const PREVIEW_TTL_SECONDS = 60 * 60 * 12;
 // stop. The prefix makes the browser refuse a cookie that carries a Domain, or
 // arrives without Secure, or is scoped to anything but `/`.
 const CSRF_COOKIE = "__Host-ng_csrf";
+// SameSite=Strict, matching the issued cookie rather than the Lax the expiry
+// used to carry. Not what the scanner complained about and not a hole - a
+// browser matches a replacement on name, domain and path, not on SameSite -
+// but an expiry that does not read like the thing it expires is how the
+// HttpOnly mismatch survived review in the first place.
+const CSRF_COOKIE_ATTRS = "Path=/; HttpOnly; Secure; SameSite=Strict";
 const CSRF_FIELD = "csrf_token";
 const CSRF_TTL_SECONDS = 60 * 60 * 4;
 const CSRF_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,86}$/;
@@ -338,11 +351,11 @@ function retiredGateRedirect(request) {
   });
   headers.append(
     "Set-Cookie",
-    `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    `${SESSION_COOKIE}=; Max-Age=0; ${SESSION_COOKIE_ATTRS}`,
   );
   headers.append(
     "Set-Cookie",
-    `${CSRF_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    `${CSRF_COOKIE}=; Max-Age=0; ${CSRF_COOKIE_ATTRS}`,
   );
   return new Response(null, { status, headers });
 }
@@ -595,7 +608,7 @@ function currentCsrfToken(request) {
 }
 
 function csrfCookie(token) {
-  return `${CSRF_COOKIE}=${token}; Path=/; Max-Age=${CSRF_TTL_SECONDS}; HttpOnly; Secure; SameSite=Strict`;
+  return `${CSRF_COOKIE}=${token}; Max-Age=${CSRF_TTL_SECONDS}; ${CSRF_COOKIE_ATTRS}`;
 }
 
 async function withCsrfField(response, token) {
@@ -854,7 +867,7 @@ async function handleLogin(request, env) {
     status: 303,
     headers: {
       Location: new URL(next, request.url).toString(),
-      "Set-Cookie": `${SESSION_COOKIE}=${session}; Path=/; Max-Age=${SESSION_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
+      "Set-Cookie": `${SESSION_COOKIE}=${session}; Max-Age=${SESSION_TTL_SECONDS}; ${SESSION_COOKIE_ATTRS}`,
       "Cache-Control": "no-store",
     },
   });
@@ -961,7 +974,7 @@ async function handlePreview(request, env) {
     status: 303,
     headers: {
       Location: new URL("/", request.url).toString(),
-      "Set-Cookie": `${PREVIEW_COOKIE}=${session}; Path=/; Max-Age=${PREVIEW_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
+      "Set-Cookie": `${PREVIEW_COOKIE}=${session}; Max-Age=${PREVIEW_TTL_SECONDS}; ${PREVIEW_COOKIE_ATTRS}`,
       "Cache-Control": "no-store",
     },
   });
@@ -988,7 +1001,7 @@ async function handleLogout(request) {
     status: 303,
     headers: {
       Location: new URL("/login/", request.url).toString(),
-      "Set-Cookie": `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+      "Set-Cookie": `${SESSION_COOKIE}=; Max-Age=0; ${SESSION_COOKIE_ATTRS}`,
       "Cache-Control": "no-store",
     },
   });
