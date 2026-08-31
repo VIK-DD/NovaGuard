@@ -14,3 +14,15 @@ fixes the configuration for the whole pytest session.
 API_CONTENT_SECURITY_POLICY = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
+
+# Nothing here is a browser feature this API could ever need, and a JSON
+# endpoint has no legitimate reason to ask for a camera. The value is cheap
+# insurance rather than a fix for anything reachable: if a response from this
+# origin is ever rendered as a document - a mistaken Content-Type, a future
+# HTML error page - the features are already off.
+API_PERMISSIONS_POLICY = (
+    "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), "
+    "fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), "
+    "midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), "
+    "screen-wake-lock=(), usb=(), xr-spatial-tracking=()"
+)

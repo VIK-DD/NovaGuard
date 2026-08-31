@@ -46,7 +46,7 @@ from aiohttp import web
 
 from . import shop
 from .ai_settings import resolve_ai, validate_ai
-from .api_security import API_CONTENT_SECURITY_POLICY
+from .api_security import API_CONTENT_SECURITY_POLICY, API_PERMISSIONS_POLICY
 from .automod_settings import resolve_automod, validate_automod
 from .config import BOT_CODENAME, BOT_RUNTIME_VERSION, github_config
 from .database import (
@@ -204,6 +204,12 @@ RATE_LIMITS = {  # scope: (max requests, window seconds)
     # and ten requests a minute against the preview form was enough to close
     # dashboard login for everybody sharing that address.
     "preview": (10, 60),
+    # Logout limited nothing at all, which made an unauthenticated POST loop
+    # into a way to sit on the storage lock every authenticated request needs.
+    # Its own scope rather than "auth", for the same reason preview has one:
+    # signing out is not credential guessing, and making the two share a budget
+    # would let ordinary logout traffic close the login door.
+    "logout": (30, 60),
     "read": (120, 60),
     "write": (30, 60),
     # /health and /ready had no limit at all, and each one opens SQLite, runs
@@ -309,6 +315,9 @@ class WebServer:
         # requests can't race the single-use refresh token and log the user out
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._last_gc = 0.0
+        # user id → when the gateway last told us their Manage Server changed.
+        # See _on_member_update: this closes the window the TTL alone leaves.
+        self._permission_events: dict[str, float] = {}
 
     @property
     def oauth_ready(self):
@@ -376,6 +385,12 @@ class WebServer:
         )
         self.http = aiohttp.ClientSession(connector=connector, timeout=timeout)
 
+        # Watch for revocations rather than waiting out a cache window. Not a
+        # cog: this is the dashboard's own concern and belongs with it.
+        adder = getattr(self.bot, "add_listener", None)
+        if callable(adder):
+            adder(self._on_member_update, "on_member_update")
+
         self.runner = web.AppRunner(self._build_app(), access_log=None)
         await self.runner.setup()
         site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT)
@@ -396,6 +411,9 @@ class WebServer:
             )
 
     async def stop(self):
+        remover = getattr(self.bot, "remove_listener", None)
+        if callable(remover):
+            remover(self._on_member_update, "on_member_update")
         if self.runner:
             await self.runner.cleanup()
             self.runner = None
@@ -460,15 +478,36 @@ class WebServer:
             return None
 
     def _client_ip(self, request):
+        """The caller's address, as far as it can be trusted.
+
+        Everything per-address hangs off this: the rate-limit bucket key and
+        the address written into the audit log. A value a client can choose is
+        therefore a rate limit a client can opt out of, and an audit trail a
+        client can sign someone else's name to.
+
+        `X-Forwarded-For` is a list, and only the *last* entry means anything.
+        Each proxy appends the address it saw; everything before that is
+        whatever the client sent, which under nginx's standard
+        `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` is copied
+        through verbatim. Reading the first hop - as this did - handed the
+        attacker the field directly: `X-Forwarded-For: 9.9.9.9` bought a fresh
+        bucket per request and stamped 9.9.9.9 on the audit row.
+
+        CF-Connecting-IP comes first because Cloudflare sets it itself and a
+        client cannot reach past the tunnel to forge it. With Cloudflare in
+        front of another proxy, the last XFF hop would be Cloudflare's own edge
+        address, so preferring the header is also the more accurate answer.
+
+        A longer chain of trusted proxies would need an explicit hop count.
+        There is none here, and guessing is what this was doing.
+        """
         if TRUST_PROXY:
-            # CF-Connecting-IP is set by Cloudflare and cannot be spoofed by the
-            # client through the tunnel; fall back to the first X-Forwarded-For hop.
             cf_ip = self._normalized_ip(request.headers.get("CF-Connecting-IP"))
             if cf_ip:
                 return cf_ip
             forwarded = request.headers.get("X-Forwarded-For", "")
             if forwarded:
-                forwarded_ip = self._normalized_ip(forwarded.split(",", 1)[0])
+                forwarded_ip = self._normalized_ip(forwarded.rsplit(",", 1)[-1])
                 if forwarded_ip:
                     return forwarded_ip
         return self._normalized_ip(request.remote) or "?"
@@ -569,6 +608,7 @@ class WebServer:
             "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",
             "Content-Security-Policy": API_CONTENT_SECURITY_POLICY,
+            "Permissions-Policy": API_PERMISSIONS_POLICY,
         }
         if COOKIE_SECURE:
             # Served over HTTPS ⇒ tell browsers to never fall back to http
@@ -730,6 +770,50 @@ class WebServer:
             entry["token_expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
             await asyncio.to_thread(db_touch_session, sid, entry)
 
+    # ── permission changes seen on the gateway ───────────────────────
+
+    def note_permission_change(self, user_id):
+        """Remember that this person's Manage Server just changed somewhere.
+
+        The dashboard's permission cache has a TTL, and a TTL is a promise
+        about the worst case, not the common one: a moderator whose Manage
+        Server is revoked keeps write access until their cached copy ages out.
+        The bot is already on the gateway watching member updates, so the
+        revocation is *observed* - there is no reason to keep answering from a
+        copy taken before it.
+
+        Recording the event rather than reaching into sessions keeps this O(1)
+        and lock-free on the gateway side; the next request from that person
+        pays for the refresh.
+        """
+        now = time.time()
+        self._permission_events[str(user_id)] = now
+        if len(self._permission_events) > 4096:
+            # Anything older than the longest cache window can no longer make
+            # a difference to a decision, so it is only taking up room.
+            cutoff = now - GUILDS_CACHE_SECONDS
+            for key in [k for k, seen in self._permission_events.items() if seen < cutoff]:
+                self._permission_events.pop(key, None)
+
+    def _permissions_changed_since(self, entry, fetched_at):
+        user_id = str((entry.get("user") or {}).get("id") or "")
+        if not user_id:
+            return False
+        return self._permission_events.get(user_id, 0) > fetched_at
+
+    async def _on_member_update(self, before, after):
+        """Gateway hook: only a change to the permission the dashboard reads.
+
+        Nicknames, roles and avatars change constantly and none of them can
+        change the answer to "may this person configure this guild".
+        """
+        try:
+            if before.guild_permissions.manage_guild == after.guild_permissions.manage_guild:
+                return
+        except AttributeError:  # pragma: no cover - partial member payloads
+            return
+        self.note_permission_change(after.id)
+
     async def _refresh_guilds(self, sid, entry, *, max_age=GUILDS_CACHE_SECONDS):
         """Refresh the session's guild list when the cached copy is too old.
 
@@ -745,7 +829,13 @@ class WebServer:
         dashboard page would each pay for it. Bounding the staleness gets
         almost all of the benefit for one call per window.
         """
-        if time.time() - entry.get("guilds_fetched_at", 0) < max_age:
+        fetched_at = entry.get("guilds_fetched_at", 0)
+        # The TTL bounds how stale a permission set can be; the gateway tells
+        # us when one actually changed. A revocation NovaGuard witnessed beats
+        # any cache age: refresh now rather than serving the old answer for the
+        # rest of the window.
+        expired = time.time() - fetched_at >= max_age
+        if not expired and not self._permissions_changed_since(entry, fetched_at):
             return
         await self._ensure_fresh_token(sid, entry)
         guilds = await self._discord_get("/users/@me/guilds", entry["access_token"])
@@ -930,6 +1020,14 @@ class WebServer:
         raise response
 
     async def handle_logout(self, request):
+        # Every other handler limits before it works; this one did not, and it
+        # is reachable unauthenticated. Each call takes the process-wide
+        # storage lock through the shared thread pool, so a flood here queues
+        # behind the same lock every authenticated request needs - the whole
+        # dashboard degrades, not just logout. With harvested cookies it also
+        # fires an outbound revoke to Discord per call, through a connector
+        # capped at four sockets per host.
+        self._rate_limit(request, "logout")
         self._check_origin(request)
         sid, entry = await self._session(request)
         if sid and entry:

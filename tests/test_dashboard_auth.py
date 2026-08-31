@@ -98,9 +98,49 @@ class ClientAddressTests(AuthTestCase):
     def test_malformed_forwarded_addresses_are_never_bucket_keys(self):
         request = FakeRequest()
         request.headers["CF-Connecting-IP"] = "attacker-controlled-value"
-        request.headers["X-Forwarded-For"] = "also-invalid, 203.0.113.8"
+        request.headers["X-Forwarded-For"] = "203.0.113.8, also-invalid"
 
         with mock.patch.object(web, "TRUST_PROXY", True):
+            self.assertEqual(self.server._client_ip(request), "203.0.113.7")
+
+    def test_a_forged_forwarded_prefix_cannot_choose_the_bucket(self):
+        # nginx's standard proxy_add_x_forwarded_for *appends* the address it
+        # saw, copying whatever the client sent through in front of it. Reading
+        # the first hop let a client pick its own rate-limit bucket - a fresh
+        # one per request - and write any address it liked into the audit log.
+        # Only the last hop was put there by the proxy.
+        request = FakeRequest()
+        request.headers["X-Forwarded-For"] = "9.9.9.9, 198.51.100.23"
+
+        with mock.patch.object(web, "TRUST_PROXY", True):
+            self.assertEqual(self.server._client_ip(request), "198.51.100.23")
+
+    def test_a_single_hop_proxy_is_still_read_correctly(self):
+        # A proxy configured to replace rather than append leaves one entry,
+        # and it is the client.
+        request = FakeRequest()
+        request.headers["X-Forwarded-For"] = "198.51.100.24"
+
+        with mock.patch.object(web, "TRUST_PROXY", True):
+            self.assertEqual(self.server._client_ip(request), "198.51.100.24")
+
+    def test_cloudflare_still_wins_over_a_forwarded_chain(self):
+        # With Cloudflare in front of another proxy the last XFF hop is
+        # Cloudflare's own edge address, so the header it sets itself - which a
+        # client cannot reach past the tunnel to forge - is both safer and more
+        # accurate.
+        request = FakeRequest()
+        request.headers["CF-Connecting-IP"] = "198.51.100.25"
+        request.headers["X-Forwarded-For"] = "9.9.9.9, 172.71.0.1"
+
+        with mock.patch.object(web, "TRUST_PROXY", True):
+            self.assertEqual(self.server._client_ip(request), "198.51.100.25")
+
+    def test_forwarded_headers_are_ignored_entirely_on_a_direct_bind(self):
+        request = FakeRequest()
+        request.headers["X-Forwarded-For"] = "9.9.9.9, 198.51.100.26"
+
+        with mock.patch.object(web, "TRUST_PROXY", False):
             self.assertEqual(self.server._client_ip(request), "203.0.113.7")
 
 
@@ -328,6 +368,83 @@ class StateKeySeparationTests(unittest.TestCase):
         self.assertNotEqual(web._STATE_SECRET, plain)
 
 
+class PermissionRevocationTests(AuthTestCase):
+    """A revocation the bot watched happen beats the cache window.
+
+    The TTL bounds the worst case; the gateway knows the actual case. Without
+    this, someone whose Manage Server was taken away kept write access to the
+    dashboard until their cached permission set aged out.
+    """
+
+    def entry(self, *, user_id="42", fetched_at=None):
+        return {
+            "user": {"id": user_id, "username": "someone"},
+            "access_token": "a1",
+            "token_expires_at": time.time() + 3600,
+            "guilds": {},
+            "guilds_fetched_at": time.time() if fetched_at is None else fetched_at,
+        }
+
+    async def test_a_fresh_cache_is_normally_left_alone(self):
+        entry = self.entry()
+
+        with mock.patch.object(self.server, "_discord_get") as fetch:
+            await self.server._refresh_guilds("sid", entry)
+
+        fetch.assert_not_called()
+
+    async def test_a_witnessed_change_forces_a_refetch_inside_the_window(self):
+        entry = self.entry()
+        self.server.note_permission_change(42)
+
+        with mock.patch.object(self.server, "_ensure_fresh_token"), \
+             mock.patch.object(self.server, "_discord_get", return_value=[]) as fetch, \
+             mock.patch.object(web, "db_touch_session"):
+            await self.server._refresh_guilds("sid", entry)
+
+        fetch.assert_awaited_once()
+
+    async def test_a_change_older_than_the_cached_copy_changes_nothing(self):
+        # The refetch already happened after the event; doing it again on
+        # every request afterwards would put Discord in front of each one.
+        self.server.note_permission_change(42)
+        entry = self.entry(fetched_at=time.time() + 1)
+
+        with mock.patch.object(self.server, "_discord_get") as fetch:
+            await self.server._refresh_guilds("sid", entry)
+
+        fetch.assert_not_called()
+
+    async def test_someone_else_losing_a_permission_is_not_our_business(self):
+        entry = self.entry(user_id="7")
+        self.server.note_permission_change(42)
+
+        with mock.patch.object(self.server, "_discord_get") as fetch:
+            await self.server._refresh_guilds("sid", entry)
+
+        fetch.assert_not_called()
+
+    async def test_only_a_manage_guild_change_is_recorded(self):
+        unchanged = mock.Mock(id=42, guild_permissions=mock.Mock(manage_guild=True))
+        await self.server._on_member_update(unchanged, unchanged)
+        self.assertEqual(self.server._permission_events, {})
+
+        after = mock.Mock(id=42, guild_permissions=mock.Mock(manage_guild=False))
+        await self.server._on_member_update(unchanged, after)
+        self.assertIn("42", self.server._permission_events)
+
+    def test_the_event_table_cannot_grow_without_bound(self):
+        # Same reasoning as the rate-limit table: an unbounded dict fed by
+        # gateway traffic is a slow memory leak on a small host.
+        old = time.time() - web.GUILDS_CACHE_SECONDS - 60
+        self.server._permission_events = {str(i): old for i in range(5000)}
+
+        self.server.note_permission_change(99999)
+
+        self.assertLess(len(self.server._permission_events), 5000)
+        self.assertIn("99999", self.server._permission_events)
+
+
 class RateLimitTests(AuthTestCase):
     """Bounded per address, bounded in memory, and not shared between doors."""
 
@@ -335,6 +452,32 @@ class RateLimitTests(AuthTestCase):
         request = FakeRequest()
         request.remote = address
         return request
+
+    async def test_logout_is_bounded_like_every_other_door(self):
+        # It was the one handler that limited nothing while being reachable
+        # unauthenticated, and each call takes the storage lock that every
+        # authenticated request also needs.
+        request = self.request_from("203.0.113.30")
+        request.method = "POST"
+        limit, _ = web.RATE_LIMITS["logout"]
+        for _ in range(limit):
+            self.server._rate_limit(request, "logout")
+
+        with self.assertRaises(web.ApiError) as caught:
+            await self.server.handle_logout(request)
+
+        self.assertEqual(caught.exception.code, "rate_limited")
+
+    def test_signing_out_cannot_close_the_login_door(self):
+        # Two doors sharing a budget means traffic at one closes the other -
+        # the bug already fixed for preview vs auth. Logging out is not
+        # credential guessing and must not spend the guessing budget.
+        request = self.request_from("203.0.113.31")
+        limit, _ = web.RATE_LIMITS["logout"]
+        for _ in range(limit):
+            self.server._rate_limit(request, "logout")
+
+        self.server._rate_limit(request, "auth")
 
     def test_the_preview_door_no_longer_spends_the_login_budget(self):
         # Both endpoints are public and unauthenticated. While they shared the
