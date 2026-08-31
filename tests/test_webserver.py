@@ -39,11 +39,12 @@ from core.maintenance import (  # noqa: E402
 )
 from core.storage import get_guild_settings, reset_guild_settings  # noqa: E402
 from core.web_storage import (  # noqa: E402
-    _CIPHER,
+    SESSION_IDLE_TTL,
     _hash_sid,
     db_load_session,
     db_ping,
     db_save_session,
+    token_cipher_ready,
 )
 from core.webserver import ApiError, WebServer, after_login_strands_user  # noqa: E402
 
@@ -444,7 +445,7 @@ async def main():
             ).fetchone()
         await check(
             "token encrypted at rest",
-            _CIPHER is not None
+            token_cipher_ready()
             and raw["access_token"].startswith("enc:")
             and "super-secret-access-token" not in raw["access_token"],
         )
@@ -882,6 +883,35 @@ async def main():
         ) as r:
             await check("a JSON content type passes without any Origin", r.status == 200)
         await check("session gone after logout", db_load_session(SID) is None)
+
+        # ── idle sessions stop being logins ───────────────────────────
+        # last_seen_at was written on every touch and read on none of them,
+        # so a tab left open on a shared machine stayed valid for the full
+        # seven days. The absolute TTL answers "how old", not "still in use".
+        db_save_session(SID, entry)
+        with connect() as db:
+            db.execute(
+                "UPDATE web_sessions SET last_seen_at = ? WHERE sid_hash = ?",
+                (time.time() - SESSION_IDLE_TTL - 60, _hash_sid(SID)),
+            )
+        await check("an idle session is no longer a login", db_load_session(SID) is None)
+
+        # ...and using one keeps it alive, so this cannot log out someone busy.
+        db_save_session(SID, entry)
+        with connect() as db:
+            db.execute(
+                "UPDATE web_sessions SET last_seen_at = ? WHERE sid_hash = ?",
+                (time.time() - SESSION_IDLE_TTL + 3600, _hash_sid(SID)),
+            )
+        await check("a session used within the window survives", db_load_session(SID) is not None)
+        with connect() as db:
+            row = db.execute(
+                "SELECT last_seen_at FROM web_sessions WHERE sid_hash = ?", (_hash_sid(SID),)
+            ).fetchone()
+        await check(
+            "loading a session refreshes its own last-seen stamp",
+            row is not None and time.time() - row["last_seen_at"] < 60,
+        )
 
     reset_guild_settings(TEST_GUILD_ID)
     await server.stop()

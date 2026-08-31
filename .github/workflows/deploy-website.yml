@@ -21,6 +21,13 @@ on:
 permissions:
   contents: read
 
+# The hourly cron and a push to main can otherwise overlap, and two wrangler
+# deploys racing publish in whatever order they finish rather than the order
+# they started - so the newer build can end up underneath the older one.
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

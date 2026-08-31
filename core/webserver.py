@@ -75,12 +75,18 @@ from .maintenance import (
     verify_preview_code,
 )
 from .release_versions import current_project_release, public_release_label
-from .role_safety import role_assignment_error
+from .role_safety import (
+    UNKNOWN_ACTOR,
+    channel_visibility_grants,
+    guild_overwrite_index,
+    role_assignment_error,
+)
 from .storage import get_guild_settings, update_guild_settings
 from .update_feed import merged_update_feed
 from .updates import load_update_state
 from .web_storage import (
-    _CIPHER,
+    require_token_cipher,
+    token_cipher_ready,
     db_add_audit,
     db_delete_session,
     db_gc,
@@ -193,9 +199,25 @@ MANAGE_ROLES = 0x10000000
 
 RATE_LIMITS = {  # scope: (max requests, window seconds)
     "auth": (10, 60),
+    # The maintenance preview used to count against "auth". Both are public and
+    # unauthenticated, so anonymous traffic on one spent the other's budget -
+    # and ten requests a minute against the preview form was enough to close
+    # dashboard login for everybody sharing that address.
+    "preview": (10, 60),
     "read": (120, 60),
     "write": (30, 60),
+    # /health and /ready had no limit at all, and each one opens SQLite, runs
+    # two PRAGMAs and chmods three files. Generous enough for any monitor,
+    # bounded enough that it cannot be used to sit on the database.
+    "health": (600, 60),
 }
+
+# A hard ceiling on distinct rate-limit buckets. The opportunistic sweep below
+# only removes keys that are already stale, so a burst from many addresses -
+# one IPv6 /64 is enough - could grow the dict without bound inside a single
+# window. Past this, requests from unseen addresses are shed rather than
+# allowed to consume memory on a host that has little of it.
+MAX_RATE_BUCKETS = 20_000
 
 CHANNEL_KEYS = (
     "welcome_channel",
@@ -214,10 +236,26 @@ NATIVE_MANAGER_CHANNEL_KEYS = (
 CONFIG_CHANNEL_KEYS = CHANNEL_KEYS + NATIVE_MANAGER_CHANNEL_KEYS
 ROLE_KEYS = ("autorole", "ticket_staff_role")
 
-# HMAC key for signing OAuth state tokens. Reuses the client secret so it needs
-# no extra configuration; a per-process random fallback keeps things sane when
-# OAuth is not configured (login is disabled in that case anyway).
-_STATE_SECRET = (CLIENT_SECRET or secrets.token_urlsafe(32)).encode("utf-8")
+# HMAC key for signing OAuth state tokens.
+#
+# Derived rather than reused. The previous version handed CLIENT_SECRET to
+# hmac.new() directly, which made every state token a (known message, MAC) pair
+# under the OAuth credential itself - the same key doing two unrelated jobs.
+# core/web_storage.py already learned this lesson for token encryption and grew
+# WEB_TOKEN_KEY plus a domain-separating KDF; the state signer never did.
+#
+# One SHA-256 over a labelled input is enough here, unlike there: the input is
+# a machine-generated 32+ byte secret, not something an operator might set to a
+# passphrase, so there is nothing for a work factor to protect. What it buys is
+# separation - this digest cannot be used to decrypt a stored token, and a
+# leaked state token says nothing about either secret.
+#
+# A per-process random fallback keeps things sane when OAuth is not configured
+# (login is disabled in that case anyway).
+_STATE_KEY_MATERIAL = os.getenv("WEB_TOKEN_KEY", "").strip() or CLIENT_SECRET
+_STATE_SECRET = hashlib.sha256(
+    b"novaguard-oauth-state-v1|" + (_STATE_KEY_MATERIAL or secrets.token_urlsafe(32)).encode("utf-8")
+).digest()
 
 
 def count_visible_commands(tree):
@@ -313,6 +351,16 @@ class WebServer:
             log.warning("Web API disabled (set WEB_ENABLED=true to serve the dashboard API).")
             return
         await asyncio.to_thread(init_web_tables)
+        # Before anything can write a token. This used to degrade quietly to
+        # plaintext behind a startup log line; encryption at rest either holds
+        # or the thing that depends on it does not start.
+        #
+        # Only when OAuth is configured, because only then does a session -
+        # and therefore a token to protect - ever exist. A status-page-only
+        # deployment serving /health and /stats has nothing at rest and must
+        # keep starting without credentials it does not use.
+        if self.oauth_ready:
+            await asyncio.to_thread(require_token_cipher)
         await asyncio.to_thread(db_gc)
         connector = aiohttp.TCPConnector(
             ttl_dns_cache=DISCORD_DNS_CACHE_SECONDS,
@@ -333,7 +381,7 @@ class WebServer:
         site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT)
         await site.start()
         oauth_note = "OAuth ready" if self.oauth_ready else "OAuth NOT configured (login disabled)"
-        crypto_note = "tokens encrypted" if _CIPHER else "tokens plaintext (install cryptography)"
+        crypto_note = "tokens encrypted" if token_cipher_ready() else "tokens NOT encrypted"
         log.info(
             f"Web API listening on {WEB_HOST}:{WEB_PORT}{API_PREFIX} • {oauth_note} • "
             f"sessions in SQLite • {crypto_note} • after login → {AFTER_LOGIN}"
@@ -425,21 +473,44 @@ class WebServer:
                     return forwarded_ip
         return self._normalized_ip(request.remote) or "?"
 
+    def _evict_stale_buckets(self, now):
+        """Drop buckets nothing has touched inside the longest window."""
+        for key in [
+            key for key, bucket in self.rate_buckets.items()
+            if not bucket or now - bucket[-1] > 600
+        ]:
+            self.rate_buckets.pop(key, None)
+
     def _rate_limit(self, request, scope):
         limit, window = RATE_LIMITS[scope]
         key = (self._client_ip(request), scope)
-        bucket = self.rate_buckets.setdefault(key, deque())
         now = time.monotonic()
+
+        bucket = self.rate_buckets.get(key)
+        if bucket is None:
+            # A new address. Sweep first, and if the table is still full,
+            # refuse rather than let an address flood grow the dict: shedding
+            # load beats being killed by the OOM reaper mid-request.
+            if len(self.rate_buckets) >= MAX_RATE_BUCKETS:
+                self._evict_stale_buckets(now)
+                if len(self.rate_buckets) >= MAX_RATE_BUCKETS:
+                    log.warning("Rate-limit table full (%d buckets); shedding new clients.",
+                                len(self.rate_buckets))
+                    raise ApiError(
+                        429, "Server is shedding load — try again shortly.",
+                        code="rate_limited", retry_after=5,
+                    )
+            bucket = self.rate_buckets.setdefault(key, deque())
+
         while bucket and now - bucket[0] > window:
             bucket.popleft()
         if len(bucket) >= limit:
             retry = int(window - (now - bucket[0])) + 1
             raise ApiError(429, "Too many requests — slow down.", code="rate_limited", retry_after=retry)
         bucket.append(now)
-        # opportunistic cleanup so the dict cannot grow forever
+        # opportunistic cleanup so the dict does not carry yesterday's callers
         if len(self.rate_buckets) > 2048:
-            for k in [k for k, b in self.rate_buckets.items() if not b or now - b[-1] > 600]:
-                self.rate_buckets.pop(k, None)
+            self._evict_stale_buckets(now)
 
     def _allowed_origin(self, request):
         """Return the request Origin only if it is on the configured allow-list."""
@@ -715,20 +786,41 @@ class WebServer:
             raise ApiError(403, f"You need {label} on that guild.", code="forbidden")
 
     @staticmethod
-    def _actor_member(guild, entry):
-        """The dashboard user as a guild Member, when the bot can see them.
+    async def _actor_member(guild, entry):
+        """The dashboard user as a guild Member, for the hierarchy check.
 
         Role hierarchy is a position, and OAuth only reports a permission
         bitfield - so the member object is the only place the configurer's own
-        rank can be read. None when they are not cached, and role_safety then
-        falls back to the permission checks alone.
+        rank can be read.
+
+        Returns `role_safety.UNKNOWN_ACTOR`, never None, when they cannot be
+        resolved. Returning None said "no configurer applies here", which is
+        true at a role-panel button and false here, and `_actor_outranks`
+        answered it by skipping the check - so a cache miss silently removed
+        the hierarchy rule instead of enforcing it. One uncached member is
+        worth one API call before giving up on the question.
         """
         try:
             user_id = int(entry["user"]["id"])
         except (KeyError, TypeError, ValueError):
-            return None
+            return UNKNOWN_ACTOR
+
         getter = getattr(guild, "get_member", None)
-        return getter(user_id) if callable(getter) else None
+        member = getter(user_id) if callable(getter) else None
+        if member is not None:
+            return member
+
+        fetcher = getattr(guild, "fetch_member", None)
+        if not callable(fetcher):
+            return UNKNOWN_ACTOR
+        try:
+            fetched = await asyncio.wait_for(fetcher(user_id), timeout=5)
+        except Exception:
+            # Not in the guild any more, rate limited, or Discord is slow.
+            # Any of those means the same thing here: we do not know their rank.
+            log.info("Could not resolve dashboard actor %s in guild %s", user_id, guild.id)
+            return UNKNOWN_ACTOR
+        return fetched if fetched is not None else UNKNOWN_ACTOR
 
     async def _authorized_guild(self, request):
         sid, entry = await self._require_session(request)
@@ -834,7 +926,7 @@ class WebServer:
         response = web.HTTPFound(AFTER_LOGIN)
         response.set_cookie(SESSION_COOKIE, sid, max_age=SESSION_TTL, httponly=True,
                             samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
-        response.del_cookie(STATE_COOKIE)
+        response.del_cookie(STATE_COOKIE, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         raise response
 
     async def handle_logout(self, request):
@@ -863,7 +955,11 @@ class WebServer:
             await asyncio.to_thread(db_delete_session, sid)
             self._session_locks.pop(sid, None)
         response = web.json_response({"ok": True})
-        response.del_cookie(SESSION_COOKIE)
+        # Same attributes the login cookie was set with. A clearing cookie that
+        # differs on Secure or SameSite is not guaranteed to replace the one it
+        # is meant to remove, which leaves an orphan in the browser long after
+        # the session behind it is gone.
+        response.del_cookie(SESSION_COOKIE, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         return response
 
     # ── public endpoints ─────────────────────────────────────────────
@@ -893,18 +989,23 @@ class WebServer:
         }
 
     async def handle_health(self, request):
+        self._rate_limit(request, "health")
         payload = await self._health_payload()
         return web.json_response(payload, status=200 if payload["db_ok"] else 503)
 
     async def handle_ready(self, request):
+        self._rate_limit(request, "health")
         payload = await self._health_payload()
         return web.json_response(payload, status=200 if payload["ok"] else 503)
 
     async def handle_maintenance_preview(self, request):
-        # "auth" is 10 requests per 60 s, keyed on the visitor's real address —
-        # _client_ip reads CF-Connecting-IP, so the proxy in front of the site
-        # does not merge every visitor into one bucket.
-        self._rate_limit(request, "auth")
+        # Its own bucket, not "auth". Both are public and unauthenticated, so
+        # sharing one meant anonymous traffic here could spend the login
+        # budget — a denial-of-service lever pointed at the dashboard door.
+        # Keyed on the visitor's real address: _client_ip reads
+        # CF-Connecting-IP, so the proxy in front does not merge every visitor
+        # into one bucket (WEB_TRUST_PROXY must be on for that; see .env.example).
+        self._rate_limit(request, "preview")
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
@@ -921,6 +1022,7 @@ class WebServer:
         return web.json_response({"ok": True, "since": since})
 
     async def handle_invite(self, request):
+        self._rate_limit(request, "read")
         if not CLIENT_ID:
             raise ApiError(503, "Client id not configured.", code="oauth_unavailable")
         params = {
@@ -945,6 +1047,7 @@ class WebServer:
         purely so the invite ends somewhere that belongs to us instead of on
         Discord's own confirmation screen.
         """
+        self._rate_limit(request, "read")
         raise web.HTTPFound(AFTER_INVITE)
 
     async def handle_stats(self, request):
@@ -1079,7 +1182,7 @@ class WebServer:
         get_cog = getattr(self.bot, "get_cog", None)
         ai_cog = get_cog("AI") if callable(get_cog) else None
         ai_status = (
-            ai_cog.status_payload()
+            ai_cog.status_payload(guild)
             if ai_cog is not None
             else {
                 "available": False,
@@ -1129,6 +1232,8 @@ class WebServer:
                     for item in shop.catalog()
                 ],
             }
+        # One pass over the guild's channels, reused for every role below.
+        overwrite_index = await asyncio.to_thread(guild_overwrite_index, guild)
         return {
             "guild": {
                 "id": str(guild.id),
@@ -1197,8 +1302,16 @@ class WebServer:
             "roles": [
                 {"id": str(role.id), "name": role.name, "color": f"#{role.color.value:06X}",
                  # Same rule the publish endpoint enforces, so the dashboard
-                 # cannot offer a role the API will then refuse.
-                 "assignable": role_assignment_error(role, guild) is None,
+                 # cannot offer a role the API will then refuse. The index is
+                 # built once for the whole guild rather than per role - see
+                 # role_safety.guild_overwrite_index for why that matters here.
+                 "assignable": role_assignment_error(
+                     role, guild, overwrite_index=overwrite_index
+                 ) is None,
+                 # Private channels this role opens. Not a refusal: the panel
+                 # is allowed to hand it out, but whoever publishes it should
+                 # see what comes with the role before they do.
+                 "unlocks": channel_visibility_grants(role, guild, overwrite_index),
                  "manages_threads": role.permissions.manage_threads}
                 for role in sorted(guild.roles, key=lambda r: -r.position)
                 if not role.is_default()
@@ -1475,8 +1588,10 @@ class WebServer:
         # the Manage Server that opens the dashboard.
         self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
 
-        actor = self._actor_member(guild, entry)
+        actor = await self._actor_member(guild, entry)
+        overwrite_index = await asyncio.to_thread(guild_overwrite_index, guild)
         roles = []
+        unlocks = []
         for role_id in role_ids:
             if not role_id.isdigit():
                 continue
@@ -1484,11 +1599,15 @@ class WebServer:
             if role is None:
                 errors.append(f"role_ids: {role_id} is not a role in this guild")
                 continue
-            refusal = role_assignment_error(role, guild, actor)
+            refusal = role_assignment_error(
+                role, guild, actor, overwrite_index=overwrite_index
+            )
             if refusal:
                 errors.append(f"role_ids: @{role.name} cannot be assigned — {refusal}")
             else:
                 roles.append(role)
+                for channel_label in channel_visibility_grants(role, guild, overwrite_index):
+                    unlocks.append(f"@{role.name} → {channel_label}")
         if errors:
             raise ApiError(400, "Validation failed.", code="validation_failed", details=errors)
 
@@ -1553,6 +1672,11 @@ class WebServer:
             "action": "role_panel_publish",
             "message": f"Role panel {'published' if created else 'updated'} in #{channel.name}.",
             "channel_id": str(channel.id),
+            # Which private channels the published roles open. Empty for an
+            # ordinary panel; when it is not, the dashboard says so rather than
+            # letting the consequence be discovered by whoever reads the
+            # channel afterwards.
+            "unlocks": unlocks,
             "panel": {
                 "message_id": panel["message_id"],
                 "channel_id": panel["channel_id"],
@@ -1841,8 +1965,16 @@ class WebServer:
         # requires for handing roles out - checked before the role is even
         # resolved, because whether the caller may do this at all does not
         # depend on whether they named a role that exists.
-        if body.get("autorole") not in (None, "", 0) and "autorole" in body:
-            self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+        # `ticket_staff_role` is here for the same reason, one step removed:
+        # it does not hand the role to anybody, but it hands *that role's
+        # holders* every open ticket in the server, and the role it names must
+        # already carry Manage Threads to qualify. Deciding who gets that is a
+        # role decision, so it takes the role permission - `autorole` did and
+        # this did not, which was an asymmetry nobody chose.
+        for role_key in ("autorole", "ticket_staff_role"):
+            if role_key in body and body.get(role_key) not in (None, "", 0):
+                self._require_permission(entry, guild.id, MANAGE_ROLES, "Manage Roles")
+                break
 
         for key in ROLE_KEYS:
             if key not in body:
@@ -1858,7 +1990,9 @@ class WebServer:
             # A staff role as autorole would have made every new arrival staff,
             # so it goes through the same gate as a role panel.
             if key == "autorole":
-                refusal = role_assignment_error(role, guild, self._actor_member(guild, entry))
+                refusal = role_assignment_error(
+                    role, guild, await self._actor_member(guild, entry)
+                )
             else:
                 refusal = None
             if refusal:

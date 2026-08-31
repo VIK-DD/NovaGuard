@@ -1,11 +1,15 @@
 """Tests for the startup configuration report."""
 
 import os
+import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core import config  # noqa: E402
 from core.config_check import (  # noqa: E402
     CRITICAL,
     OK,
@@ -233,6 +237,54 @@ class ReportTests(unittest.TestCase):
         report_config(dict(HEALTHY), printer=printed.append)
 
         self.assertFalse(any("need attention" in line for line in printed))
+
+
+class DotenvPrecedenceTests(unittest.TestCase):
+    """.env is the file operators edit, so it must be the one that wins."""
+
+    def _load(self, tmpdir, contents, environ):
+        env_file = pathlib.Path(tmpdir) / ".env"
+        env_file.write_text(contents, encoding="utf-8")
+        with (
+            mock.patch.object(config, "BASE_DIR", pathlib.Path(tmpdir)),
+            mock.patch.dict(os.environ, environ, clear=True),
+        ):
+            config.load_dotenv_if_present()
+            return dict(os.environ), list(config.DOTENV_OVERRIDES)
+
+    def test_dotenv_beats_a_stale_inherited_value(self):
+        # pm2 re-injects the environment it captured at `pm2 start`, so with
+        # setdefault a rotated secret never reached the process — the rotation
+        # looked like it worked and the old credential stayed live.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            environ, overrides = self._load(
+                tmpdir, "TOKEN=rotated-value\n", {"TOKEN": "old-value"}
+            )
+        self.assertEqual(environ["TOKEN"], "rotated-value")
+        self.assertEqual(overrides, ["TOKEN"])
+
+    def test_an_unchanged_value_is_not_reported_as_an_override(self):
+        # The ordinary restart: pm2 re-injects exactly what .env already says.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _, overrides = self._load(tmpdir, "TOKEN=same\n", {"TOKEN": "same"})
+        self.assertEqual(overrides, [])
+
+    def test_a_stale_environment_is_surfaced_as_a_finding(self):
+        with mock.patch.object(config, "DOTENV_OVERRIDES", ["TOKEN"]):
+            found = check_config({"TOKEN": "x"})
+        detail = next(f.detail for f in found if f.name == "environment")
+        self.assertIn("--update-env", detail)
+
+    def test_quotes_and_comments_are_still_handled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            environ, _ = self._load(
+                tmpdir,
+                '# a comment\nQUOTED="value"\nSINGLE=\'other\'\n\nBARE=plain\n',
+                {},
+            )
+        self.assertEqual(environ["QUOTED"], "value")
+        self.assertEqual(environ["SINGLE"], "other")
+        self.assertEqual(environ["BARE"], "plain")
 
 
 if __name__ == "__main__":

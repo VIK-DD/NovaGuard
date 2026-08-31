@@ -1,0 +1,42 @@
+# Line endings, decided here rather than by whoever cloned.
+#
+# Without this file a Windows checkout (core.autocrlf=true, which is the
+# installer's default, and anything under OneDrive) writes CRLF into the
+# working tree while the objects stay LF. `git status` then reports every text
+# file as modified, and `git diff` is 82,000 changed lines that are entirely
+# invisible characters.
+#
+# That is a security problem, not just an annoyance. Review is the control that
+# catches a bad change, and review does not survive a diff that size: a real
+# one-line edit to core/role_safety.py or the CI workflow is indistinguishable
+# from the noise around it. A repository nobody can read a diff of is a
+# repository where a hostile commit does not need to hide.
+#
+# `text=auto eol=lf` normalises on commit and checks out LF everywhere, so the
+# working tree matches the objects on every platform and the diff means what it
+# says. Nothing here needs CRLF; there are no .bat or .ps1 files.
+#
+# Applied to existing files with:  git add --renormalize .
+
+* text=auto eol=lf
+
+# Binary: never touch these, and never try to diff them as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.jar binary
+*.zip binary
+*.bundle binary
+*.sqlite3 binary
+*.ngbackup binary
+
+# Generated, and reviewed as a whole rather than line by line: a lockfile diff
+# is noise in a pull request, while the file itself is the thing that matters.
+requirements.lock linguist-generated=true
+website-3/package-lock.json linguist-generated=true
+website-3/worker/inline-hashes.js linguist-generated=true

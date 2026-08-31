@@ -2,6 +2,7 @@ import {
   PUBLIC_LAUNCH_PATH,
   hasPublicLaunchPassed,
 } from "../launch-config.js";
+import { INLINE_SCRIPT_HASHES, INLINE_STYLE_HASHES } from "./inline-hashes.js";
 
 // Deliberately NOT "ng_session": that name belongs to the bot API's login
 // cookie on api.novaguard.fun. They live on different hosts today, but a
@@ -59,8 +60,20 @@ const SECURITY_HEADERS = {
   "X-XSS-Protection": "0",
 };
 
-function contentSecurityPolicy(nonce = "") {
-  const nonceSource = nonce ? ` 'nonce-${nonce}'` : "";
+// The site keeps a few scripts and styles inline - the theme pre-paint, so the
+// saved theme never flashes; Astro's critical CSS. They are named here by the
+// SHA-256 of their contents, generated from the build by
+// scripts/inline-csp-hashes.mjs.
+//
+// This replaced a nonce, which was the wrong primitive for the job. The nonce
+// was minted per response and then stamped onto every script and style element
+// by an HTMLRewriter on the way out - so it did not say "the server put this
+// here", it said "this is a script tag". Anything that reached the HTML before
+// the rewriter ran would have been signed by the very header meant to stop it.
+// A hash cannot be satisfied by code we did not build.
+function contentSecurityPolicy() {
+  const scriptHashes = INLINE_SCRIPT_HASHES.map((hash) => ` '${hash}'`).join("");
+  const styleHashes = INLINE_STYLE_HASHES.map((hash) => ` '${hash}'`).join("");
   return [
     "default-src 'self'",
     "base-uri 'none'",
@@ -69,28 +82,11 @@ function contentSecurityPolicy(nonce = "") {
     "form-action 'self'",
     "img-src 'self' data: https://cdn.discordapp.com https://*.discordapp.com https://*.discordapp.net",
     "font-src 'self'",
-    `style-src 'self'${nonceSource}`,
+    `style-src 'self'${styleHashes}`,
     "style-src-attr 'none'",
-    `script-src 'self'${nonceSource}`,
+    `script-src 'self'${scriptHashes}`,
     "connect-src 'self' https://api.novaguard.fun",
   ].join("; ");
-}
-
-function createCspNonce() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-class NonceElements {
-  constructor(nonce) {
-    this.nonce = nonce;
-  }
-
-  element(element) {
-    element.setAttribute("nonce", this.nonce);
-  }
 }
 
 function errorMessage(error) {
@@ -103,25 +99,15 @@ function hardenResponse(response) {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     if (!headers.has(name)) headers.set(name, value);
   }
-  const isHtml = headers.get("Content-Type")?.toLowerCase().includes("text/html");
-  const nonce = isHtml ? createCspNonce() : "";
-  headers.set("Content-Security-Policy", contentSecurityPolicy(nonce));
-  if (isHtml) headers.delete("Content-Length");
+  headers.set("Content-Security-Policy", contentSecurityPolicy());
 
-  const hardened = new Response(response.body, {
+  // Nothing rewrites the body any more, so the length the asset server gave us
+  // is still correct and can stay.
+  return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
-
-  // The site keeps a few pre-paint scripts inline so the saved theme never
-  // flashes. A fresh response nonce permits only those exact elements instead
-  // of allowing arbitrary inline code or styles across the whole document.
-  if (!isHtml || typeof HTMLRewriter !== "function") return hardened;
-  return new HTMLRewriter()
-    .on("script", new NonceElements(nonce))
-    .on("style", new NonceElements(nonce))
-    .transform(hardened);
 }
 
 function logWorkerEvent(level, event, details = {}) {
@@ -144,6 +130,31 @@ function base64UrlDecode(value) {
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
   const binary = atob(padded);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+// The key that signs gate and preview cookies.
+//
+// It used to be AUTH_PASSWORD itself. That made every cookie the worker issued
+// a (known message, MAC) pair under a password a person chose: the payload is
+// base64url JSON with predictable fields, so anyone holding one cookie - from
+// a shared link, a browser extension, a proxy log - could run a dictionary
+// attack offline at GPU speed. HMAC-SHA256 has no work factor; that is not a
+// flaw in HMAC, it is a reason not to key it with a password.
+//
+// Set one with:  wrangler secret put GATE_SIGNING_KEY   (32+ random bytes)
+//
+// The fallback keeps an install without it working rather than locking
+// everyone out, but it is logged every time so it cannot be the quiet
+// permanent state. It is deliberately not folded into the launch gate's
+// retirement: handlePreview still signs cookies after public launch.
+const MIN_SIGNING_KEY_LENGTH = 32;
+
+function signingSecret(env) {
+  const dedicated = String(env.GATE_SIGNING_KEY || "").trim();
+  if (dedicated.length >= MIN_SIGNING_KEY_LENGTH) return dedicated;
+  if (dedicated) logWorkerEvent("warn", "gate_signing_key_too_short");
+  else logWorkerEvent("warn", "gate_signing_key_missing");
+  return env.AUTH_PASSWORD;
 }
 
 async function importSigningKey(secret) {
@@ -760,7 +771,7 @@ async function handleLogin(request, env) {
     return Response.redirect(url, 303);
   }
 
-  const session = await createSession(env.AUTH_PASSWORD);
+  const session = await createSession(signingSecret(env));
   return new Response(null, {
     status: 303,
     headers: {
@@ -861,7 +872,7 @@ async function handlePreview(request, env) {
     });
   }
 
-  const session = await createPreviewSession(env.AUTH_PASSWORD, verified.since);
+  const session = await createPreviewSession(signingSecret(env), verified.since);
   return new Response(null, {
     status: 303,
     headers: {
@@ -1031,7 +1042,7 @@ async function handleRequest(request, env, ctx) {
   if (maintenance.enabled && !maintenance.unreachable) {
     previewHolder = await isValidPreview(
       readCookie(request, PREVIEW_COOKIE),
-      env.AUTH_PASSWORD,
+      signingSecret(env),
       maintenance.since,
     );
     if (!previewHolder) return serveMaintenancePage(request, env, maintenance);
@@ -1069,7 +1080,8 @@ async function handleRequest(request, env, ctx) {
   // and it is fixed and never expires; a preview code is 24 random bytes,
   // rotates every maintenance window, and dies in twelve hours.
   const authenticated =
-    previewHolder || (await isValidSession(readCookie(request, SESSION_COOKIE), env.AUTH_PASSWORD));
+    previewHolder ||
+    (await isValidSession(readCookie(request, SESSION_COOKIE), signingSecret(env)));
   if (!authenticated) return Response.redirect(loginUrl(request), 302);
 
   if (url.pathname === "/maintenance") {

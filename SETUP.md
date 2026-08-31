@@ -107,8 +107,23 @@ and to take its own data out.
 If your bot already runs in pm2, update the files and restart:
 
 ```bash
-pm2 restart pythonbot
+pm2 restart NovaGuard --update-env
 pm2 save
+```
+
+`--update-env` is not optional after an `.env` change. pm2 captures the
+environment at `pm2 start` and re-injects that same copy on every plain
+restart, so a rotated token or client secret would never reach the process —
+the rotation would look like it worked while the old credential stayed live.
+NovaGuard now treats `.env` as authoritative and `/doctor` warns when the two
+disagree, but the flag is still the right way to restart after any change.
+
+The repository ships an `ecosystem.config.js` with the crash-loop guard,
+memory ceiling and log settings already set:
+
+```bash
+pm2 delete NovaGuard 2>/dev/null; pm2 start ecosystem.config.js && pm2 save
+pm2 install pm2-logrotate    # once per host, so logs cannot fill the disk
 ```
 
 ### Public website status and dashboard API
@@ -130,7 +145,7 @@ endpoints from the embedded web server. To make them reachable by the website:
    the Status page will show bot readiness, database health, uptime, guilds,
    members, commands and gateway state.
 5. Restart the bot after changing `.env`:
-   `pm2 restart pythonbot && pm2 save`.
+   `pm2 restart NovaGuard --update-env && pm2 save`.
 
 Keep port `8300` closed to the public internet; Cloudflare Tunnel should be the
 only public path to the API.
@@ -226,7 +241,7 @@ and **Bot owner**. `/help` remains the interactive in-Discord command browser.
 Stop the bot on the old host, then create and verify the portable migration:
 
 ```bash
-pm2 stop Novaguard
+pm2 stop NovaGuard
 venv/bin/python tools/host_migration.py export
 venv/bin/python tools/host_migration.py verify backups/novaguard-host-YYYY-MM-DD_HH-MM-SS.sql.ngbackup
 ```
@@ -237,7 +252,7 @@ installing its dependencies there, import it and start the bot:
 
 ```bash
 venv/bin/python tools/host_migration.py import novaguard-host-YYYY-MM-DD_HH-MM-SS.sql.ngbackup --confirm-replace
-pm2 start bot.py --name Novaguard --interpreter venv/bin/python
+pm2 start ecosystem.config.js
 pm2 save
 ```
 

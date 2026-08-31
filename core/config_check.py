@@ -89,6 +89,24 @@ def check_config(env=None):
     else:
         findings.append(Finding(OK, "TOKEN", "present."))
 
+    # Rare, and worth saying out loud when it happens: the process was started
+    # carrying a different value than .env now holds. Usually that is pm2
+    # re-injecting the environment it captured at `pm2 start`, which is exactly
+    # the situation that used to make a secret rotation silently do nothing.
+    # .env wins now, but the operator should know their restart was stale.
+    from .config import DOTENV_OVERRIDES
+
+    if DOTENV_OVERRIDES:
+        findings.append(
+            Finding(
+                WARN,
+                "environment",
+                f"{', '.join(sorted(DOTENV_OVERRIDES))} differed from .env and .env was used. "
+                "Restart with `pm2 restart <app> --update-env` so the process stops "
+                "carrying the old values.",
+            )
+        )
+
     if not _value(env, "GUILD_ID"):
         findings.append(
             Finding(
@@ -198,11 +216,16 @@ def check_config(env=None):
         web_host = _value(env, "WEB_HOST") or "127.0.0.1"
         trust_proxy = _enabled(env, "WEB_TRUST_PROXY")
         if not trust_proxy:
+            # Was a WARN, which undersold it. Off, `_client_ip` can only ever
+            # see the proxy: every visitor lands in the same rate-limit bucket,
+            # so ten requests a minute from anybody closes login for everybody,
+            # and every audit row records the tunnel instead of the person.
             findings.append(
                 Finding(
-                    WARN,
+                    CRITICAL,
                     "WEB_TRUST_PROXY",
-                    "off - behind Cloudflare, audit and rate limits will not use the real visitor IP.",
+                    "off - every visitor shares one rate-limit bucket and the audit trail "
+                    "records the proxy, not the person. Turn it on for any proxied deployment.",
                 )
             )
         elif web_host not in {"127.0.0.1", "::1", "localhost"}:

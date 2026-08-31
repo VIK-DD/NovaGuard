@@ -11,6 +11,32 @@ updates:
     commit-message:
       prefix: "deps"
 
+  # The website's npm tree. This was missing entirely, so 680 packages -
+  # astro, vite, esbuild, wrangler and everything under them - got no update
+  # PRs at all. A new advisory surfaced only if it happened to be `high` and
+  # somebody happened to deploy.
+  - package-ecosystem: npm
+    directory: "/website-3"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps"
+    groups:
+      # One PR for the build toolchain rather than six. These move together
+      # and are reviewed together.
+      astro-toolchain:
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+          - "vite"
+          - "@tailwindcss/*"
+          - "tailwindcss"
+      dev-tooling:
+        dependency-type: development
+
   # GitHub Actions used in workflows (keeps the pinned SHAs current)
   - package-ecosystem: github-actions
     directory: "/"

@@ -130,9 +130,34 @@ class NovaCommandTree(app_commands.CommandTree):
 
 class DevBot(commands.Bot):
     def __init__(self):
-        intents = discord.Intents.default()
+        # Built up from none() rather than trimmed down from default().
+        #
+        # default() turns on nine things this bot never reads - typing and
+        # dm_typing above all, which are the highest-volume events Discord
+        # sends and arrive continuously from every server. The two privileged
+        # ones are genuinely needed and stay; the rest is exactly what the
+        # listeners in cogs/ consume, and nothing else:
+        #
+        #   guilds           the guild, channel and role cache everything reads
+        #   members          on_member_join/remove/update, and the member cache
+        #                    role_safety needs to check a configurer's rank
+        #   moderation       on_member_ban / on_member_unban, for the log feed
+        #   guild_messages   on_message, on_message_edit, on_message_delete
+        #   message_content  automod's filters and the levels XP counter
+        #   voice_states     on_voice_state_update, for sessions and voice hours
+        #
+        # Deliberately off: reactions (every panel here is buttons - tickets,
+        # role panels, giveaways, polls), dm_messages (slash commands arrive as
+        # interactions, so /admin unlock in a DM does not need it), invites
+        # (automod matches invite links in message text, not the invite events),
+        # integrations, webhooks, scheduled events, expressions, auto_moderation.
+        intents = discord.Intents.none()
+        intents.guilds = True
+        intents.members = True
+        intents.moderation = True
+        intents.guild_messages = True
         intents.message_content = True
-        intents.members = True  # required for welcome/goodbye + join/leave logs
+        intents.voice_states = True
         super().__init__(
             command_prefix=commands.when_mentioned,
             intents=intents,

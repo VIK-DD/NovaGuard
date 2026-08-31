@@ -27,28 +27,41 @@ except ImportError:  # pragma: no cover - exercised only on minimal installs
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
 MAX_SESSIONS_PER_USER = 5
 AUDIT_KEEP_DAYS = 90
+# How long a session may sit untouched before it stops being a login.
+#
+# The absolute seven-day TTL in core.webserver answers "how old is this",
+# which is a different question. `last_seen_at` was already written on every
+# request and read on none of them, so a tab left open on a shared machine
+# stayed a valid login for seven calendar days. Twelve hours keeps a normal
+# working day (and a night's sleep between two of them) unbroken.
+SESSION_IDLE_TTL = 12 * 3600
+# How often loading a session refreshes its own last-seen stamp. Without this
+# the stamp only moved when a token or guild-list refresh happened to fire, so
+# somebody reading one page for hours could be idled out mid-use. Throttled
+# because this is a write on the read path, and once every five minutes per
+# session is enough to measure a twelve-hour window.
+SEEN_REFRESH_SECONDS = 300
 TOKEN_PREFIX = "enc:"
 SCHEMA_VERSION = 1
 
 _DB_LOCK = threading.Lock()
 
 
-# scrypt over a fixed, domain-separating salt. A per-key random salt would be
-# better, but there is nowhere to keep one: this key must be derivable from the
-# environment alone at import, with no stored state to consult. The fixed salt
-# therefore buys domain separation rather than per-install uniqueness, and the
-# work factor is what does the real work.
+# The original shared salt. No longer used for writing - `_read_or_create_install_salt`
+# gives each install its own - but kept as the salt of the v2 legacy reader, so
+# rows written before that change stay decryptable until their sessions are
+# next used and rewritten.
 #
-# 2**14 costs ~16 MB and tens of milliseconds, paid once per process at import
-# and never per request - so it is bounded by the smallest host this runs on
-# rather than by throughput.
+# scrypt at 2**14 costs ~16 MB and tens of milliseconds, paid once per process
+# on first use and never per request, so it is bounded by the smallest host
+# this runs on rather than by throughput.
 _KDF_SALT = b"novaguard-token-kdf-v2"
 _KDF_N = 2**14
 _KDF_R = 8
 _KDF_P = 1
 
 
-def _cipher_from_secret(secret, *, legacy=False):
+def _cipher_from_secret(secret, *, salt=None, legacy=False):
     """Derive a domain-separated Fernet key without storing the raw secret.
 
     `legacy=True` reproduces the original single-SHA-256 derivation. One round
@@ -56,6 +69,10 @@ def _cipher_from_secret(secret, *, legacy=False):
     exactly wrong for a value an operator might reasonably set to a passphrase
     rather than to 32 random bytes. It survives only so tokens written by
     earlier versions can still be read, and then rewritten under the new key.
+
+    `salt` defaults to the shared `_KDF_SALT` so callers that only want to
+    compare derivations - the tests, and the legacy readers below - keep
+    working unchanged. Live encryption passes the per-install salt instead.
     """
     if Fernet is None or not secret:
         return None
@@ -64,7 +81,7 @@ def _cipher_from_secret(secret, *, legacy=False):
     else:
         digest = hashlib.scrypt(
             secret.encode("utf-8"),
-            salt=_KDF_SALT,
+            salt=_KDF_SALT if salt is None else salt,
             n=_KDF_N,
             r=_KDF_R,
             p=_KDF_P,
@@ -74,7 +91,35 @@ def _cipher_from_secret(secret, *, legacy=False):
     return Fernet(base64.urlsafe_b64encode(digest))
 
 
-def _build_ciphers():
+def _read_or_create_install_salt():
+    """This install's own KDF salt, generated once and kept in web_meta.
+
+    The salt used to be a single constant compiled into the module, on the
+    reasoning that the key must be derivable from the environment alone at
+    import time with no stored state to consult. That reasoning was sound
+    about *import time* and wrong about the requirement: nothing needs this
+    key until the first session is read or written, by which point the
+    database is open anyway. A shared constant means two installs with the
+    same WEB_TOKEN_KEY derive the same encryption key, and any precomputation
+    against a weak key is worth doing once for everybody rather than once per
+    install. Sixteen random bytes per install ends that.
+
+    Creating it is idempotent and safe against two processes racing: the
+    INSERT does nothing if a row is already there, and the SELECT afterwards
+    is what decides.
+    """
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS web_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        db.execute(
+            "INSERT INTO web_meta (key, value) VALUES ('token_salt', ?) "
+            "ON CONFLICT(key) DO NOTHING",
+            (os.urandom(16).hex(),),
+        )
+        row = db.execute("SELECT value FROM web_meta WHERE key = 'token_salt'").fetchone()
+    return bytes.fromhex(row["value"])
+
+
+def _build_ciphers(install_salt):
     """The key used for writing, plus every older one still worth reading.
 
     Changing a derivation would otherwise log the whole estate out at once:
@@ -83,21 +128,73 @@ def _build_ciphers():
     read-only fallbacks, and `db_touch_session` rewrites a row under the
     current key the first time that session is used - so installs migrate
     themselves as people browse, rather than in one flush.
+
+    That is exactly the path the per-install salt takes: rows written under
+    the old shared-salt derivation stay readable through the first legacy
+    entry below, and move to the new key as their sessions are used.
     """
     dedicated_secret = os.getenv("WEB_TOKEN_KEY", "").strip()
     active_secret = dedicated_secret or CLIENT_SECRET
-    primary = _cipher_from_secret(active_secret)
+    primary = _cipher_from_secret(active_secret, salt=install_salt)
 
-    legacy = [_cipher_from_secret(active_secret, legacy=True)]
+    legacy = [
+        # v2: same secret, the shared constant salt.
+        _cipher_from_secret(active_secret),
+        # v1: a bare SHA-256, before there was a KDF at all.
+        _cipher_from_secret(active_secret, legacy=True),
+    ]
     if dedicated_secret and CLIENT_SECRET and dedicated_secret != CLIENT_SECRET:
         # Older still: before WEB_TOKEN_KEY existed the Discord client secret
         # was always the key.
+        legacy.append(_cipher_from_secret(CLIENT_SECRET, salt=install_salt))
         legacy.append(_cipher_from_secret(CLIENT_SECRET))
         legacy.append(_cipher_from_secret(CLIENT_SECRET, legacy=True))
     return primary, tuple(cipher for cipher in legacy if cipher is not None)
 
 
-_CIPHER, _LEGACY_CIPHERS = _build_ciphers()
+# Populated on first use rather than at import: the salt lives in the database,
+# and reading it at import would make importing this module a database call.
+# Tests patch these two names directly, and `_ensure_ciphers` steps aside when
+# a cipher is already present, so a patched one is never overwritten.
+_CIPHER = None
+_LEGACY_CIPHERS = ()
+_CIPHERS_BUILT = False
+
+
+def _ensure_ciphers():
+    """Build the ciphers once, before any caller takes the database lock."""
+    global _CIPHER, _LEGACY_CIPHERS, _CIPHERS_BUILT
+    if _CIPHER is not None or _CIPHERS_BUILT:
+        return
+    if Fernet is None:
+        _CIPHERS_BUILT = True
+        return
+    _CIPHER, _LEGACY_CIPHERS = _build_ciphers(_read_or_create_install_salt())
+    _CIPHERS_BUILT = True
+
+
+def token_cipher_ready():
+    """Whether tokens will actually be encrypted at rest."""
+    _ensure_ciphers()
+    return _CIPHER is not None
+
+
+def require_token_cipher():
+    """Refuse to run the dashboard without at-rest encryption.
+
+    This used to degrade quietly: no `cryptography`, no cipher, and
+    `_encrypt_token` handed the value straight back, so Discord access and
+    refresh tokens went into the database in clear text behind a single log
+    line at startup. A log line is not a control. Encryption at rest either
+    holds or the thing that depends on it does not start.
+    """
+    if token_cipher_ready():
+        return
+    raise RuntimeError(
+        "Dashboard token encryption is unavailable, so OAuth tokens would be "
+        "stored in clear text. Install `cryptography` (it is in requirements.txt) "
+        "and set WEB_TOKEN_KEY, or set WEB_ENABLED=false."
+    )
 
 
 def _encrypt_token(value):
@@ -123,6 +220,7 @@ def _decrypt_token(value):
 
 
 def init_web_tables():
+    _ensure_ciphers()
     with _DB_LOCK, connect() as db:
         db.execute("CREATE TABLE IF NOT EXISTS web_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         db.execute(
@@ -185,6 +283,7 @@ def _hash_sid(sid):
 
 
 def db_save_session(sid, entry):
+    _ensure_ciphers()
     with _DB_LOCK, connect() as db:
         db.execute(
             """
@@ -219,6 +318,7 @@ def db_save_session(sid, entry):
 
 
 def db_load_session(sid):
+    _ensure_ciphers()
     with _DB_LOCK, connect() as db:
         row = db.execute(
             "SELECT * FROM web_sessions WHERE sid_hash = ?", (_hash_sid(sid),)
@@ -236,10 +336,30 @@ def db_load_session(sid):
         "expires_at": row["expires_at"],
         "last_seen_at": row["last_seen_at"],
     }
-    if entry["expires_at"] < time.time():
+    now = time.time()
+    if entry["expires_at"] < now:
         db_delete_session(sid)
         return None
+    # last_seen_at is 0 for rows written before this column meant anything;
+    # those are aged out by the absolute TTL alone rather than logged out on
+    # the spot by a rule that did not exist when they were created.
+    last_seen = entry.get("last_seen_at") or 0
+    if last_seen and now - last_seen > SESSION_IDLE_TTL:
+        db_delete_session(sid)
+        return None
+    if now - last_seen > SEEN_REFRESH_SECONDS:
+        db_mark_seen(sid, now)
+        entry["last_seen_at"] = now
     return entry
+
+
+def db_mark_seen(sid, moment=None):
+    """Stamp a session as used, without rewriting its tokens."""
+    with _DB_LOCK, connect() as db:
+        db.execute(
+            "UPDATE web_sessions SET last_seen_at = ? WHERE sid_hash = ?",
+            (moment or time.time(), _hash_sid(sid)),
+        )
 
 
 def db_delete_session(sid):
@@ -248,6 +368,7 @@ def db_delete_session(sid):
 
 
 def db_touch_session(sid, entry):
+    _ensure_ciphers()
     with _DB_LOCK, connect() as db:
         db.execute(
             """
