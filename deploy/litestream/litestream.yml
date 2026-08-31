@@ -7,6 +7,22 @@
 #
 # Credentials come from the environment (see litestream.service and
 # /etc/litestream.env) so this file stays safe to commit.
+#
+# Encryption: the scheduled zip backups are AES-256-GCM encrypted by
+# core/secure_files.py before they are uploaded, and refuse to upload plaintext.
+# This replica had no equivalent - it leaned entirely on the storage provider,
+# while being the more complete and more recent copy of the two. `age` closes
+# that with the provider holding only ciphertext.
+#
+# Generate the recipient once, keep the identity file off this host as well as
+# on it, and put both in the password manager beside BACKUP_ENCRYPTION_KEY:
+#
+#   age-keygen -o /etc/litestream-age.key      # chmod 600, root-owned
+#   grep 'public key' /etc/litestream-age.key  # -> LITESTREAM_AGE_RECIPIENT
+#
+# A replica encrypted to a key nobody can find is a backup you do not have, so
+# the restore drill in docs/RESTORE.md exercises the identity file, not just
+# the bucket.
 
 dbs:
   - path: ${NOVAGUARD_DB_PATH}
@@ -19,6 +35,15 @@ dbs:
         region: ${LITESTREAM_REGION}
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+        # Client-side encryption: the bucket holds ciphertext, so a compromised
+        # or misconfigured storage account is not a database leak. The identity
+        # file is needed to restore - see the note at the top of this file.
+        age:
+          identities:
+            - ${LITESTREAM_AGE_IDENTITY}
+          recipients:
+            - ${LITESTREAM_AGE_RECIPIENT}
 
         # Keep a month of history: long enough to notice and undo a bad
         # migration or a mistaken bulk delete, short enough to stay cheap.

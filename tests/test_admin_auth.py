@@ -259,5 +259,89 @@ class OwnerIdsAreActuallyConsultedTests(unittest.TestCase):
         self.assertFalse(allowed)
 
 
+class SecurityAlertTests(unittest.IsolatedAsyncioTestCase):
+    """A lockout should reach someone, not just a table.
+
+    The brute-force controls themselves are sound - scrypt plus a fifteen
+    minute lockout after five failures - but the only record was a row in
+    `admin_audit`, which is read when somebody already suspects something.
+    """
+
+    def setUp(self):
+        import core.error_digest as error_digest
+
+        self.error_digest = error_digest
+        self.sent = []
+
+        class Channel:
+            @staticmethod
+            async def send(**kwargs):
+                pass
+
+        self.channel = Channel()
+
+        async def capture(**kwargs):
+            self.sent.append(kwargs)
+
+        self.channel.send = capture
+
+        patcher = mock.patch.object(
+            error_digest, "resolve_error_channel",
+            mock.AsyncMock(return_value=self.channel),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        self.bot = mock.Mock(spec=[])
+
+    async def test_a_lockout_reaches_the_admin_channel(self):
+        sent = await self.error_digest.send_security_alert(
+            self.bot, "Admin key lockout", "someone ran out of attempts",
+            fields=(("Account", "someone (`5`)"),), key="admin-unlock-lockout:5",
+        )
+
+        self.assertTrue(sent)
+        self.assertEqual(len(self.sent), 1)
+
+    async def test_the_alert_never_carries_the_key(self):
+        await self.error_digest.send_security_alert(
+            self.bot, "Admin key lockout", "someone ran out of attempts",
+            fields=(("Account", "someone (`5`)"),), key="admin-unlock-lockout:5",
+        )
+
+        rendered = str(self.sent[0]["embed"].to_dict())
+        for forbidden in ("ng_admin_", "salt", "hash"):
+            self.assertNotIn(forbidden, rendered.lower())
+
+    async def test_one_attacker_is_one_alert_not_forty(self):
+        # An alert channel nobody can read is the same as no alert at all.
+        for _ in range(5):
+            await self.error_digest.send_security_alert(
+                self.bot, "Admin key lockout", "again", key="admin-unlock-lockout:5"
+            )
+
+        self.assertEqual(len(self.sent), 1)
+
+    async def test_a_different_account_is_its_own_story(self):
+        await self.error_digest.send_security_alert(
+            self.bot, "Admin key lockout", "one", key="admin-unlock-lockout:5"
+        )
+        await self.error_digest.send_security_alert(
+            self.bot, "Admin key lockout", "two", key="admin-unlock-lockout:6"
+        )
+
+        self.assertEqual(len(self.sent), 2)
+
+    async def test_no_configured_channel_is_not_a_crash(self):
+        with mock.patch.object(
+            self.error_digest, "resolve_error_channel", mock.AsyncMock(return_value=None)
+        ):
+            sent = await self.error_digest.send_security_alert(
+                self.bot, "Admin key lockout", "nowhere to send this"
+            )
+
+        self.assertFalse(sent)
+
+
 if __name__ == "__main__":
     unittest.main()

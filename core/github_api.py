@@ -215,7 +215,7 @@ class GitHubAPI:
 
         while True:
             batch = await self.get_json(
-                f"/repos/{full_name}/pulls",
+                f"/repos/{_repo_path(full_name)}/pulls",
                 params={"state": "open", "per_page": 100, "page": page},
             )
             if not batch:
@@ -233,7 +233,7 @@ class GitHubAPI:
 
         while True:
             batch = await self.get_json(
-                f"/repos/{full_name}/issues",
+                f"/repos/{_repo_path(full_name)}/issues",
                 params={"state": "open", "per_page": 100, "page": page},
             )
             if not batch:

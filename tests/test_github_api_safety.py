@@ -89,6 +89,48 @@ class PathSegmentEncodingTests(unittest.TestCase):
         self.assertNotIn("?", url.split("/users/", 1)[1])
 
 
+class EveryEndpointEncodesTests(unittest.IsolatedAsyncioTestCase):
+    """The encoding layer has to hold for *every* method, not most of them.
+
+    docs/SECURITY.md states flatly that "every GitHub path segment is
+    percent-encoded now". Two methods were left out - `count_open_pull_requests`
+    and `count_open_issues` interpolated `full_name` raw - and no test noticed,
+    which is how a documented control quietly stops being true. Neither is
+    reachable with unvalidated input today; the point of the encoding layer is
+    that it holds anyway, for the caller who forgets.
+    """
+
+    async def _requested_paths(self, method_name, *args):
+        api = GitHubAPI(token="unused")
+        seen = []
+
+        async def capture(path, params=None):
+            seen.append(path)
+            return []  # empty batch ends the paging loops immediately
+
+        api.get_json = capture
+        await getattr(api, method_name)(*args)
+        return seen
+
+    async def test_the_counting_endpoints_encode_their_repository(self):
+        for method in ("count_open_pull_requests", "count_open_issues"):
+            with self.subTest(method=method):
+                paths = await self._requested_paths(method, "a/../../user")
+
+                self.assertTrue(paths, f"{method} made no request")
+                for path in paths:
+                    url = resolved(path)
+                    self.assertTrue(
+                        url.startswith("https://api.github.com/repos/a/"),
+                        f"{method} escaped /repos/: {url}",
+                    )
+
+    async def test_an_ordinary_repository_still_reaches_its_endpoint(self):
+        paths = await self._requested_paths("count_open_issues", "VIK-DD/NovaGuard")
+
+        self.assertEqual(paths[0], "/repos/VIK-DD/NovaGuard/issues")
+
+
 class NameValidationTests(unittest.TestCase):
     def test_real_logins_are_accepted(self):
         for name in ("VIK-DD", "a", "octocat", "a-b-c", "A1"):
