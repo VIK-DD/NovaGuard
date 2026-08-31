@@ -1349,10 +1349,28 @@ describe("automatic public launch", () => {
       expect(response.status, path).toBe(302);
       expect(response.headers.get("Location"), path).toBe("https://novaguard.fun/home/");
       expect(response.headers.get("Cache-Control"), path).toBe("no-store");
-      expect(response.headers.get("Set-Cookie"), path).toContain("ng_gate=;");
-      expect(response.headers.get("Set-Cookie"), path).toContain(
-        "__Host-ng_csrf=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
-      );
+      // Read every Set-Cookie, not the joined string, and assert attributes
+      // rather than one exact line. `headers.get` returns them comma-joined,
+      // so a `toContain` on it passes as long as *something* in the pair
+      // matches - which is how a csrf expiry missing HttpOnly hid behind an
+      // ng_gate expiry that had it. Order is not meaning, either.
+      const cookies = response.headers.getSetCookie();
+      const gate = cookies.find((line) => line.startsWith("ng_gate="));
+      const csrf = cookies.find((line) => line.startsWith("__Host-ng_csrf="));
+
+      for (const [name, line] of [["ng_gate", gate], ["__Host-ng_csrf", csrf]]) {
+        expect(line, `${path} ${name}`).toBeDefined();
+        expect(line, `${path} ${name}`).toContain("Max-Age=0");
+        expect(line, `${path} ${name}`).toContain("HttpOnly");
+        expect(line, `${path} ${name}`).toContain("Secure");
+        // __Host- is refused outright by the browser without Path=/ and
+        // Secure, so an expiry missing either is not an expiry at all.
+        expect(line, `${path} ${name}`).toContain("Path=/");
+        expect(line, `${path} ${name}`).not.toContain("Domain=");
+      }
+      // Each expiry carries the SameSite its own cookie was issued with.
+      expect(gate, path).toContain("SameSite=Lax");
+      expect(csrf, path).toContain("SameSite=Strict");
     }
   });
 
