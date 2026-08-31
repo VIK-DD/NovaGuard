@@ -23,6 +23,7 @@ from core.admin_auth import (
     recent_audit,
     record_audit,
 )
+from core.error_digest import send_security_alert
 from core.maintenance import user_can_bypass_maintenance
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import defer_interaction, respond
@@ -180,6 +181,23 @@ class Admin(commands.Cog):
                 outcome="failed",
                 detail=f"{remaining} attempts left",
             )
+            if not remaining:
+                # The audit row was the only trace of this, and a row nobody
+                # reads is not a control. The lockout - not each wrong attempt -
+                # is the event worth interrupting someone for: it means five
+                # failures inside fifteen minutes.
+                await send_security_alert(
+                    self.bot,
+                    "Admin key lockout",
+                    "Someone ran out of attempts on `/admin unlock`. If this was not you, "
+                    "rotate the key on the host:\n```bash\n"
+                    "venv/bin/python -m tools.admin_key --force\n```",
+                    fields=(
+                        ("Account", f"{interaction.user} (`{interaction.user.id}`)"),
+                        ("Locked for", _minutes(SESSIONS.lockout_seconds_left(interaction.user.id))),
+                    ),
+                    key=f"admin-unlock-lockout:{interaction.user.id}",
+                )
             return await respond(
                 interaction,
                 _embed(

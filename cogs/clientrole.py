@@ -19,6 +19,7 @@ from discord.ext import commands, tasks
 from core.client_role import ADMIN, NOT_ADMIN, client_status
 from core.command_guards import ManagerGroup
 from core.loop_guard import keep_running
+from core.role_safety import role_assignment_error
 from core.storage import get_guild_settings, update_guild_settings
 from core.theme import Palette, brand_footer, make_embed
 from core.utils import respond
@@ -107,6 +108,22 @@ class ClientRole(commands.Cog):
 
     async def grant(self, member, role):
         if role in member.roles:
+            return False
+        # The same gate every other grant path goes through, asked again here
+        # rather than only where the role was configured.
+        #
+        # This one matters more than most. The grant is automatic and needs no
+        # interaction from the member at all: hold Manage Server on any guild
+        # NovaGuard is on - a free server of your own qualifies - and joining
+        # this one is enough. If the configured role carries Administrator,
+        # that is a complete takeover with no click involved. The role can also
+        # have become privileged long after it was named, and this loop runs
+        # unattended for years.
+        refusal = role_assignment_error(role, member.guild)
+        if refusal:
+            log.warning(
+                "Skipping client role @%s in guild %s: %s", role.name, member.guild.id, refusal
+            )
             return False
         try:
             await member.add_roles(role, reason="Administers another server running NovaGuard")
@@ -211,10 +228,17 @@ class ClientRole(commands.Cog):
     @clientrole.command(name="set", description="Choose the role given to NovaGuard clients")
     @app_commands.describe(role="The role to grant")
     async def clientrole_set(self, interaction: discord.Interaction, role: discord.Role):
-        if role >= interaction.guild.me.top_role:
+        # Held to the same standard as autorole and role panels, and for the
+        # same reason: this role is handed out with no click from the member.
+        # `role_assignment_error` also covers the hierarchy question this
+        # command used to ask on its own.
+        refusal = role_assignment_error(role, interaction.guild, interaction.user)
+        if refusal:
             embed = make_embed(
-                "🔒 That role is above mine",
-                f"Move **{role.name}** below my highest role so I can assign it.",
+                "🔒 Cannot use that client role",
+                f"**{role.name}** cannot be granted automatically because {refusal}.\n\n"
+                "Anyone who manages a server running NovaGuard receives it just by "
+                "joining, so it is held to the same standard as a self-assign panel.",
                 color=Palette.DANGER,
             )
             brand_footer(embed, "Client recognition")

@@ -18,6 +18,13 @@ hosting region, retention value or public policy changes.
   does not currently pin a disclosed storage region; treat it as global
   processing. Archives are encrypted before upload and Google does not receive
   the NovaGuard backup key.
+- Continuous database replica: Backblaze B2 (`eu-central-003`, Germany), written
+  by Litestream. This is the most complete and most recent copy of the database
+  that leaves the host - a full replica within seconds of the live file, not a
+  twice-daily archive - and it was previously absent from this register while
+  the twice-daily archives were listed. It is encrypted client-side with `age`
+  before upload, so Backblaze holds ciphertext and does not receive the
+  identity key (see `deploy/litestream/litestream.yml`).
 - Competent national authority: National Center for Personal Data Protection of
   the Republic of Moldova (CNPDCP), <https://datepersonale.md/about/contacts/>.
 
@@ -78,7 +85,7 @@ Before enabling or materially changing one of these modules in a community:
 | Moderation, tickets, reminders and giveaways | Discord/guild/channel IDs, warning reason/moderator, ticket opener/name/timestamps, reminder text/time, giveaway host/entrants/winners | Deliver the user/admin-requested feature and keep an accountable record | Requested feature; moderation/community safety legitimate interests | Oracle host; relevant output in Discord | Closed tickets 180 days; warnings 365 days; completed giveaways 90 days; reminders until delivered/cancelled |
 | `/ask` AI request | Discord ID for command/rate control and question text | Return an answer specifically requested by the member | Steps requested by the user; do not repurpose for profiling or advertising | Anthropic via its API; transient Oracle process memory | NovaGuard stores no question history; Anthropic's standard API retention is currently up to 30 days unless another arrangement applies |
 | GitHub integration | Public repository, release and commit metadata; configured destination channel | Publish repository updates selected by the administrator | Requested service and legitimate interest | GitHub, Oracle host and Discord | Current configuration plus limited delivery state while enabled |
-| Security, diagnostics and backups | IP address, Discord actor ID, timestamps, action metadata, errors; encrypted service state; keyed deletion tokens without raw Discord IDs | Detect abuse, investigate incidents, recover safely and prevent erased data from returning | Legitimate interests; legal obligation where applicable | Oracle host, Cloudflare, configured encrypted rclone destination | Dashboard audit/IP 90 days; local newest 10 backups; remote full/guild backups 90/60 days by default; deletion ledger for service lifetime |
+| Security, diagnostics and backups | IP address, Discord actor ID, timestamps, action metadata, errors; encrypted service state; keyed deletion tokens without raw Discord IDs | Detect abuse, investigate incidents, recover safely and prevent erased data from returning | Legitimate interests; legal obligation where applicable | Oracle host, Cloudflare, configured encrypted rclone destination, Backblaze B2 (encrypted continuous replica) | Dashboard audit/IP 90 days; local newest 10 backups; remote full/guild backups 90/60 days by default; deletion ledger for service lifetime |
 
 | Rights-request proof | Keyed digest of the requesting Discord ID, request kind, outcome and timestamp — no raw ID | Demonstrate under Article 5(2) that an access or erasure request was answered | Legal obligation; accountability is not optional | Oracle host only; never sent anywhere | rights-request proof 365 days |
 
@@ -175,6 +182,7 @@ contract/DPA version, transfer mechanism, security review date and deletion
 route. Do not claim all data stays in one country unless logs, edge processing,
 support access and backups have all been verified.
 
+- Backblaze B2 DPA: <https://www.backblaze.com/company/data-processing-addendum>
 - Cloudflare customer DPA: <https://www.cloudflare.com/cloudflare-customer-dpa/>
 - Oracle privacy terms: <https://www.oracle.com/legal/privacy/privacy-policy/>
 - Anthropic controller/processor explanation: <https://support.anthropic.com/en/articles/9267385-does-anthropic-act-as-a-data-processor-or-controller>
@@ -203,6 +211,9 @@ The operator must complete and retain evidence for every item:
       post it in a visible rules, onboarding or privacy channel.
 - [ ] Identify the competent supervisory authority and complaint route.
 - [ ] Confirm the Oracle region and every rclone backup destination/country.
+- [ ] Confirm the Backblaze B2 bucket region, that its application key is scoped
+      to that bucket alone, and that the `age` identity is held somewhere other
+      than the host it protects.
 - [ ] Retain a current Oracle/provider console screenshot or configuration
       export proving encryption at rest for production disks, boot volumes and
       snapshots; only then set `HOST_STORAGE_ENCRYPTION_CONFIRMED=true`.

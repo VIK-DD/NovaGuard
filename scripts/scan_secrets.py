@@ -48,7 +48,87 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}")),
     ("Cloudflare API token", re.compile(r"\bv1\.0-[A-Za-z0-9_-]{30,}")),
     ("Private key block", re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----")),
+    # Publishing credentials. Neither ecosystem is published to from here
+    # today, which is exactly when a token gets pasted somewhere to try it.
+    ("npm access token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
+    ("PyPI API token", re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}")),
+    # A webhook URL is a credential: anyone holding it can post as the app.
+    # Distinct from the xox* bot tokens above, which this used to be alone in
+    # covering.
+    ("Slack webhook", re.compile(r"https://hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9]{20,}")),
+    ("Stripe secret key", re.compile(r"\b[sr]k_live_[A-Za-z0-9]{20,}\b")),
+    ("SendGrid API key", re.compile(r"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}")),
+    # A signed JWT carries its own header, so the shape is unambiguous: the
+    # first segment always decodes from {"alg": ... and starts eyJ.
+    ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}")),
+    # A connection string with the password inline. `//user:pass@host` is
+    # unambiguous enough to match on, and it is how a database credential
+    # usually escapes: not as a token, as a URL in a config file.
+    (
+        "Database URL with credentials",
+        re.compile(
+            r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql)://"
+            r"[^\s:/@]+:[^\s:/@]{6,}@"
+        ),
+    ),
 )
+
+# NovaGuard's own secrets are random bytes with no issuer prefix - nothing
+# about `WEB_TOKEN_KEY`'s value distinguishes it from any other base64 string,
+# so no shape rule can find it. They are also the highest-value secrets in the
+# system: the key that decrypts OAuth tokens at rest, the one that signs gate
+# cookies, the one that encrypts backups.
+#
+# What is recognisable is the *name* next to the value. A scanner keyed on the
+# variable name catches the way these actually leak - a real `.env` pasted into
+# a doc, a debug line, a config example filled in with live values - without
+# the entropy heuristics this file argues against, because the name makes the
+# match specific rather than statistical.
+OWN_SECRET_NAMES = (
+    "TOKEN",
+    "DISCORD_CLIENT_SECRET",
+    "WEB_TOKEN_KEY",
+    "GATE_SIGNING_KEY",
+    "AUTH_PASSWORD",
+    "BACKUP_ENCRYPTION_KEY",
+    "LITESTREAM_SECRET_ACCESS_KEY",
+    "ADMIN_KEY",
+    "ADMIN_KEY_HASH",
+    "GITHUB_TOKEN",
+    "ANTHROPIC_API_KEY",
+)
+
+ASSIGNED_SECRET = re.compile(
+    r"\b(" + "|".join(OWN_SECRET_NAMES) + r")\s*[:=]\s*[\"']?([^\s\"'#,)]{16,})"
+)
+
+# Values that are obviously not a live credential. Kept deliberately short:
+# every entry here is a hole, so each one has to earn its place.
+_PLACEHOLDER_HINTS = (
+    "your_", "_here", "example", "changeme", "change-me", "placeholder", "redacted",
+    "xxxxx", "...", "<", "${", "$(", "openssl", "secrets.", "env.", "os.getenv",
+    "getenv", "sha256", "base64", "random", "generate", "dummy", "fake", "test",
+)
+
+
+def _is_placeholder(value):
+    # Hyphens and underscores are interchangeable in the wild: `your-key-here`
+    # and `your_key_here` are the same placeholder written by two people.
+    lowered = value.lower().replace("-", "_")
+    if any(hint.replace("-", "_") in lowered for hint in _PLACEHOLDER_HINTS):
+        return True
+    # "aaaaaaaaaaaaaaaa" and friends: a filler, not a key.
+    return len(set(value)) <= 4
+
+
+def _assigned_secret_kind(line):
+    match = ASSIGNED_SECRET.search(line)
+    if not match:
+        return None
+    name, value = match.group(1), match.group(2)
+    if _is_placeholder(value):
+        return None
+    return f"{name} assigned a literal value"
 
 # Paths whose whole job is to contain credential-shaped strings.
 EXCLUDED_PATHS = frozenset({
@@ -95,10 +175,13 @@ def scan_text(text, location, *, start_line=1, added_only=False):
             if current_path in EXCLUDED_PATHS:
                 continue
             line = line[1:]
+        where = f"{location}:{current_path}" if current_path else location
         for kind, pattern in PATTERNS:
             if pattern.search(line):
-                where = f"{location}:{current_path}" if current_path else location
                 findings.append(Finding(kind, where, start_line + offset, line))
+        assigned = _assigned_secret_kind(line)
+        if assigned:
+            findings.append(Finding(assigned, where, start_line + offset, line))
     return findings
 
 

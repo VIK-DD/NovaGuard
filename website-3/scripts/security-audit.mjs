@@ -40,6 +40,7 @@ function parseArgs(argv) {
     password: process.env.NG_AUDIT_PASSWORD || "",
     failOn: "low",
     skipBuild: false,
+    buildOnly: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -49,6 +50,11 @@ function parseArgs(argv) {
     else if (flag === "--password") args.password = value();
     else if (flag === "--fail-on") args.failOn = value();
     else if (flag === "--skip-build") args.skipBuild = true;
+    // The other half, on its own: audit dist/ with no live site to reach.
+    // This is what makes the tool runnable on a pull request - until now it
+    // only ran after deploy, against production, which meant a finding was
+    // reported about a version already serving traffic.
+    else if (flag === "--build-only") args.buildOnly = true;
   }
   return args;
 }
@@ -186,8 +192,55 @@ function printFindings(title, findings) {
   }
 }
 
+async function readBuildArtifacts() {
+  const files = await walk(DIST);
+  return Promise.all(
+    files.map(async (path) => {
+      const info = await stat(path);
+      // Reading a large binary as text is pointless and slow; names still count.
+      const content = info.size < 2_000_000 ? await readFile(path, "utf8").catch(() => "") : "";
+      return { path: relative(DIST, path), content };
+    }),
+  );
+}
+
+// dist/ only, no network. Runs on every pull request, where there is no
+// deployed site to talk to and the build being reviewed is the thing that
+// matters: a secret baked into a bundle should fail the review, not appear in
+// a report about the release that already shipped it.
+async function auditBuildOnly(args) {
+  console.log("NovaGuard security audit — build output only");
+
+  const artifacts = await readBuildArtifacts();
+  if (artifacts.length === 0) {
+    // Reporting "no findings" when nothing was read is the one thing a
+    // security tool must never do.
+    console.log("\nFAIL — dist/ is empty or missing, so nothing was audited.");
+    console.log("       Run `npm run build:launch` first.");
+    process.exit(1);
+  }
+
+  const findings = auditBuildArtifacts(artifacts);
+  printFindings(`Build output — ${artifacts.length} files in dist/`, findings);
+
+  const threshold = SEVERITY_RANK[args.failOn] ?? 1;
+  const actionable = findings.filter((f) => SEVERITY_RANK[f.severity] >= threshold);
+  console.log("\n" + "-".repeat(60));
+  if (actionable.length === 0) {
+    console.log(`PASS — no findings at or above '${args.failOn}' in dist/.`);
+    process.exit(0);
+  }
+  const worst = worstSeverity(findings);
+  console.log(
+    `FAIL — ${actionable.length} finding(s) at or above '${args.failOn}'. Worst: ${LABEL[worst]}.`,
+  );
+  process.exit(1);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.buildOnly) return auditBuildOnly(args);
+
   const jar = makeJar();
   const findings = [];
   const externalHosts = new Set();
@@ -299,15 +352,7 @@ async function main() {
   printFindings(`Live responses — ${scanned} scanned on our hosts only`, findings);
 
   if (!args.skipBuild) {
-    const files = await walk(DIST);
-    const artifacts = await Promise.all(
-      files.map(async (path) => {
-        const info = await stat(path);
-        // Reading a large binary as text is pointless and slow; names still count.
-        const content = info.size < 2_000_000 ? await readFile(path, "utf8").catch(() => "") : "";
-        return { path: relative(DIST, path), content };
-      }),
-    );
+    const artifacts = await readBuildArtifacts();
     const buildFindings = auditBuildArtifacts(artifacts);
     findings.push(...buildFindings);
     if (artifacts.length === 0) {

@@ -12,13 +12,34 @@ import { createHash } from "node:crypto";
 
 const env = {
   AUTH_PASSWORD: "test-password",
+  // Required, not optional: the worker refuses to issue or verify a gate
+  // cookie without it rather than falling back to the password. Every test
+  // below therefore needs one, the same way a real deployment does.
+  GATE_SIGNING_KEY: "test-gate-signing-key-for-the-suite",
   LOGIN_RATE_LIMITER: {
+    limit: async () => ({ success: true }),
+  },
+  PREVIEW_RATE_LIMITER: {
     limit: async () => ({ success: true }),
   },
   ASSETS: {
     fetch: async (request) => new Response(new URL(request.url).pathname, { status: 200 }),
   },
 };
+
+// A gate cookie the worker just issued.
+//
+// The status and updates feeds sit behind the pre-launch gate now, so a test
+// about what those handlers *do* - caching, upstream failure, method checks -
+// has to arrive signed in. Tests about whether the gate holds pass no cookie
+// on purpose and are elsewhere.
+async function gateCookie(withEnv = env) {
+  const response = await worker.fetch(
+    formPost("/api/auth/login", { password: withEnv.AUTH_PASSWORD, next: "/dashboard/" }),
+    withEnv,
+  );
+  return (response.headers.get("Set-Cookie") || "").split(";")[0];
+}
 
 // Stands in for a token the worker minted on a previous /login/ render. Any
 // value matching the worker's token shape works; what is under test is that the
@@ -150,7 +171,9 @@ describe("production observability", () => {
     );
 
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/updates-feed"),
+      new Request("https://novaguard.fun/api/updates-feed", {
+        headers: { Cookie: await gateCookie() },
+      }),
       env,
       { waitUntil() {} },
     );
@@ -359,7 +382,9 @@ describe("password session", () => {
     vi.stubGlobal("fetch", upstream);
 
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/status-snapshot"),
+      new Request("https://novaguard.fun/api/status-snapshot", {
+        headers: { Cookie: await gateCookie() },
+      }),
       { ...env, STATUS_API_BASE: "https://api.example.test/api/v1" },
     );
     const snapshot = await response.json();
@@ -394,8 +419,9 @@ describe("password session", () => {
     });
     vi.stubGlobal("fetch", upstream);
 
+    const cookie = await gateCookie();
     const firstResponse = await worker.fetch(
-      new Request("https://novaguard.fun/api/status-snapshot"),
+      new Request("https://novaguard.fun/api/status-snapshot", { headers: { Cookie: cookie } }),
       { ...env, STATUS_API_BASE: "https://api.example.test/api/v1" },
     );
     expect(firstResponse.status).toBe(200);
@@ -408,7 +434,7 @@ describe("password session", () => {
     );
 
     const staleResponse = await worker.fetch(
-      new Request("https://novaguard.fun/api/status-snapshot"),
+      new Request("https://novaguard.fun/api/status-snapshot", { headers: { Cookie: cookie } }),
       { ...env, STATUS_API_BASE: "https://api.example.test/api/v1" },
     );
     const snapshot = await staleResponse.json();
@@ -687,7 +713,9 @@ describe("updates feed", () => {
       vi.fn(async () => Response.json(payload)),
     );
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/updates-feed"),
+      new Request("https://novaguard.fun/api/updates-feed", {
+        headers: { Cookie: await gateCookie() },
+      }),
       env,
       { waitUntil() {} },
     );
@@ -706,7 +734,9 @@ describe("updates feed", () => {
       }),
     );
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/updates-feed"),
+      new Request("https://novaguard.fun/api/updates-feed", {
+        headers: { Cookie: await gateCookie() },
+      }),
       env,
       { waitUntil() {} },
     );
@@ -716,7 +746,10 @@ describe("updates feed", () => {
 
   it("rejects a non-GET request", async () => {
     const response = await worker.fetch(
-      new Request("https://novaguard.fun/api/updates-feed", { method: "POST" }),
+      new Request("https://novaguard.fun/api/updates-feed", {
+        method: "POST",
+        headers: { Cookie: await gateCookie() },
+      }),
       env,
       { waitUntil() {} },
     );
@@ -931,6 +964,64 @@ describe("maintenance sync", () => {
     expect(cookie).toBeNull();
   });
 
+  it("is rate limited like the other public door", async () => {
+    // The code is 24 random bytes, so this is not about guessing it. Every
+    // submission is proxied to the bot's own API, which made an
+    // unauthenticated public endpoint an unbounded amplifier pointed at the
+    // thing the whole site depends on.
+    vi.stubGlobal("fetch", previewStub());
+    const upstream = globalThis.fetch;
+
+    const { response } = await previewCookie({
+      ...apiEnv,
+      PREVIEW_RATE_LIMITER: { limit: async () => ({ success: false }) },
+    });
+
+    expect(response.status).toBe(429);
+    // Refused before the proxied call, not after it - otherwise the limit
+    // bounds the answer while the amplification still happens.
+    expect(upstream).not.toHaveBeenCalledWith(
+      expect.stringContaining("/maintenance/preview"),
+      expect.anything(),
+    );
+  });
+
+  it("spends its own budget, not the login one", async () => {
+    // Two public doors sharing a limiter means traffic at one closes the
+    // other. That exact bug was fixed on the API side for this same pair.
+    vi.stubGlobal("fetch", previewStub());
+    const spent = [];
+
+    const { response } = await previewCookie({
+      ...apiEnv,
+      LOGIN_RATE_LIMITER: {
+        limit: async () => {
+          spent.push("login");
+          return { success: true };
+        },
+      },
+      PREVIEW_RATE_LIMITER: {
+        limit: async () => {
+          spent.push("preview");
+          return { success: true };
+        },
+      },
+    });
+
+    expect(response.status).toBe(303);
+    expect(spent).toEqual(["preview"]);
+  });
+
+  it("closes the door when its limiter is not configured", async () => {
+    vi.stubGlobal("fetch", previewStub());
+    const { PREVIEW_RATE_LIMITER: _missing, ...withoutLimiter } = apiEnv;
+
+    const { response, cookie } = await previewCookie(withoutLimiter);
+
+    expect(response.status).toBe(503);
+    expect(cookie).toBeNull();
+  });
+
   it("sets no cookie when the bot cannot be reached", async () => {
     // Failing closed on the door is the opposite of failing closed on the site,
     // and both are the safe direction.
@@ -1033,7 +1124,7 @@ describe("gate cookie signing key", () => {
   // human-chosen password, and HMAC-SHA256 has no work factor - one leaked
   // cookie is an offline dictionary attack at whatever speed the attacker's
   // hardware runs.
-  const DEDICATED = "P4unRLGiE6mV9wq2Zt7XbKsA0YcNhJ3F";
+  const DEDICATED = "test-dedicated-gate-signing-key-01";
 
   // Same shared-clock discipline as "maintenance sync" above, and for the same
   // reason: the worker caches the maintenance answer in module scope, so a test
@@ -1060,13 +1151,30 @@ describe("gate cookie signing key", () => {
     const cookie = await loginCookie(signed);
     expect(cookie).toMatch(/^ng_gate=/);
 
-    // The same cookie must not verify under the password alone.
+    // A cookie is bound to the key that signed it: rotating the key ends every
+    // session, and one deployment's cookie is worthless at another.
+    const rotated = { ...env, GATE_SIGNING_KEY: "test-rotated-gate-signing-key-02" };
     const response = await worker.fetch(
       new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
-      env,
+      rotated,
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toContain("/login/");
+  });
+
+  it("never signs a cookie with the password itself", async () => {
+    // The specific weakness this key exists to remove: with AUTH_PASSWORD as
+    // the HMAC key, one leaked cookie is an offline dictionary attack on the
+    // password at GPU speed.
+    const signed = { ...env, GATE_SIGNING_KEY: DEDICATED };
+    const cookie = await loginCookie(signed);
+
+    const asIfPasswordKeyed = { ...env, GATE_SIGNING_KEY: env.AUTH_PASSWORD.padEnd(32, "x") };
+    const response = await worker.fetch(
+      new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+      asIfPasswordKeyed,
+    );
+    expect(response.status).toBe(302);
   });
 
   it("a cookie signed with the dedicated key is accepted by it", async () => {
@@ -1080,32 +1188,121 @@ describe("gate cookie signing key", () => {
     expect(response.status).toBe(200);
   });
 
-  it("falls back to the password loudly rather than locking the site out", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("issues nothing at all when the key is missing", async () => {
+    // This used to fall back to AUTH_PASSWORD and log a warning. The warning
+    // went to logs sampled at 25%, the deploy stayed green, and an install
+    // that never ran `wrangler secret put` kept the exact weakness the key
+    // removes - permanently, and invisibly to anyone reading the code. A door
+    // that will not open is the safe failure; a door signed with a guessable
+    // key is not.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const cookie = await loginCookie(env);
+      const { GATE_SIGNING_KEY: _missing, ...withoutKey } = env;
       const response = await worker.fetch(
-        new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
-        env,
+        formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: "/dashboard/" }),
+        withoutKey,
       );
-      expect(response.status).toBe(200);
-      const events = warn.mock.calls.map((call) => String(call[0]));
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Set-Cookie")).toBeNull();
+      const events = error.mock.calls.map((call) => String(call[0]));
       expect(events.some((line) => line.includes("gate_signing_key_missing"))).toBe(true);
     } finally {
-      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it("tells the operator which secret to set", async () => {
+    // Only an operator can reach this. A 503 with no cause is a support
+    // ticket; a 503 naming the command is a fix.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { GATE_SIGNING_KEY: _missing, ...withoutKey } = env;
+      const response = await worker.fetch(
+        formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: "/dashboard/" }),
+        withoutKey,
+      );
+      expect(await response.text()).toContain("GATE_SIGNING_KEY");
+    } finally {
+      error.mockRestore();
     }
   });
 
   it("refuses a key too short to be worth having", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await loginCookie({ ...env, GATE_SIGNING_KEY: "short" });
-      const events = warn.mock.calls.map((call) => String(call[0]));
+      const response = await worker.fetch(
+        formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: "/dashboard/" }),
+        { ...env, GATE_SIGNING_KEY: "short" },
+      );
+
+      expect(response.status).toBe(503);
+      const events = error.mock.calls.map((call) => String(call[0]));
       expect(events.some((line) => line.includes("gate_signing_key_too_short"))).toBe(true);
     } finally {
-      warn.mockRestore();
+      error.mockRestore();
     }
   });
+
+  it("stops verifying existing cookies once the key is gone", async () => {
+    // Removing the secret from a live worker must not leave previously issued
+    // cookies working under the old fallback.
+    const cookie = await loginCookie(env);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { GATE_SIGNING_KEY: _missing, ...withoutKey } = env;
+      const response = await worker.fetch(
+        new Request("https://novaguard.fun/home/", { headers: { Cookie: cookie } }),
+        withoutKey,
+      );
+      expect(response.status).toBe(302);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("the status and updates feeds", () => {
+  // Both were answered at the very top of handleRequest, ahead of every check.
+  // The pages that render them sit behind the pre-launch gate; the data they
+  // render did not - guild and member counts, uptime, version and phase, and
+  // the whole changelog down to per-release diff stats, to anyone who guessed
+  // the path.
+  let clock = Date.parse("2026-08-26T00:00:00Z");
+
+  beforeEach(() => {
+    clock += 6 * 60 * 60 * 1000;
+    vi.setSystemTime(clock);
+  });
+
+  async function gateCookie() {
+    const response = await worker.fetch(
+      formPost("/api/auth/login", { password: env.AUTH_PASSWORD, next: "/dashboard/" }),
+      env,
+    );
+    return (response.headers.get("Set-Cookie") || "").split(";")[0];
+  }
+
+  for (const path of ["/api/status-snapshot", "/api/updates-feed"]) {
+    it(`refuses ${path} before launch without a session`, async () => {
+      const response = await worker.fetch(new Request(`https://novaguard.fun${path}`), env);
+
+      expect(response.status).toBe(401);
+      // JSON, not a redirect: the caller is fetch(), and an HTML login page
+      // arrives at it as a parse error rather than an answer.
+      expect(response.headers.get("Content-Type")).toContain("application/json");
+    });
+
+    it(`serves ${path} to a signed-in visitor`, async () => {
+      const cookie = await gateCookie();
+      const response = await worker.fetch(
+        new Request(`https://novaguard.fun${path}`, { headers: { Cookie: cookie } }),
+        env,
+      );
+
+      expect(response.status).not.toBe(401);
+    });
+  }
 });
 
 describe("automatic public launch", () => {
