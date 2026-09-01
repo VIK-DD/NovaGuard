@@ -311,6 +311,13 @@ own responses carry `script-src 'self' 'nonce-…'` with no `unsafe-eval` or
 none of the three CSP rules can fire on a page we serve. See
 `contentSecurityPolicy()` in `website-3/worker/index.js`.
 
+For repeatable checks, load `.zap/novaguard-baseline.yaml` in ZAP's Automation
+tab instead of using Quick Start. The committed plan scans only the two owned
+origins, requests the public API endpoints explicitly, reports every
+Low-or-higher alert and exits non-zero if one exists. Its security report omits
+Informational observations without disabling any security rule or applying a
+blanket false-positive filter; operational instructions are in `.zap/README.md`.
+
 ## Residual / accepted risks
 - **Host compromise of the Pi** is out of scope for app code — mitigate with OS
   updates, SSH key-only auth, and the network posture below.

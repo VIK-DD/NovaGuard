@@ -1,0 +1,85 @@
+---
+env:
+  contexts:
+    - name: "NovaGuard public surface"
+      urls:
+        - "https://novaguard.fun"
+        - "https://api.novaguard.fun"
+      includePaths:
+        - "https://novaguard\\.fun/.*"
+        - "https://api\\.novaguard\\.fun/api/v1/.*"
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  # Passive scanning is safe against production. Keeping it in scope is what
+  # prevents Discord OAuth, browser services and extensions from being
+  # reported as if NovaGuard owned their headers.
+  - type: passiveScan-config
+    parameters:
+      scanOnlyInScope: true
+      maxAlertsPerRule: 50
+
+  - type: spider
+    parameters:
+      context: "NovaGuard public surface"
+      url: "https://novaguard.fun/"
+      maxDuration: 5
+      parseGit: false
+      parseDsStore: false
+      parseSVNEntries: false
+      postForm: false
+
+  # Exercise the public API responses that are not naturally reached by the
+  # website spider. The 302 is intentionally inspected but its Discord target
+  # remains outside the context and is therefore not passively scanned.
+  - type: requestor
+    requests:
+      - name: "API health"
+        url: "https://api.novaguard.fun/api/v1/health"
+        method: GET
+        responseCode: 200
+      - name: "API readiness"
+        url: "https://api.novaguard.fun/api/v1/ready"
+        method: GET
+        responseCode: 200
+      - name: "Public statistics"
+        url: "https://api.novaguard.fun/api/v1/stats"
+        method: GET
+        responseCode: 200
+      - name: "OAuth login redirect"
+        url: "https://api.novaguard.fun/api/v1/auth/login"
+        method: GET
+        responseCode: 302
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  # This is the security-findings report. Informational observations are not
+  # vulnerabilities, so they are deliberately kept out of this artifact.
+  # Any real Low, Medium or High alert is still included and fails the plan.
+  - type: report
+    parameters:
+      template: "traditional-html"
+      reportDir: "reports"
+      reportFile: "novaguard-zap-security.html"
+      reportTitle: "NovaGuard — scoped ZAP security report"
+      reportDescription: "Passive scan of NovaGuard-owned public origins only."
+      displayReport: false
+    risks:
+      - high
+      - medium
+      - low
+    sites:
+      - "https://novaguard.fun"
+      - "https://api.novaguard.fun"
+
+  - type: exitStatus
+    parameters:
+      errorLevel: Low
+      okExitValue: 0
+      errorExitValue: 1
+    alwaysRun: true

@@ -11,6 +11,8 @@ __pycache__/
 .venv/
 .venv-mac/
 /venv/
+.zap/reports/*
+!.zap/reports/.gitkeep
 node_modules/
 /package-lock.json
 /deploy/lavalink/Lavalink.jar
