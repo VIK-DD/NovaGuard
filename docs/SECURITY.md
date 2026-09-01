@@ -267,7 +267,7 @@ under an alert before touching any code:
 | CSP: `script-src unsafe-eval` | `discord.com/oauth2/authorize` | ❌ Discord's CSP |
 | CSP: `style-src unsafe-inline` | `discord.com/oauth2/authorize` | ❌ Discord's CSP |
 | CSP: Failure to Define Directive with No Fallback | `discord.com/oauth2/authorize` | ❌ Discord's CSP |
-| Cross-Domain Misconfiguration ×3 | `discord.com/cdn-cgi/…`, `novaguard.fun/cdn-cgi/…`, `static.cloudflareinsights.com/beacon.min.js` | ❌ Cloudflare's |
+| Cross-Domain Misconfiguration | `discord.com/cdn-cgi/…`, `edge-consumer-static.azureedge.net/…` (1 September report); earlier reports also included edge-managed `/cdn-cgi/…` and `static.cloudflareinsights.com` responses | ❌ Discord, Microsoft or Cloudflare edge responses |
 
 Note the middle one: `/cdn-cgi/*` is on our hostname but is served by Cloudflare's
 edge **before** the Worker runs, so nothing in `website-3/worker/` can set headers
@@ -277,12 +277,15 @@ Cloudflare dashboard on 28 August 2026, so new responses no longer receive the
 beacon after edge propagation. The public privacy policy records that disabled
 state while continuing to disclose Cloudflare's network-level processing.
 
-The Low and Informational rows split the same way. What was genuinely ours has
-been fixed; the rest is either another host's or not a defect at all:
+The 1 September 2026 report contains **0 High** findings. Its four Medium alert
+categories are the three Discord CSP rows above and cross-domain headers on
+Discord/Microsoft resources. The Low and Informational rows split the same way.
+What was genuinely ours has been fixed; the rest is either another host's or
+not a defect at all:
 
 | Alert | Whose | Disposition |
 |-------|-------|-------------|
-| Timestamp Disclosure — Unix | ours | **Fixed.** The `/api/status-snapshot?t=…` cache-buster published the visitor's own clock. Both callers already send `cache: "no-store"` and the worker keys its edge cache on the bare path, so the parameter was removed outright. |
+| Timestamp Disclosure — Unix | ours | **Fixed.** An earlier `/api/status-snapshot?t=…` cache-buster was removed. The 1 September report then found the signed OAuth state's 10-minute issue time on `/api/v1/auth/login`; it now lives inside a fixed-size, URL-safe binary payload authenticated by the same full SHA-256 HMAC. Expiry, CSRF cookie binding and restart-safe validation are unchanged, while no decimal timestamp is published in the redirect. |
 | User Controllable HTML Element Attribute (×2) | ours | **Fixed.** The `?next=` value reaching the login form's hidden input. The client now parses it with `new URL` exactly as the worker's `safeNext()` does. |
 | Information Disclosure — localStorage | ours | **Won't fix.** It is `ng-theme`, a light/dark preference. ZAP flags any `localStorage` write; dropping it buys a theme flash on every page load and no security. |
 | Information Disclosure — sessionStorage | not ours | `ng_mock_session` exists only in the dev mock API and is absent from the production bundle — verify with `grep -r ng_mock_session website-3/dist/`. |

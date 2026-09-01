@@ -10,6 +10,7 @@ removed without any visible symptom.
 """
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import os
@@ -64,11 +65,12 @@ class FakeRequest:
 def signed_state(*, age_seconds=0, nonce="abc123", tamper=False):
     """Mint a state token the way the server does, or one that is subtly wrong."""
     issued = int(time.time()) - age_seconds
-    body = f"{nonce}.{issued}"
-    signature = hmac.new(web._STATE_SECRET, body.encode("utf-8"), hashlib.sha256).hexdigest()
+    nonce_bytes = hashlib.sha256(nonce.encode("utf-8")).digest()[:24]
+    payload = issued.to_bytes(8, "big") + nonce_bytes
+    signature = hmac.new(web._STATE_SECRET, payload, hashlib.sha256).digest()
     if tamper:
-        signature = ("0" * len(signature)) if signature[0] != "0" else ("1" * len(signature))
-    return f"{body}.{signature}"
+        signature = bytes([signature[0] ^ 1]) + signature[1:]
+    return base64.urlsafe_b64encode(payload + signature).rstrip(b"=").decode("ascii")
 
 
 class AuthTestCase(unittest.IsolatedAsyncioTestCase):
@@ -146,6 +148,28 @@ class ClientAddressTests(AuthTestCase):
 
 class StateGateTests(AuthTestCase):
     """Every one of these is a door that has to stay shut."""
+
+    def test_state_is_one_opaque_url_safe_value(self):
+        with mock.patch.object(web.time, "time", return_value=1_788_221_072):
+            state = self.server._make_state()
+            self.assertTrue(self.server._valid_state(state))
+
+        self.assertNotIn("1788221072", state)
+        self.assertNotIn(".", state)
+        self.assertRegex(state, r"^[A-Za-z0-9_-]+$")
+
+    def test_current_state_self_verifies_and_tampering_does_not(self):
+        state = self.server._make_state()
+        self.assertTrue(self.server._valid_state(state))
+
+        replacement = "A" if state[10] != "A" else "B"
+        tampered = state[:10] + replacement + state[11:]
+        self.assertFalse(self.server._valid_state(tampered))
+
+    def test_malformed_or_wrong_length_state_is_refused(self):
+        self.assertFalse(self.server._valid_state("not+base64"))
+        short = base64.urlsafe_b64encode(b"short").rstrip(b"=").decode("ascii")
+        self.assertFalse(self.server._valid_state(short))
 
     async def assert_refused(self, request):
         with self.assertRaises(web.ApiError) as caught:

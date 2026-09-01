@@ -29,6 +29,7 @@ Enable with WEB_ENABLED=true plus DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET.
 """
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import ipaddress
@@ -644,22 +645,35 @@ class WebServer:
     # ── OAuth state (stateless, HMAC-signed) ─────────────────────────
 
     def _make_state(self):
-        raw = f"{secrets.token_urlsafe(16)}.{int(time.time())}"
-        sig = hmac.new(_STATE_SECRET, raw.encode("utf-8"), hashlib.sha256).hexdigest()
-        return f"{raw}.{sig}"
+        # Keep the issue time inside a fixed-size binary payload instead of
+        # publishing it as a decimal Unix timestamp in the OAuth redirect.
+        # It was never secret, but exposing it added no value and needlessly
+        # triggered passive information-disclosure scanners.  The random
+        # nonce, timestamp and full HMAC are encoded together as one opaque,
+        # URL-safe value; expiry remains stateless and survives restarts.
+        payload = int(time.time()).to_bytes(8, "big") + secrets.token_bytes(24)
+        signature = hmac.new(_STATE_SECRET, payload, hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(payload + signature).rstrip(b"=").decode("ascii")
 
     def _valid_state(self, token):
-        parts = (token or "").split(".")
-        if len(parts) != 3:
-            return False
-        nonce, ts, sig = parts
-        expected = hmac.new(_STATE_SECRET, f"{nonce}.{ts}".encode("utf-8"), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, expected):
+        encoded = (token or "").encode("ascii", errors="ignore")
+        if not encoded:
             return False
         try:
-            issued = int(ts)
-        except ValueError:
+            padding = b"=" * (-len(encoded) % 4)
+            raw = base64.b64decode(encoded + padding, altchars=b"-_", validate=True)
+        except (ValueError, TypeError):
             return False
+        if base64.urlsafe_b64encode(raw).rstrip(b"=") != encoded:
+            return False
+        # 8-byte issue time + 24-byte nonce + 32-byte SHA-256 HMAC.
+        if len(raw) != 64:
+            return False
+        payload, signature = raw[:32], raw[32:]
+        expected = hmac.new(_STATE_SECRET, payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            return False
+        issued = int.from_bytes(payload[:8], "big")
         return 0 <= (time.time() - issued) < STATE_TTL
 
     # ── session handling ─────────────────────────────────────────────
