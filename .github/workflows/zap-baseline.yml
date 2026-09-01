@@ -22,6 +22,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # The ZAP image runs as its own unprivileged UID. GitHub's checkout is
+      # owned by the runner UID, so grant write access only to the report
+      # folder in this disposable workspace.
+      - name: Prepare report output
+        run: chmod a+rwx .zap
+
       - name: Scan NovaGuard-owned public origins
         run: |
           docker run --rm --pull always \

@@ -21,6 +21,12 @@ def test_zap_profile_scans_only_origins_we_control():
     assert "127.0.0.1" not in PROFILE
 
 
+def test_zap_profile_identifies_the_authorised_scan_before_crawling():
+    assert PROFILE.index("- type: replacer") < PROFILE.index("- type: spider")
+    assert "NovaGuard-ZAP-Security-Scan/1.0" in PROFILE
+    assert 'url: "^https://(?:api\\\\.)?novaguard\\\\.fun(?:/.*)?$"' in PROFILE
+
+
 def test_zap_profile_never_hides_a_real_security_finding():
     assert "- high" in PROFILE
     assert "- medium" in PROFILE
@@ -51,4 +57,5 @@ def test_zap_workflow_is_manual_and_read_only():
 def test_zap_workflow_runs_the_committed_plan_and_keeps_the_report():
     assert "/zap/wrk/.zap/novaguard-baseline.yaml" in WORKFLOW
     assert ".zap/novaguard-zap-security.html" in WORKFLOW
+    assert "chmod a+rwx .zap" in WORKFLOW
     assert "if: ${{ always() }}" in WORKFLOW

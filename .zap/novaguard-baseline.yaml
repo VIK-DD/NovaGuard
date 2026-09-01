@@ -22,6 +22,22 @@ jobs:
       scanOnlyInScope: true
       maxAlertsPerRule: 50
 
+  # Cloudflare's browser-integrity checks reject ZAP's default scanner user
+  # agent before the request reaches NovaGuard. Identify this authorised,
+  # read-only baseline as a normal HTTPS client while keeping the rule scoped
+  # to the two NovaGuard origins.
+  - type: replacer
+    parameters:
+      deleteAllRules: true
+    rules:
+      - description: "Authorised NovaGuard passive security scan"
+        url: "^https://(?:api\\.)?novaguard\\.fun(?:/.*)?$"
+        method: "GET"
+        matchType: req_header
+        matchString: "User-Agent"
+        matchRegex: false
+        replacementString: "Mozilla/5.0 (compatible; NovaGuard-ZAP-Security-Scan/1.0; +https://novaguard.fun/)"
+
   - type: spider
     parameters:
       context: "NovaGuard public surface"
