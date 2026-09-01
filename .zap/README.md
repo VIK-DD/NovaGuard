@@ -39,3 +39,11 @@ docker run --rm \
 Exit code `0` means no Low-or-higher finding. Exit code `1` means the report
 contains something that must be reviewed; it must not be silenced merely to
 restore a green result.
+
+## Run from GitHub
+
+Open **Actions → ZAP passive baseline → Run workflow**. The workflow uses this
+same plan against the public deployment and retains the scoped HTML report as
+the `novaguard-zap-security` artifact for 14 days. It is manual on purpose: a
+production passive scan should be requested when its evidence is needed, not
+duplicated after every documentation-only commit.

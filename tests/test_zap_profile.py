@@ -4,6 +4,12 @@ from pathlib import Path
 PROFILE = (
     Path(__file__).resolve().parents[1] / ".zap" / "novaguard-baseline.yaml"
 ).read_text(encoding="utf-8")
+WORKFLOW = (
+    Path(__file__).resolve().parents[1]
+    / ".github"
+    / "workflows"
+    / "zap-baseline.yml"
+).read_text(encoding="utf-8")
 
 
 def test_zap_profile_scans_only_origins_we_control():
@@ -32,3 +38,17 @@ def test_zap_profile_exercises_the_former_timestamp_finding():
 def test_zap_report_is_written_next_to_the_plan():
     assert 'reportFile: "novaguard-zap-security.html"' in PROFILE
     assert "reportDir:" not in PROFILE
+
+
+def test_zap_workflow_is_manual_and_read_only():
+    assert "workflow_dispatch:" in WORKFLOW
+    assert "contents: read" in WORKFLOW
+    assert "persist-credentials: false" in WORKFLOW
+    assert "pull_request:" not in WORKFLOW
+    assert "push:" not in WORKFLOW
+
+
+def test_zap_workflow_runs_the_committed_plan_and_keeps_the_report():
+    assert "/zap/wrk/.zap/novaguard-baseline.yaml" in WORKFLOW
+    assert ".zap/novaguard-zap-security.html" in WORKFLOW
+    assert "if: ${{ always() }}" in WORKFLOW

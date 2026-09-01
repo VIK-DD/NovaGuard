@@ -1,0 +1,39 @@
+name: ZAP passive baseline
+
+on:
+  workflow_dispatch:
+
+# The scan is read-only and the report contains public responses only.
+permissions:
+  contents: read
+
+concurrency:
+  group: zap-passive-baseline
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scan NovaGuard-owned public origins
+        run: |
+          docker run --rm --pull always \
+            -v "$GITHUB_WORKSPACE:/zap/wrk:rw" \
+            -t ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -cmd -autorun /zap/wrk/.zap/novaguard-baseline.yaml
+
+      - name: Upload scoped HTML report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: novaguard-zap-security
+          path: .zap/novaguard-zap-security.html
+          if-no-files-found: warn
+          retention-days: 14
