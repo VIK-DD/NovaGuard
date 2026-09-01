@@ -4,7 +4,10 @@ env:
     - name: "NovaGuard public surface"
       urls:
         - "https://novaguard.fun"
-        - "https://api.novaguard.fun"
+        # The API intentionally has no document at `/`; use a real public
+        # endpoint as the context seed so the spider does not turn that normal
+        # 404 into an Automation Framework warning.
+        - "https://api.novaguard.fun/api/v1/health"
       includePaths:
         - "https://novaguard\\.fun/.*"
         - "https://api\\.novaguard\\.fun/api/v1/.*"

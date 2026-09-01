@@ -14,7 +14,7 @@ WORKFLOW = (
 
 def test_zap_profile_scans_only_origins_we_control():
     assert '"https://novaguard.fun"' in PROFILE
-    assert '"https://api.novaguard.fun"' in PROFILE
+    assert '"https://api.novaguard.fun/api/v1/health"' in PROFILE
     assert "scanOnlyInScope: true" in PROFILE
     assert "discord.com" not in PROFILE
     assert "azureedge.net" not in PROFILE
