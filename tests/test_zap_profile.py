@@ -27,3 +27,8 @@ def test_zap_profile_never_hides_a_real_security_finding():
 def test_zap_profile_exercises_the_former_timestamp_finding():
     assert 'url: "https://api.novaguard.fun/api/v1/auth/login"' in PROFILE
     assert "responseCode: 302" in PROFILE
+
+
+def test_zap_report_is_written_next_to_the_plan():
+    assert 'reportFile: "novaguard-zap-security.html"' in PROFILE
+    assert "reportDir:" not in PROFILE

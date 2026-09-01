@@ -20,7 +20,7 @@ being identified.
 2. Open the **Automation** tab.
 3. Choose **Load Plan** and select `novaguard-baseline.yaml` from this folder.
 4. Run the plan.
-5. Open `reports/novaguard-zap-security.html` next to this file.
+5. Open `novaguard-zap-security.html` next to this file.
 
 Do not start this check through **Quick Start → Automated Scan**. That workflow
 created the mixed report by allowing a browser to leave NovaGuard's scope.
@@ -30,7 +30,6 @@ created the mixed report by allowing a browser to leave NovaGuard's scope.
 From the repository root:
 
 ```bash
-mkdir -p .zap/reports
 docker run --rm \
   -v "$PWD:/zap/wrk:rw" \
   -t ghcr.io/zaproxy/zaproxy:stable \

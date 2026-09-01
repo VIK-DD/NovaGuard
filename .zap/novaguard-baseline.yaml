@@ -64,7 +64,6 @@ jobs:
   - type: report
     parameters:
       template: "traditional-html"
-      reportDir: "reports"
       reportFile: "novaguard-zap-security.html"
       reportTitle: "NovaGuard — scoped ZAP security report"
       reportDescription: "Passive scan of NovaGuard-owned public origins only."
