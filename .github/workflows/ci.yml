@@ -133,11 +133,14 @@ jobs:
       # raised the cryptography floor to 50.0.1 for a CVE and changed only
       # requirements.txt, so production kept installing 50.0.0 - and unlike
       # `npm ci`, `pip install --require-hashes` never checks the two agree.
-      # Same shape as the CSP manifest check in the website job below:
-      # regenerate, and fail if the committed file is not what comes out.
+      # Use the committed lock as the resolver preference, then fail if a
+      # requirements.txt change makes any locked version incompatible. Starting
+      # from an empty output would instead force every newly published compatible
+      # transitive release into unrelated pull requests and make CI non-deterministic.
       - name: Confirm requirements.lock is in step with requirements.txt
         run: |
-          python -m pip install uv
+          python -m pip install uv==0.12.9
+          cp requirements.lock /tmp/requirements.lock
           uv pip compile --universal --generate-hashes \
             --python-version 3.11 \
             --custom-compile-command \
