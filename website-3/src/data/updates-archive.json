@@ -1,5 +1,124 @@
 [
   {
+    "created_at": "2026-09-01T01:31:09.831873+00:00",
+    "significant": false,
+    "build": 101,
+    "added_lines": 494,
+    "removed_lines": 46,
+    "changed_files": 11,
+    "changes": [
+      "Improved commands — same commands, smoother behavior: `/admin unlock`, `/clientrole set`",
+      "Refreshed the setup guides, the website build, the website content and the privacy and terms pages"
+    ],
+    "release": "3.1",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-31T00:50:11.527470+00:00",
+    "significant": false,
+    "build": 100,
+    "added_lines": 922,
+    "removed_lines": 129,
+    "changed_files": 14,
+    "changes": [
+      "Improved commands — same commands, smoother behavior: `/ask`, `/purge`, `/rolepanel`",
+      "Refreshed the setup guides and the website build"
+    ],
+    "release": "3.1",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-30T23:37:15.661024+00:00",
+    "significant": false,
+    "build": 99,
+    "added_lines": 1306,
+    "removed_lines": 208,
+    "changed_files": 49,
+    "changes": [
+      "Added global maintenance mode with DND presence and graceful command blocking",
+      "Improved commands — same commands, smoother behavior: `/8ball`, `/announce`, `/choose`, `/commits`, `/gamble`, `/ghwatch`, `/github`, `/giveaway end`, `/giveaway reroll`, `/health`, `/poll`, `/release` +8 more",
+      "Refreshed the setup guides, the web dashboard, the website's plumbing and the website pages (+1 more)"
+    ],
+    "release": "3.1",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-29T22:02:31.777271+00:00",
+    "significant": false,
+    "build": 98,
+    "added_lines": 34,
+    "removed_lines": 2,
+    "changed_files": 2,
+    "changes": [
+      "Refreshed the website build"
+    ],
+    "release": "3.0",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-29T21:47:21.459224+00:00",
+    "significant": false,
+    "build": 97,
+    "added_lines": 524,
+    "removed_lines": 30,
+    "changed_files": 10,
+    "changes": [
+      "Improved commands — same commands, smoother behavior: `/say`",
+      "Refreshed the website build, the website layout, the website content and the website pages"
+    ],
+    "release": "3.0",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-28T21:37:53.850556+00:00",
+    "significant": false,
+    "build": 96,
+    "added_lines": 107,
+    "removed_lines": 21,
+    "changed_files": 5,
+    "changes": [
+      "Refreshed the website build, the privacy and terms pages and the website pages"
+    ],
+    "release": "3.0",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-28T21:13:30.470957+00:00",
+    "significant": false,
+    "build": 95,
+    "added_lines": 1945,
+    "removed_lines": 1278,
+    "changed_files": 18,
+    "changes": [
+      "Improved commands — same commands, smoother behavior: `/statuspanel`",
+      "Refreshed the web dashboard, the command catalog on the website, the privacy and terms pages and the website's plumbing"
+    ],
+    "release": "3.0",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
+    "created_at": "2026-08-28T06:31:21.463010+00:00",
+    "significant": false,
+    "build": 94,
+    "added_lines": 346,
+    "removed_lines": 220,
+    "changed_files": 21,
+    "changes": [
+      "Refreshed the setup guides, the website build, the web dashboard and the website layout (+5 more)",
+      "Behind-the-scenes improvements to the bot's core, the bot's configuration, help ui and release versions (+4 more)"
+    ],
+    "release": "3.0",
+    "phase": "stable",
+    "phase_label": ""
+  },
+  {
     "created_at": "2026-08-28T01:06:09.769337+00:00",
     "significant": false,
     "build": 93,
@@ -1366,7 +1485,7 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "Initial tracked release for v3.0.0 \"Nova\"",
+      "Initial tracked NovaGuard release",
       "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/badword add`, `/badword list`, `/badword remove`, `/balance`, `/ban`, `/botinfo`, `/buy`, `/choose`, `/coinflip`, `/color`, `/commits` +52 more",
       "Streaming status rotation is active",
       "GitHub system is connected to `VIK-DD/ProjectHub`"
@@ -1384,7 +1503,7 @@
     "version": "3.0.0",
     "codename": "Nova",
     "highlights": [
-      "Initial tracked release for v3.0.0 \"Nova\"",
+      "Initial tracked NovaGuard release",
       "Available slash commands: `/8ball`, `/announce`, `/ask`, `/automod invites`, `/automod spam`, `/automod status`, `/avatar`, `/badword add`, `/badword list`, `/badword remove`, `/balance`, `/ban`, `/botinfo`, `/buy`, `/choose`, `/coinflip`, `/color`, `/commits` +52 more",
       "Streaming status rotation is active",
       "GitHub system is connected to `VIK-DD/ProjectHub`"
