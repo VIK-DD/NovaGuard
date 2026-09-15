@@ -343,8 +343,11 @@ describe("the real archive", () => {
     }
   });
 
-  it("has reached the official 3.0 release without a public phase label", () => {
-    expect(currentRelease(releases)).toEqual({ version: "3.0", phaseLabel: "" });
+  it("keeps the live archive at or above the official release without a phase label", () => {
+    const current = currentRelease(releases);
+
+    expect(newestPublicVersion(current.version, OFFICIAL_RELEASE_FLOOR)).toBe(current.version);
+    expect(current.phaseLabel).toBe("");
   });
 
   it("finds real significant updates in it", () => {
