@@ -365,6 +365,13 @@ npm run security:audit:build
 GitHub Actions additionally verifies Python 3.11 and 3.12, the hash-locked
 install, dependency advisories, secret history, static security analysis,
 React/Astro tests, the production build and the committed CSP hash manifest.
+
+A daily workflow re-runs both audit gates on their own, because most advisories
+land on transitive packages pinned only in a lockfile, where no Dependabot pull
+request can reach them. When a gate fails it regenerates the affected lock,
+verifies it the way the checks above do, and opens a single pull request; when
+both locks are clean it does nothing.
+
 The scoped ZAP workflow is manual because it scans the live public deployment
 and retains its report as an artifact.
 

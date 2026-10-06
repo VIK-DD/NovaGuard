@@ -37,7 +37,11 @@ except ImportError:  # SDK not installed — /ask explains how to enable it
     anthropic = None
     AsyncAnthropic = None
 
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")
+# Opus 5 is the current generation and is priced identically to the 4.8 it
+# replaces here - same input and output rate, same context window - so there is
+# no cost tradeoff to weigh. 4.8 is still served; ANTHROPIC_MODEL pins any other
+# model for a server that wants one.
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
 SYSTEM_PROMPT = (
     f"You are the resident AI of a Discord server, running inside the {github_config.brand_name} bot. "
     "Be helpful, friendly and a little playful. Keep answers under 300 words unless the question "
