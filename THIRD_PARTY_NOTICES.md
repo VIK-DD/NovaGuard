@@ -8,17 +8,23 @@ license and notice texts.
 
 ## Distributed font assets
 
-The soft-launch website distributes these self-hosted font files:
+The website self-hosts these font files, all four bundled from their Fontsource
+packages by the Astro build:
 
 - Manrope — Copyright 2019 The Manrope Project Authors; SIL Open Font License
   1.1.
 - DM Mono — Copyright 2020 The DM Mono Project Authors; SIL Open Font License
   1.1.
+- Hanken Grotesk — Copyright 2021 The Hanken Grotesk Project Authors; SIL Open
+  Font License 1.1.
+- Outfit — Copyright 2021 The Outfit Project Authors; SIL Open Font License 1.1.
 
-`website-3/scripts/soft-launch.mjs` copies the complete license texts from the
-installed Fontsource packages into the deployed artifact as
-`assets/THIRD-PARTY-FONT-LICENSES.txt`. The script fails the build if its source
-font packages are unavailable.
+The Coming Soon page is built separately and carries only the two faces it
+uses: `website-3/scripts/soft-launch.mjs` copies the complete Manrope and DM
+Mono license texts from the installed Fontsource packages into that artifact as
+`assets/THIRD-PARTY-FONT-LICENSES.txt`, and fails the build if either source
+package is unavailable. The license files for all four ship inside their
+Fontsource packages and are inventoried by the SBOM below.
 
 ## Release inventory
 
