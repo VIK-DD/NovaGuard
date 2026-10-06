@@ -10,6 +10,16 @@ updates:
       - dependencies
     commit-message:
       prefix: "deps"
+    groups:
+      # Security updates are a separate stream from the weekly version bumps
+      # and ignore open-pull-requests-limit, so without a group an advisory
+      # week arrives as one pull request per package. Only reaches direct
+      # dependencies: requirements.lock is not a manifest Dependabot parses,
+      # which is what lockfile-audit.yml exists to cover.
+      pip-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   # The website's npm tree. This was missing entirely, so 680 packages -
   # astro, vite, esbuild, wrangler and everything under them - got no update
@@ -25,9 +35,19 @@ updates:
     commit-message:
       prefix: "deps"
     groups:
+      # Security updates are a separate stream from the weekly version bumps
+      # and ignore open-pull-requests-limit, so without a group an advisory
+      # week arrives as one pull request per package. Unlike pip, npm security
+      # updates do rewrite the lockfile for transitive packages, which is where
+      # every advisory this tree has hit actually lives.
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
       # One PR for the build toolchain rather than six. These move together
       # and are reviewed together.
       astro-toolchain:
+        applies-to: version-updates
         patterns:
           - "astro"
           - "@astrojs/*"
@@ -38,12 +58,14 @@ updates:
       # Keep the runtime and its type packages in one review so Dependabot
       # cannot silently leave the browser bundle on mismatched releases.
       react-runtime:
+        applies-to: version-updates
         patterns:
           - "react"
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
       dev-tooling:
+        applies-to: version-updates
         dependency-type: development
     ignore:
       # @astrojs/check 0.9.x currently supports TypeScript 5 and 6 only.
