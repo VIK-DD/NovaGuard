@@ -1,0 +1,205 @@
+name: Lockfile audit refresh
+
+# Dependabot closes the advisories it can see, and it cannot see most of the
+# ones this repository has actually hit. Its pip ecosystem reads
+# requirements.txt, while production installs from the hash-locked
+# requirements.lock - and every advisory so far landed on a transitive package
+# that appears only in a lock: multidict, source-map-js, smol-toml, undici,
+# http-cache-semantics, fast-uri. Nothing watched those between pull requests,
+# so the first sign was CI going red on main, usually on an unrelated
+# Dependabot pull request that had been green the day before.
+#
+# This runs both audit gates on a schedule, regenerates whichever lock failed,
+# verifies the result the way ci.yml would, and opens one pull request. When
+# both locks are already clean it does nothing at all.
+
+on:
+  schedule:
+    # Once the daily advisory feeds have settled, offset from the website
+    # deploy job's hourly :17.
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A second run starting while one is still pushing would race on the same
+# branch. Queue instead, and never cancel a run that may already have pushed.
+concurrency:
+  group: lockfile-audit-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    # The only job in this repository that writes to it. It pushes one
+    # dedicated branch and opens one pull request against main; main itself
+    # stays behind the same review as every other change.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website-3/package-lock.json
+
+      - name: Install the lock tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit uv==0.12.9
+
+      # Names only. The lock doubles as its own resolver preference, so a plain
+      # recompile happily keeps a version an advisory has since landed on -
+      # every affected package has to be named for the upgrade to happen.
+      - name: Audit requirements.lock
+        id: pip
+        run: |
+          if pip-audit -r requirements.lock -f json -o /tmp/pip-audit.json; then
+            echo "vulnerable=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          names=$(python - <<'PY'
+          import json
+
+          with open("/tmp/pip-audit.json") as handle:
+              report = json.load(handle)
+          affected = {
+              dependency["name"]
+              for dependency in report.get("dependencies", [])
+              if dependency.get("vulns")
+          }
+          print(" ".join(sorted(affected)))
+          PY
+          )
+          echo "Vulnerable: ${names:-none}"
+          echo "vulnerable=$names" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate requirements.lock
+        if: steps.pip.outputs.vulnerable != ''
+        env:
+          VULNERABLE: ${{ steps.pip.outputs.vulnerable }}
+        run: |
+          upgrades=""
+          for name in $VULNERABLE; do
+            upgrades="$upgrades --upgrade-package $name"
+          done
+          uv pip compile --universal --generate-hashes \
+            --python-version 3.11 \
+            $upgrades \
+            --custom-compile-command \
+            "uv pip compile --universal --generate-hashes --python-version 3.11 -o requirements.lock requirements.txt" \
+            -o requirements.lock requirements.txt
+
+      - name: Audit website-3/package-lock.json
+        working-directory: website-3
+        run: |
+          npm ci
+          if npm audit --audit-level=moderate; then
+            exit 0
+          fi
+          npm audit fix --package-lock-only
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Decide whether anything moved
+        id: locks
+        run: |
+          if git diff --quiet -- requirements.lock website-3/package-lock.json; then
+            echo "Both locks are already clean."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Everything below re-runs what ci.yml would, because a pull request
+      # opened with GITHUB_TOKEN does not itself trigger workflow runs. The
+      # pull request therefore arrives verified rather than unchecked.
+      - name: Verify the Python lock
+        if: steps.locks.outputs.changed == 'true'
+        run: |
+          # A separate environment on purpose. Installing the lock over the
+          # interpreter that holds pip-audit and uv would resolve their shared
+          # dependencies to the project's pins and could leave either broken
+          # for the audit and the consistency check further down this step.
+          python -m venv /tmp/verify
+          /tmp/verify/bin/python -m pip install --require-hashes -r requirements.lock
+          /tmp/verify/bin/python -c "import bot; print('cogs', len(bot.COGS))"
+          /tmp/verify/bin/python -m pip install pytest
+          /tmp/verify/bin/python -m pytest tests --ignore=tests/test_webserver.py -q
+          /tmp/verify/bin/python tests/test_webserver.py
+          pip-audit -r requirements.lock
+          cp requirements.lock /tmp/requirements.lock
+          uv pip compile --universal --generate-hashes \
+            --python-version 3.11 \
+            --custom-compile-command \
+            "uv pip compile --universal --generate-hashes --python-version 3.11 -o requirements.lock requirements.txt" \
+            -o /tmp/requirements.lock requirements.txt
+          diff -u requirements.lock /tmp/requirements.lock
+
+      # build:launch rewrites the CSP manifest. If a lock change moved the
+      # built output, the regenerated manifest belongs in this pull request -
+      # leaving it out would only hand the website job a stale one.
+      - name: Verify the website
+        if: steps.locks.outputs.changed == 'true'
+        working-directory: website-3
+        run: |
+          npx vitest run
+          npm run build:launch
+          npm run security:audit:build
+
+      - name: Open or update the pull request
+        if: steps.locks.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=chore/lockfile-audit-refresh
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # checkout only fetched main, so on every run after the first there
+          # is no remote-tracking ref for this branch and --force-with-lease
+          # below would refuse with "stale info". Give it one to compare
+          # against; the fetch simply fails on the first run, when the branch
+          # does not exist yet and the push is a create.
+          git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch" || true
+          git checkout -B "$branch"
+          git add requirements.lock website-3/package-lock.json website-3/worker/inline-hashes.js
+          git commit -F - <<'MESSAGE'
+          deps: refresh the locks past the current advisories
+
+          Opened by .github/workflows/lockfile-audit.yml. pip-audit over
+          requirements.lock and npm audit over website-3 both ran clean on the
+          regenerated locks before this branch was pushed, alongside the test
+          suites, the build and the lock/requirements.txt consistency check.
+          MESSAGE
+          git push --force-with-lease origin "$branch"
+          if gh pr view "$branch" --json number >/dev/null 2>&1; then
+            echo "Pull request already open; pushed the refreshed locks to it."
+            exit 0
+          fi
+          {
+            echo "One or both audit gates failed on main, so the affected lock was regenerated here."
+            echo
+            echo '```'
+            git show --stat --format= HEAD
+            echo '```'
+            echo
+            echo "Verified before this branch was pushed: \`pip install --require-hashes\`, the import smoke test, pytest, \`tests/test_webserver.py\`, \`pip-audit\` over the lock and the lock/requirements.txt consistency check; plus \`npm ci\`, \`npm audit --audit-level=moderate\`, vitest, \`npm run build:launch\` and \`npm run security:audit:build\`."
+            echo
+            echo "A pull request opened with GITHUB_TOKEN does not start CI on itself. Push any commit, or close and reopen it, to run the checks here as well."
+          } > /tmp/pr-body.md
+          gh pr create --base main --head "$branch" \
+            --title "deps: refresh the locks past the current advisories" \
+            --body-file /tmp/pr-body.md
