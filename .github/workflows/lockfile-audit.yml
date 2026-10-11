@@ -103,7 +103,15 @@ jobs:
             "uv pip compile --universal --generate-hashes --python-version 3.11 -o requirements.lock requirements.txt" \
             -o requirements.lock requirements.txt
 
+      # What `npm audit fix` cannot reach needs `npm audit fix --force`, which
+      # resolves by installing a breaking - sometimes older - version of a
+      # direct dependency: the sharp/librsvg advisory on 7 October would have
+      # taken wrangler from 4.147.0 back to 4.15.2. That is a person's call,
+      # not a scheduled job's. Record it and carry on rather than failing the
+      # step, so a requirements.lock regenerated earlier in the same run still
+      # reaches a pull request; the last step in this job reports it and fails.
       - name: Audit website-3/package-lock.json
+        id: npm
         working-directory: website-3
         run: |
           npm ci
@@ -112,7 +120,20 @@ jobs:
           fi
           npm audit fix --package-lock-only
           npm ci
-          npm audit --audit-level=moderate
+          if npm audit --audit-level=moderate; then
+            exit 0
+          fi
+          echo "needs_decision=1" >> "$GITHUB_OUTPUT"
+          npm audit --audit-level=moderate > /tmp/npm-audit.txt || true
+          {
+            echo "### npm advisories that need a manual decision"
+            echo
+            echo "\`npm audit fix\` cannot resolve these without \`--force\`."
+            echo
+            echo '```'
+            cat /tmp/npm-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Decide whether anything moved
         id: locks
@@ -185,8 +206,14 @@ jobs:
           suites, the build and the lock/requirements.txt consistency check.
           MESSAGE
           git push --force-with-lease origin "$branch"
-          if gh pr view "$branch" --json number >/dev/null 2>&1; then
-            echo "Pull request already open; pushed the refreshed locks to it."
+          # `gh pr view <branch>` also matches a closed or merged pull request
+          # on that branch, so once the first one was closed this branch had a
+          # pull request "already open" forever: two days of security fixes were
+          # force-pushed here and reported as success while nothing was open to
+          # review them. Ask for open ones only, and name the one found.
+          open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open_pr" ]; then
+            echo "Pull request #$open_pr is open; pushed the refreshed locks to it."
             exit 0
           fi
           {
@@ -203,3 +230,13 @@ jobs:
           gh pr create --base main --head "$branch" \
             --title "deps: refresh the locks past the current advisories" \
             --body-file /tmp/pr-body.md
+
+      # Last, so that whatever could be fixed has already been pushed and
+      # opened. A red run is the only signal these advisories get, and the
+      # detail belongs where it is read - the job summary - not buried in a log.
+      - name: Report advisories that need a manual decision
+        if: always() && steps.npm.outputs.needs_decision != ''
+        run: |
+          echo "::error::npm advisories remain that 'npm audit fix' cannot resolve without --force. The job summary lists them; deciding whether to take the breaking change is a review, not an automatic fix."
+          cat /tmp/npm-audit.txt
+          exit 1
