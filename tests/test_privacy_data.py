@@ -193,7 +193,14 @@ class PrivacyDataTests(unittest.TestCase):
         self.assertEqual(exported["reminders"][0]["message"], "mine")
         self.assertIn("voice_sessions", exported["voice_state"])
         self.assertEqual(exported["dashboard_audit"][0]["ip"], "127.0.0.1")
-        self.assertNotIn("222", json.dumps(exported))
+        # Sweeping the whole blob for the other guild's id is the point: a leak
+        # can surface under any key, including one added later. Drop the single
+        # field that is generated rather than stored - export_guild_data stamps
+        # exported_at with the current time, and on 12 October its microseconds
+        # came out .984222, so "222" was "found" in an export that leaked
+        # nothing. Every other timestamp here is a fixed fixture value.
+        leak_surface = {key: value for key, value in exported.items() if key != "exported_at"}
+        self.assertNotIn("222", json.dumps(leak_surface))
 
     def test_guild_erasure_is_complete_and_keeps_other_guilds(self):
         report = privacy.erase_guild_data("111")
