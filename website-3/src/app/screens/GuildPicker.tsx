@@ -4,6 +4,8 @@ import { inviteUrl } from "../../lib/api/client";
 import type { Guild } from "../../lib/api/schemas";
 import { guildConfigQuery, guildDashboardQuery, useGuilds } from "../queries/guilds";
 
+const swallow = () => {};
+
 function GuildIcon({ guild, muted = false }: { guild: Guild; muted?: boolean }) {
   if (guild.icon) {
     return (
@@ -30,9 +32,15 @@ export default function GuildPicker() {
   const active = all.filter((g) => g.bot_present);
   const invitable = all.filter((g) => !g.bot_present);
 
+  // query() replaces the deprecated prefetchQuery(), with one behavioural
+  // difference that matters here: prefetchQuery never rejected, query() does.
+  // These fire on hover to warm the cache, so a failure has nobody to report
+  // to - dropping the catch would turn a hover made offline into an unhandled
+  // rejection in the user's console. The query still surfaces its error
+  // normally once the screen it was warming actually mounts.
   const warmConfig = (guildId: string) => {
-    void queryClient.prefetchQuery(guildDashboardQuery(guildId));
-    void queryClient.prefetchQuery(guildConfigQuery(guildId));
+    void queryClient.query(guildDashboardQuery(guildId)).catch(swallow);
+    void queryClient.query(guildConfigQuery(guildId)).catch(swallow);
   };
 
   return (

@@ -29,10 +29,15 @@ function GuildLayout() {
   const { guildId } = useParams({ strict: false }) as { guildId: string };
   const queryClient = useQueryClient();
   const tab = "inline-flex min-h-11 items-center border-b-2 px-1 text-sm transition-colors";
+  // infiniteQuery() replaces the deprecated prefetchInfiniteQuery(). Same
+  // behavioural difference as in GuildPicker: the prefetch variant never
+  // rejected, this one does, and a tab hovered while the network is down has
+  // nobody to report to. The catch also covers the dynamic import, which
+  // could already reject before this change.
   const warmAudit = () => {
-    void import("./queries/audit").then(({ auditQuery }) =>
-      queryClient.prefetchInfiniteQuery(auditQuery(guildId)),
-    );
+    void import("./queries/audit")
+      .then(({ auditQuery }) => queryClient.infiniteQuery(auditQuery(guildId)))
+      .catch(() => {});
   };
   return (
     <>
