@@ -118,7 +118,14 @@ jobs:
           if npm audit --audit-level=moderate; then
             exit 0
           fi
-          npm audit fix --package-lock-only
+          # `npm audit fix` exits non-zero when anything is left unfixed, which
+          # is exactly the case this branch exists to handle. Steps run under
+          # `bash -e`, so without this the step died right here and every line
+          # below it - needs_decision, the summary, the reporting step - never
+          # ran. That is what happened on 24 October: the job went red with the
+          # detail only in a log nobody opens, which is the failure mode the
+          # reporting step was added to remove.
+          npm audit fix --package-lock-only || true
           npm ci
           if npm audit --audit-level=moderate; then
             exit 0
