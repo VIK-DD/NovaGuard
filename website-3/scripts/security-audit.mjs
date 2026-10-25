@@ -2,7 +2,11 @@
 // Scoped security audit for the hosts we actually operate.
 //
 // Run it against production:
-//   NG_AUDIT_PASSWORD=... npm run security:audit
+//   NG_AUDIT_PASSWORD=... NG_AUDIT_EDGE_TOKEN=... npm run security:audit
+//
+// NG_AUDIT_EDGE_TOKEN is the secret the Cloudflare WAF skip rule matches on,
+// sent as X-NovaGuard-Audit. Without it the edge challenges this auditor and
+// nothing on the live site gets audited.
 //
 // Or against a local `wrangler dev`:
 //   npm run security:audit -- --base http://127.0.0.1:8787
@@ -88,8 +92,18 @@ function splitSetCookie(response) {
   return single ? [single] : [];
 }
 
+// Cloudflare's bot protection challenges this auditor, and a challenge means
+// the target was not audited at all - 23 of them on 25 October, every live
+// target, zero actual findings. The way through is a WAF skip rule, and that
+// rule has to match on something an outsider cannot send: a User-Agent is one
+// header away for anybody. So it matches this header, whose value is a secret
+// shared between GitHub Actions and the Cloudflare rule. Unset locally, where
+// the audit runs against `wrangler dev` with no edge in front of it.
+const EDGE_TOKEN = process.env.NG_AUDIT_EDGE_TOKEN || "";
+
 async function request(url, jar, init = {}, edgeAttempt = 0) {
   const headers = { "User-Agent": "NovaGuard-security-audit", ...(init.headers || {}) };
+  if (EDGE_TOKEN) headers["X-NovaGuard-Audit"] = EDGE_TOKEN;
   const cookies = jar.header();
   if (cookies) headers.Cookie = cookies;
   const response = await fetch(url, { ...init, headers, redirect: "manual" });
@@ -411,6 +425,20 @@ async function main() {
   console.log(
     `FAIL — ${actionable.length} finding(s) at or above '${args.failOn}'. Worst: ${LABEL[worst]}.`,
   );
+  // An all-challenge failure says nothing about the site's security - it says
+  // the auditor never saw the site. Name that here, where somebody is already
+  // reading, instead of leaving a wall of identical LOW lines to interpret.
+  const challenged = findings.filter((f) => f.rule === "edge-challenge").length;
+  if (challenged) {
+    console.log(
+      `       ${challenged} of those are Cloudflare challenges: those targets were NOT audited.`,
+    );
+    console.log(
+      EDGE_TOKEN
+        ? "       NG_AUDIT_EDGE_TOKEN is set, so the Cloudflare skip rule is not matching it."
+        : "       Set NG_AUDIT_EDGE_TOKEN and add the matching Cloudflare WAF skip rule.",
+    );
+  }
   process.exit(1);
 }
 

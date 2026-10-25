@@ -109,7 +109,12 @@ jobs:
       - name: Wait for the edge to serve the new version
         run: sleep 20
 
+      # NG_AUDIT_EDGE_TOKEN is sent as X-NovaGuard-Audit and matched by a
+      # Cloudflare WAF skip rule. Without the pair, the edge challenges this
+      # auditor and every live target comes back unaudited - 23 of them on
+      # 25 October, a red job that said nothing about the site's security.
       - name: Security audit
         env:
           NG_AUDIT_PASSWORD: ${{ secrets.NG_AUDIT_PASSWORD }}
+          NG_AUDIT_EDGE_TOKEN: ${{ secrets.NG_AUDIT_EDGE_TOKEN }}
         run: npm run security:audit
