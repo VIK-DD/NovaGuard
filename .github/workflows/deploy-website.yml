@@ -47,7 +47,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: website-3/package-lock.json
 
@@ -62,11 +62,21 @@ jobs:
       # in would have shipped unremarked. Checked before the build, so a bad
       # dependency never reaches the deploy step.
       #
-      # high and critical only: moderate advisories in build-time tooling would
-      # block deploys over code that never reaches a visitor, and a gate that
-      # cries wolf gets switched off.
+      # Scoped to what actually ships, because a gate that cries wolf gets
+      # switched off. Severity alone used to stand in for "does this reach a
+      # visitor", and that proxy broke on 24 October: a high advisory in undici,
+      # reached only through wrangler -> miniflare, stopped every hourly deploy
+      # for a day over a package that runs on a CI runner and is served to
+      # nobody. --omit=dev is the same scope `npm run sbom` already uses for the
+      # release inventory, and it keeps the high threshold meaningful rather
+      # than making it the next thing to be relaxed.
+      #
+      # Not a hole: ci.yml audits the whole tree, dev dependencies included, at
+      # the lower `moderate` threshold, so nothing reaches main unexamined. The
+      # split is deliberate - merges are gated on everything, deploys on what is
+      # being deployed.
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=high --omit=dev
 
       # This one build command chooses the correct root artifact from the
       # shared launch timestamp: Coming Soon before it, the official redirect
