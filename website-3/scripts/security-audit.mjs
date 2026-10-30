@@ -27,6 +27,7 @@ import {
   auditResponse,
   isCloudflareChallenge,
   isOurHost,
+  isTransientNetworkError,
   worstSeverity,
 } from "./security-audit-rules.mjs";
 
@@ -36,6 +37,11 @@ const DIST = join(HERE, "..", "dist");
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3 };
 const LABEL = { high: "HIGH", medium: "MEDIUM", low: "LOW", info: "INFO" };
 const EDGE_CHALLENGE_RETRY_MS = [250, 750];
+// Longer than the challenge ladder, and growing: a challenge is answered by
+// the same edge that just replied, while a transport failure usually means
+// something upstream needs a moment - DNS that has not propagated, a route
+// that is still settling after the deploy a step earlier.
+const NETWORK_RETRY_MS = [500, 1500, 4000];
 
 function parseArgs(argv) {
   const args = {
@@ -101,15 +107,32 @@ function splitSetCookie(response) {
 // the audit runs against `wrangler dev` with no edge in front of it.
 const EDGE_TOKEN = process.env.NG_AUDIT_EDGE_TOKEN || "";
 
-async function request(url, jar, init = {}, edgeAttempt = 0) {
+async function request(url, jar, init = {}, edgeAttempt = 0, networkAttempt = 0) {
   const headers = { "User-Agent": "NovaGuard-security-audit", ...(init.headers || {}) };
   if (EDGE_TOKEN) headers["X-NovaGuard-Audit"] = EDGE_TOKEN;
   const cookies = jar.header();
   if (cookies) headers.Cookie = cookies;
-  const response = await fetch(url, { ...init, headers, redirect: "manual" });
-  const setCookie = splitSetCookie(response);
+  let response;
+  let setCookie;
+  let body;
+  try {
+    response = await fetch(url, { ...init, headers, redirect: "manual" });
+    setCookie = splitSetCookie(response);
+    // Read inside the retry window too: a body that times out mid-stream is
+    // the same class of blip as a connection that never opened.
+    body = await response.text();
+  } catch (error) {
+    if (isTransientNetworkError(error) && networkAttempt < NETWORK_RETRY_MS.length) {
+      await new Promise((resolve) => setTimeout(resolve, NETWORK_RETRY_MS[networkAttempt]));
+      return request(url, jar, init, edgeAttempt, networkAttempt + 1);
+    }
+    // Out of retries, or not a blip at all. The caller records `unreachable`,
+    // which is now a statement about the target rather than about the weather.
+    throw error;
+  }
+  // After the retry window closes, so a retried request cannot store the same
+  // cookies twice.
   jar.store(setCookie);
-  const body = await response.text();
   const result = {
     url,
     status: response.status,
@@ -120,7 +143,7 @@ async function request(url, jar, init = {}, edgeAttempt = 0) {
   };
   if (isCloudflareChallenge(result) && edgeAttempt < EDGE_CHALLENGE_RETRY_MS.length) {
     await new Promise((resolve) => setTimeout(resolve, EDGE_CHALLENGE_RETRY_MS[edgeAttempt]));
-    return request(url, jar, init, edgeAttempt + 1);
+    return request(url, jar, init, edgeAttempt + 1, networkAttempt);
   }
   return result;
 }

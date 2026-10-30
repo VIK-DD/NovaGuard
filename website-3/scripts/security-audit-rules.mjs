@@ -68,6 +68,43 @@ export function isOurHost(url) {
   }
 }
 
+// Transport failures that say nothing about the site's security. The audit
+// runs seconds after `wrangler deploy`, against an edge that may not have
+// finished propagating, over a GitHub runner's network - on 30 October a
+// single `fetch failed` on two targets turned a deploy that had already
+// succeeded red, with two LOW findings that described a network blip and not
+// the site. Worth one retry, not a red job.
+//
+// Matched by cause code rather than message: undici raises the same
+// `TypeError: fetch failed` for every transport failure and puts the real
+// reason in `cause`. Anything not listed here - a certificate that does not
+// verify, a hostname the certificate does not cover - is a real finding about
+// our own edge and must stay a finding, so this list stays an allowlist.
+const TRANSIENT_NETWORK_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EPIPE",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+/** True when a failed request deserves a retry rather than an `unreachable` finding. */
+export function isTransientNetworkError(error) {
+  if (!error || typeof error !== "object") return false;
+  if (error.name === "AbortError") return true;
+  const code = error.cause?.code || error.code;
+  if (code) return TRANSIENT_NETWORK_CODES.has(code);
+  // No cause to inspect: only the generic transport failure qualifies. A
+  // TypeError raised by a bug inside the audit also lands here, and retrying
+  // it would hide the bug behind a slow pass.
+  return error instanceof TypeError && error.message === "fetch failed";
+}
+
 /** Detect an interstitial Cloudflare response that replaced the requested page. */
 export function isCloudflareChallenge(response) {
   const headers = lowerKeys(response?.headers);
