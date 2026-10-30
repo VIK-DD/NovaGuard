@@ -5,6 +5,7 @@ import {
   auditResponse,
   isCloudflareChallenge,
   isOurHost,
+  isTransientNetworkError,
   worstSeverity,
 } from "./security-audit-rules.mjs";
 
@@ -347,5 +348,53 @@ describe("severity ranking", () => {
 
   it("returns null when there is nothing to report", () => {
     expect(worstSeverity([])).toBeNull();
+  });
+});
+
+describe("transient network errors", () => {
+  // undici raises one TypeError for every transport failure and puts the real
+  // reason in `cause`, so the cause code is the only thing worth matching on.
+  const failed = (code) =>
+    Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error(code), { code }) });
+
+  it("retries a connection reset", () => {
+    expect(isTransientNetworkError(failed("ECONNRESET"))).toBe(true);
+  });
+
+  it("retries a DNS lookup that has not propagated yet", () => {
+    expect(isTransientNetworkError(failed("ENOTFOUND"))).toBe(true);
+  });
+
+  it("retries a connect timeout", () => {
+    expect(isTransientNetworkError(failed("UND_ERR_CONNECT_TIMEOUT"))).toBe(true);
+  });
+
+  it("retries a bare 'fetch failed' with no cause attached", () => {
+    expect(isTransientNetworkError(new TypeError("fetch failed"))).toBe(true);
+  });
+
+  it("retries an aborted request", () => {
+    expect(isTransientNetworkError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(
+      true,
+    );
+  });
+
+  // The point of the whole predicate: a certificate that does not verify is a
+  // real finding about our own edge. Retrying it three times and then reporting
+  // it anyway would only make the audit slower, and silencing it would hide it.
+  it("does not retry a TLS certificate failure", () => {
+    expect(isTransientNetworkError(failed("CERT_HAS_EXPIRED"))).toBe(false);
+  });
+
+  it("does not retry a hostname that does not match the certificate", () => {
+    expect(isTransientNetworkError(failed("ERR_TLS_CERT_ALTNAME_INVALID"))).toBe(false);
+  });
+
+  it("does not retry a programming error raised inside the audit", () => {
+    expect(isTransientNetworkError(new TypeError("response.headers is not a function"))).toBe(false);
+  });
+
+  it("does not retry a non-error value", () => {
+    expect(isTransientNetworkError(undefined)).toBe(false);
   });
 });
