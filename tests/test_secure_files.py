@@ -5,9 +5,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core import secure_files  # noqa: E402
 from core.secure_files import (  # noqa: E402
     EncryptionConfigError,
     SecureFileError,
@@ -56,6 +58,61 @@ class SecureFileTests(unittest.TestCase):
 
         with self.assertRaisesRegex(SecureFileError, "authentication failed"):
             decrypt_file(self.encrypted, self.restored, secret=b"a different secret with enough bytes")
+
+    def test_a_backend_reporting_a_failed_tag_as_another_error_is_still_rejected(self):
+        """A failed tag check must stay a SecureFileError whatever the backend calls it.
+
+        AES-GCM is documented to raise InvalidTag when the tag does not verify,
+        and that is what this module caught. The cryptography 50.0.2 wheel for
+        Python 3.14 raises ValueError("The length of the provided data is not a
+        multiple of the block length.") from the streaming API instead. The
+        plaintext is still withheld either way, so the guarantee holds - but a
+        bare ValueError escaping this module turns a wrong key from a handled
+        message into a crash for every caller that catches SecureFileError.
+
+        Simulated rather than version-gated, so the guard is exercised on the
+        interpreters where the quirk does not reproduce.
+        """
+
+        class FinalizeFails:
+            def __init__(self, context):
+                self._context = context
+
+            def authenticate_additional_data(self, data):
+                return self._context.authenticate_additional_data(data)
+
+            def update(self, data):
+                return self._context.update(data)
+
+            def finalize(self):
+                raise ValueError(
+                    "The length of the provided data is not a multiple of the block length."
+                )
+
+        class CipherWithFailingFinalize:
+            def __init__(self, cipher):
+                self._cipher = cipher
+
+            def encryptor(self):
+                return self._cipher.encryptor()
+
+            def decryptor(self):
+                return FinalizeFails(self._cipher.decryptor())
+
+        real_cipher = secure_files.Cipher
+        encrypt_file(self.plaintext, self.encrypted, secret=self.secret)
+
+        with mock.patch.object(
+            secure_files,
+            "Cipher",
+            lambda *args, **kwargs: CipherWithFailingFinalize(real_cipher(*args, **kwargs)),
+        ):
+            with self.assertRaisesRegex(SecureFileError, "authentication failed"):
+                decrypt_file(self.encrypted, self.restored, secret=self.secret)
+
+        self.assertFalse(self.restored.exists(), "no output may survive a failed tag check")
+        leftovers = [path.name for path in self.root.iterdir() if path.name.startswith(".")]
+        self.assertEqual(leftovers, [], "the temporary file must be cleaned up")
 
     def test_missing_or_short_environment_key_is_rejected(self):
         for value in (None, "short"):
