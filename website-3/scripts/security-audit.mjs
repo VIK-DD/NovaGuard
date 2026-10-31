@@ -2,11 +2,7 @@
 // Scoped security audit for the hosts we actually operate.
 //
 // Run it against production:
-//   NG_AUDIT_PASSWORD=... NG_AUDIT_EDGE_TOKEN=... npm run security:audit
-//
-// NG_AUDIT_EDGE_TOKEN is the secret the Cloudflare WAF skip rule matches on,
-// sent as X-NovaGuard-Audit. Without it the edge challenges this auditor and
-// nothing on the live site gets audited.
+//   NG_AUDIT_PASSWORD=... npm run security:audit
 //
 // Or against a local `wrangler dev`:
 //   npm run security:audit -- --base http://127.0.0.1:8787
@@ -98,18 +94,8 @@ function splitSetCookie(response) {
   return single ? [single] : [];
 }
 
-// Cloudflare's bot protection challenges this auditor, and a challenge means
-// the target was not audited at all - 23 of them on 25 October, every live
-// target, zero actual findings. The way through is a WAF skip rule, and that
-// rule has to match on something an outsider cannot send: a User-Agent is one
-// header away for anybody. So it matches this header, whose value is a secret
-// shared between GitHub Actions and the Cloudflare rule. Unset locally, where
-// the audit runs against `wrangler dev` with no edge in front of it.
-const EDGE_TOKEN = process.env.NG_AUDIT_EDGE_TOKEN || "";
-
 async function request(url, jar, init = {}, edgeAttempt = 0, networkAttempt = 0) {
   const headers = { "User-Agent": "NovaGuard-security-audit", ...(init.headers || {}) };
-  if (EDGE_TOKEN) headers["X-NovaGuard-Audit"] = EDGE_TOKEN;
   const cookies = jar.header();
   if (cookies) headers.Cookie = cookies;
   let response;
@@ -456,10 +442,16 @@ async function main() {
     console.log(
       `       ${challenged} of those are Cloudflare challenges: those targets were NOT audited.`,
     );
+    // Deliberately not "add a skip rule". Bot Fight Mode does not run on the
+    // Ruleset Engine, so Skip/Bypass/Allow never reach it and no WAF custom
+    // rule can exempt this auditor on the Free plan - a header-matched skip
+    // rule was tried on 25 October and did nothing. Turning the feature off
+    // is what actually worked, so point at the switch that exists.
     console.log(
-      EDGE_TOKEN
-        ? "       NG_AUDIT_EDGE_TOKEN is set, so the Cloudflare skip rule is not matching it."
-        : "       Set NG_AUDIT_EDGE_TOKEN and add the matching Cloudflare WAF skip rule.",
+      "       Bot Fight Mode cannot be skipped per-request on the Free plan.",
+    );
+    console.log(
+      "       Check Cloudflare > Security > Settings > Bot traffic; it is meant to be off.",
     );
   }
   process.exit(1);
