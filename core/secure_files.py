@@ -53,6 +53,29 @@ def encryption_configured(env=None):
     return True
 
 
+def _finalize_authenticated(decryptor):
+    """Close a GCM stream, normalising how a failed tag check is reported.
+
+    AES-GCM is documented to raise InvalidTag when the tag does not verify,
+    and that is what the supported CI interpreters do.  The cryptography
+    50.0.2 wheel for Python 3.14 raises ValueError("The length of the
+    provided data is not a multiple of the block length.") from this same
+    call instead - the plaintext is still withheld, so the authentication
+    guarantee holds, but the exception class does not.
+
+    Everything in this module reports failure as SecureFileError, and the bot
+    catches that.  A bare ValueError escaping from here turns a wrong key from
+    a handled message into an unhandled crash, so treat any failure to close
+    the stream as what it is at this point: the tag did not verify.
+    """
+    try:
+        return decryptor.finalize()
+    except InvalidTag:
+        raise
+    except Exception as error:  # noqa: BLE001 - deliberately broad, see above
+        raise InvalidTag("GCM tag verification failed") from error
+
+
 def _derive_key(secret, salt):
     return Scrypt(salt=salt, length=32, n=2**14, r=8, p=1).derive(secret)
 
@@ -152,7 +175,7 @@ def decrypt_file(source_path, output_path, *, secret=None):
                         raise SecureFileError("Encrypted file ended before its authentication tag")
                     remaining -= len(chunk)
                     output.write(decryptor.update(chunk))
-                output.write(decryptor.finalize())
+                output.write(_finalize_authenticated(decryptor))
                 output.flush()
                 os.fsync(output.fileno())
         os.replace(temporary, output_path)
