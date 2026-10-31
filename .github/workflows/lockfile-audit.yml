@@ -155,6 +155,11 @@ jobs:
       # Everything below re-runs what ci.yml would, because a pull request
       # opened with GITHUB_TOKEN does not itself trigger workflow runs. The
       # pull request therefore arrives verified rather than unchecked.
+      #
+      # That gap used to be cosmetic. Since main requires the five ci.yml
+      # checks to pass, it is a hard block: the pull request this job opens
+      # starts with no checks at all and cannot be merged until a human
+      # reopens it. The body written further down says so and says how.
       - name: Verify the Python lock
         if: steps.locks.outputs.changed == 'true'
         run: |
@@ -232,7 +237,9 @@ jobs:
             echo
             echo "Verified before this branch was pushed: \`pip install --require-hashes\`, the import smoke test, pytest, \`tests/test_webserver.py\`, \`pip-audit\` over the lock and the lock/requirements.txt consistency check; plus \`npm ci\`, \`npm audit --audit-level=moderate\`, vitest, \`npm run build:launch\` and \`npm run security:audit:build\`."
             echo
-            echo "A pull request opened with GITHUB_TOKEN does not start CI on itself. Push any commit, or close and reopen it, to run the checks here as well."
+            echo "**This pull request cannot be merged as it stands.** \`main\` requires \`locked-install\`, \`python-smoke (3.11)\`, \`python-smoke (3.12)\`, \`secret-scan\` and \`website\` to pass, and a pull request opened with GITHUB_TOKEN does not start CI on itself - so none of them will ever report here on their own."
+            echo
+            echo "Close this pull request and reopen it. That is the whole fix: reopening is a \`pull_request\` event from a human account, so the five checks run and the merge button unblocks. Pushing a commit works too, but only from your own machine - anything this workflow pushes carries GITHUB_TOKEN again and still starts nothing."
           } > /tmp/pr-body.md
           gh pr create --base main --head "$branch" \
             --title "deps: refresh the locks past the current advisories" \
