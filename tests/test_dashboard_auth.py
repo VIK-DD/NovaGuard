@@ -418,8 +418,36 @@ class PermissionRevocationTests(AuthTestCase):
         fetch.assert_not_called()
 
     async def test_a_witnessed_change_forces_a_refetch_inside_the_window(self):
-        entry = self.entry()
+        # The cache age is stated outright rather than left to the clock. Two
+        # back-to-back time.time() calls return the *same* float on a fast
+        # machine - 97% of the time on an Apple Silicon laptop - so taking the
+        # cache stamp and the event stamp in consecutive statements made this
+        # test a coin flip that landed wrong four times in five locally, while
+        # staying green on CI's slower runners.
+        entry = self.entry(fetched_at=time.time() - 1)
         self.server.note_permission_change(42)
+
+        with mock.patch.object(self.server, "_ensure_fresh_token"), \
+             mock.patch.object(self.server, "_discord_get", return_value=[]) as fetch, \
+             mock.patch.object(web, "db_touch_session"):
+            await self.server._refresh_guilds("sid", entry)
+
+        fetch.assert_awaited_once()
+
+    async def test_a_change_in_the_same_clock_tick_as_the_fetch_still_refetches(self):
+        """A tie must resolve towards refetching, not towards the cached copy.
+
+        This is the revocation path: the question is whether someone whose
+        Manage Server was just taken away keeps write access. When the event
+        and the cache stamp carry the same timestamp - which is the common
+        case, not a rare one, wherever time.time() is coarser than the work
+        between the two calls - answering "nothing newer, keep the cache"
+        hands back stale permissions until the TTL expires. Err towards one
+        extra Discord call instead.
+        """
+        self.server.note_permission_change(42)
+        witnessed = self.server._permission_events["42"]
+        entry = self.entry(fetched_at=witnessed)
 
         with mock.patch.object(self.server, "_ensure_fresh_token"), \
              mock.patch.object(self.server, "_discord_get", return_value=[]) as fetch, \
