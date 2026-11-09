@@ -813,7 +813,16 @@ class WebServer:
         user_id = str((entry.get("user") or {}).get("id") or "")
         if not user_id:
             return False
-        return self._permission_events.get(user_id, 0) > fetched_at
+        # >= rather than >, because a tie here is not rare. time.time() is
+        # coarser than the work between stamping a cache and recording a
+        # gateway event - two consecutive calls return the same float 97% of
+        # the time on an Apple Silicon laptop - so "the event is not strictly
+        # newer" regularly means "they happened together", not "the cache is
+        # current". This is the revocation path, and the two outcomes are not
+        # symmetric: resolving a tie towards the cache hands someone whose
+        # Manage Server was just taken away write access until the TTL runs
+        # out, while resolving it the other way costs one Discord call.
+        return self._permission_events.get(user_id, 0) >= fetched_at
 
     async def _on_member_update(self, before, after):
         """Gateway hook: only a change to the permission the dashboard reads.
